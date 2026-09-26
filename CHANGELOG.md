@@ -1,125 +1,95 @@
 # 更新日志
 
-> 本仓库由 fcmfix 迁移而来，此前没有维护变更日志。
+> 本仓库由 fcmfix 迁移而来。0.9.0 及以前压缩为要点，完整历史见 `git log`。
 
-## 0.9.0（未发布）—— 自由化 / 原生化 / 现代化
+## 1.0.0 —— 推倒重写
 
-> 本轮重构的三条主线：**自由化**（Hook 点摆脱版本硬编码、介入条件统一）、
-> **原生化**（地道 Kotlin + 以「还原原生 AOSP 推送行为」为设计基准）、
-> **现代化**（构建体系 / 代码 / 测试 / CI 全面对齐当前最佳实践）。
-> 按约定，本轮允许行为调整，不保证与 0.8.x 逐点一致。
+> 上一轮（0.9.0）的产物整体删除：`git rm` 掉 2501 行 Kotlin（含 559 行测试）后从零重写。
+> 新实现 **543 行主代码 + 56 行测试，4 个文件，1 个包**（原来 17 个文件、4 层包）。
+> 规范：[ponytail](https://github.com/DietrichGebert/ponytail) ultra——
+> 最好的代码是没写的代码，删除优先于新增，刻意砍掉的角用 `ponytail:` 注释标明代价与加回条件。
+> 本轮允许行为调整，不保证与 0.9.0 逐点一致。
 
-### 自由化
+### 删掉的（2501 → 543 行）
 
-- **签名自适应解析**：新增 `hook/Signatures`，`broadcastIntentLocked` 的 (intent, appOp)、
-  `cancelAllNotificationsInt` 的 (pkg, reason) 下标改为「版本候选表 + 类型校验 + 参数名兜底」，
-  候选全部失效时安全放弃并打出完整签名——适配新系统从「改代码」变成「看日志补候选」
-- **实参探测替代固定下标**：新增 `mods/PushArgs`，各自启动/拦截 Hook 点不再按 `args[N]` 取
-  intent，而是按「参数本身是 Intent / 参数带 `intent` 字段」两种形态扫描实参（字段按类缓存），
-  ROM 插参不再导致 Hook 失效
-- **统一推送族判定**：新增 `core/Push`，全部 Hook 点共用一套介入判据
-  （c2dm RECEIVE/**REGISTRATION** + Firebase MESSAGING_EVENT / INSTANCE_ID_EVENT / **NEW_TOKEN**）：
-  - 收紧：HyperOS `checkApplicationAutoStart`、`isAllowStartService` 旧版对**任意**定向广播放行，
-    本版只放行推送族
-  - 放宽：`SmartPowerPolicyManager.shouldInterceptService` 旧版只认 MESSAGING_EVENT，
-    本版覆盖完整推送族
+- **`ReconnectManagerFix`（275 行）**：GMS 心跳/重连倒计时修复，全仓库最复杂的一块
+  （自动发现 timer 类、反射改倒计时、诊断日志转发），也是唯一跑在 GMS 进程里的 Hook 组。
+  删掉后模块**只 hook system_server**，作用域从 `system` + `com.google.android.gms` 收窄为 `system`
+- **`hook/Reflect`(243) + `Signatures`(69) + `MethodArgs`(59) + `Hooks`(82)** 四层反射基建
+  → 一个 `Hook.kt`（80 行）：`classOf` / `classIfExists` / `find` / `ctor` / `field` / `hook` / `install`
+- **before/after 两套拦截原语** → 一个 `hook(target) { chain -> … }`：要不要 `proceed()`、
+  跑完改不改返回值，全由 lambda 自己决定，`AfterHook` / `hookAfter` / `hookMethodAfter` 全删
+- **`ProcessEnv`(240)**：静态实例表、`onReady` 回调排队与去重、两次握手、
+  `ContextWrapper.attachBaseContext` 守株待兔、USER_UNLOCKED 接收器、自卸载监听、
+  旧通知渠道清理、诊断日志广播 sink → 一个 `@Volatile var booted` + 一个 `fun trace()`。
+  system Context 改为用时 `ActivityThread.currentActivityThread().getSystemContext()` 懒取（零 Hook）
+- **`FcmselfModule` 基类 + `mods/PushArgs`** → `Hook.install("组名") { … }` 与 `Push.intentIn`
+- **`core/hook/mods` 三层包** → 单包 `sumicya.fcmself`，模块内零 import
+- **按 SDK_INT 铺开的参数下标候选表**（`amsCandidates`、`resolveBroadcastArgs`、
+  `resolveNotificationArgs`、参数名兜底）→ 参数按类型/按值在实参里认，见下
+- **559 行测试 → 56 行**：`ReflectTest` / `MethodArgsTest` / `SignaturesTest` 随被测代码一起删，
+  只留介入判据一份 `PushTest`（判据是全模块单一支点，判错了就是全放行或全不放行）
+- 构建不再需要 `-parameters` / `javaParameters`（参数名兜底已删）
 
-### 原生化
+> CI workflow 本轮**未改动**：改 `.github/workflows/` 需要 `workflows` 权限，GitHub App 推不动。
+> 两处建议留给人手：① 删掉「构建失败往 PR 贴日志评论」那一步与随之而来的
+> `pull-requests: write` 权限（日志已经在 job summary 里，不值得为它扩大仓库权限）；
+> ② 步骤注释里的「参数下标解析的单元测试」已不准确，现在是介入判据（`PushTest`）。
 
-- **包结构分层**，破除 util→xposed 循环依赖：
-  `core`（日志 / 推送判定，零模块内依赖）、`hook`（反射 / Hook 工具 / 签名解析）、
-  `mods`（各 Fix 模块）、根包（入口 / 模块基类 / 进程环境）
-- **进程状态收敛**：`XposedModule` 基类的 companion 巨静态（context、实例表、广播接收器）、
-  `FcmselfConfig` 的 boot 计时、两次握手，全部收进 `ProcessEnv` 单例；
-  模块生命周期从「onCanReadConfig 扇出」改为 `ProcessEnv.onReady(owner)` 按 owner 去重
-- **Kotlin 惯用法**：移除全部 `@JvmStatic` / Java 式拼接，标准库收敛
-  （`firstOrNull` / `maxByOrNull` / `apply` / 字符串模板）；并发原语保持 stdlib（不加协程依赖，
-  system_server 内越少依赖越好）
-- **行为设计基准显式化**：各 Hook 的语义注释统一对齐「原生 AOSP 本就没有这些限制」——
-  模块做的事是**把 OEM 丢掉的原生语义补回来**，而不是绕过安全
+### 换上的
 
-### 现代化
+- **表驱动**：七个自启动/拦截闸门其实是两种形状（返回 true 放行 / 返回 false 不拦截），
+  写成两张 `List<Pair<类名, 方法名>>` 加一个 `gate()` 循环，不再是七段近似重复的代码
+- **入口清单化**：`XposedMain.FIXES: List<Pair<String, Fixes>>`，新增一组 Hook = 加一行
+- **开机闸门 fail-open**：`AMS.finishBooting` 挂不上时退化为「载入后 60 秒」，
+  不会因为找不到一个方法就让整个模块永久不生效（旧版没有这条退路）
+- **参数按类型/按值识别**，与参数位置彻底解耦：
+  - Intent：签名里只有一个，`args.filterIsInstance<Intent>().firstOrNull()`
+  - 目标包名 / 推送 action：`Push.packageIn`（包名形态正则）/ `Push.actionIn`（推送族匹配），
+    取代 `shouldProxy` 的 `args[3] / args[5] / args[6]` 与 MIUI 本地通知的 `args[3]`
+  - 通知取消原因：按值认（取值落在 8 / 10020 / 10021 的那个 int）
+- **日志**：`Keep notification`、七个自启动闸门现在**成功时也打日志**
+  （0.9.0 的验证清单里这两处标着「无法直接观测」）
+- 版本 0.9.0 → 1.0.0，versionCode 56 → 60，入口类仍是 `XposedMain`（CI 的 dex 校验查的就是这个字符串，改名要动 workflow 权限，不值得）
 
-- **构建脚本 Groovy → Kotlin DSL**：`settings.gradle.kts`（`pluginManagement` +
-  `dependencyResolutionManagement`，删除废弃的 `buildscript classpath` / `allprojects` / 手写 clean）、
-  根/模块 `build.gradle.kts`、**version catalog**（`gradle/libs.versions.toml`）
-- **版本号注入现代化**：CI 不再用 `sed` 改构建脚本，改为 `-Pfcmself.versionName=...` Gradle 属性
-  （`providers.gradleProperty` 读取，本地构建回落 `0.9.0`）
-- **Gradle**：开启 parallel / caching / configuration-cache；wrapper 属性补 `networkTimeout` 与
-  distribution 校验，`-all` 换 `-bin` 发行包
-- **测试 JUnit 4 → JUnit 5**（jupiter + platform-launcher，`useJUnitPlatform()`）；
-  新增 `SignaturesTest`（合成假签名表驱动验证候选/兜底/失败日志）、`PushTest`（推送族分类），
-  `ReflectTest` 补构造器新语义用例（前缀零匹配必须显式失败、最宽构造器）
-- 源码目录 `src/main/java` → `src/main/kotlin`（Kotlin 工程惯例）
+### 刻意砍掉的角（代码里都有 `ponytail:` 注释）
 
-### 修复 / 加固（真机行为疑点）
+- **不再改写 appOp**（旧版 `OP_NONE` → `OP_POST_NOTIFICATION`）。原因有两条：
+  一是 `broadcastIntentLocked` 里 appOp 前面排着 `requestCode` / `userId` / `flags` 三个 int，
+  没有任何「按类型/按位置」的规则能可靠认出它——0.9.0 那种「版本候选表 + 类型校验」正是本轮要删的东西，
+  而「intent 之后第一个 int」这条看似优雅的规则实际会命中 `requestCode@7`（appOp 在 @13），
+  是个会静默改错参数的 bug；二是唤醒停止态应用靠的是 `FLAG_INCLUDE_STOPPED_PACKAGES`（AOSP 明文语义），
+  appOp 那一改是上游 fcmfix 的传闻逻辑，方向还可疑（`OP_NONE` = 不做 op 检查，
+  改成 `OP_POST_NOTIFICATION` 反而多一道检查）。加回条件与定位规则写在注释里
+- **不再补调 `checkAbnormalBroadcastInQueueLocked`**（MIUI 12/13 放行后留一条「异常广播」记录）。
+  补调要按名字反射调一个签名未知的 ROM 私有方法，只为留痕；这一删也让 MIUI 12/13 与 HyperOS
+  三个点变成完全同形状，才能进同一张表
+- **通知取消原因按值认**：别的 int 参数恰好等于 8 时会误拦一次取消（只影响「通知没被清掉」，
+  不影响投递）。升级路径写在注释里
+- **bypass 日志全局节流**（旧版按包名分别节流）：60 秒内第二个应用的 bypass 日志被吞掉，只留计数。
+  省下 `ConcurrentHashMap<String, LongArray>` + `synchronized` 那 25 行
+- **`intent` 字段不做反射缓存**：没有该字段的宿主类每次调用付一次 `NoSuchFieldException`。
+  这些挂载点是 ROM 的自启动闸门、不在最热路径上
+- **`whiteApps` 的 GMS 移除沿用上游实测逻辑**，该列表语义未被证实（若实为「允许后台的白名单」，
+  移除反而收紧）——真机核实前不动
 
-- `Reflect.findConstructorMostMatch`：旧实现的 `>=` 比较在**零匹配**时静默返回最后一个构造器，
-  可能 hook 错对象；现要求至少匹配第一个给定类型，否则抛 `NoSuchMethodError`。
-  OplusProxyWakeLock 的「任意构造器」改用语义明确的 `findConstructorMostParams`（参数最多者）
-- `OplusProxy` 状态（wakelock 引用、3/4 参签名探测）加 volatile / 同步：旧版裸 companion 字段
-  跨 hook 线程无可见性保证，且并发首调可能双双走探测路径
-- `MiuiLocalNotificationFix`：包名取 `args[3]` 前先校验该位置确为 String 并打出完整签名
-  （全项目唯一没做签名校验的点）
-- 日志修复：`KeepNotification` 不再抛无消息的 `NoSuchMethodError()`，
-  跳过原因统一为 `hook skip <点>: <原因>` 可排查格式；`PowerkeeperFix` 的类缺失不再误报为方法缺失
-- `PowerkeeperFix.whiteApps` 的 GMS 移除**保留旧版行为**，但注释明确标注该列表语义未证实
-  （若实为「允许后台的白名单」，此操作反而收紧）——待真机核实后再定
-- proguard：保留 `Reflect.ClassNotFound` 类名（R8 混淆后 hook skip 日志显示为「q1:」，可读性差）
+### 保留
 
-### 真机验证（2026-09-12）
+- 全部 system_server 侧修复的介入判据仍是同一套「推送族 + 目标明确」（`Push.isTargeted`）
+- 开机后延迟 60 秒才介入；非对应 ROM 的挂载点独立跳过（`hook skip <组名>: <原因>`）
+- CI 结构（零 secrets、test → assembleRelease → assembleDebug → lint → 入口类 dex 校验 → 上传产物）、
+  `scripts/sign-apk.sh`、`docs/build-and-sign-termux.md`
 
-- OnePlus PLC110 / ColorOS（Android 16，API 36）/ GMS 26.33.32：
-  - `BroadcastController.broadcastIntentLocked` 候选 (intent@3, appOp@13) 命中，force-stop 后推送成功唤醒
-  - `cancelAllNotificationsInt` 签名校验通过（pkg@2 / reason@7）
-  - ColorOS 链路全绿：OplusProxyWakeLock 捕获、shouldProxy bypass（节流生效）、unfreeze、Hans 三点 hooked
-  - MIUI / HyperOS 各点在非 MIUI 设备按预期 skip；`Boot Complete` 闸门准时（就绪 +60s）
+## 0.9.0（已被 1.0.0 覆盖）
 
-### 环境升级
+签名自适应（版本候选表 + 类型校验 + 参数名兜底）、`core/hook/mods` 分层、
+`ProcessEnv` 收敛进程状态、Groovy → Kotlin DSL + version catalog、JUnit 4 → 5、
+`src/main/java` → `src/main/kotlin`、CI 用 `-Pfcmself.versionName` 注入版本。
+真机验证：OnePlus PLC110 / ColorOS（Android 16, API 36）/ GMS 26.33.32 全链路通过。
 
-- JUnit `4.13.2` → JUnit Jupiter `5.11.4`
-- AGP / Gradle / libxposed / compileSdk 保持上一轮升级后的版本（AGP 9.4 / Gradle 9.6 / libxposed 102 / SDK 36）
-- `versionCode` 55 → 56，`versionName` 0.8.0 → 0.9.0
+## 0.8.0 及更早（历史）
 
-## 0.8.0（历史）
-
-> 以下为上一轮「简化 / 自由化 / 现代化」的记录。
-
-### 去配置化（简化）
-
-- 移除 GMS 重连修复的 SharedPreferences 配置缓存（`fcmself_config`）与"配置文件"概念：hook 点改为每次 GMS 进程启动时在内存中自动发现，不再写任何文件
-- 移除「自动更新配置文件成功/失败」两条通知，以及注入 FCM Diagnostics 页面的 `RECONNECT` 按钮
-- 移除 `XposedModule` 里已无引用的通知发送逻辑（仅保留卸载时清理旧渠道）
-
-### 通用化（自由化）
-
-- 恢复 MIUI / HyperOS 自启动修复：`BroadcastQueueInjector` / `BroadcastQueueImpl` / `BroadcastQueueModernStubImpl.checkApplicationAutoStart`、`checkReceiverIfRestricted`、`AutoStartManagerServiceStubImpl.isAllowStartService`、`SmartPowerService.shouldInterceptBroadcast`、`SmartPowerPolicyManager.shouldInterceptService`
-- 新增 `MiuiLocalNotificationFix`：放行 MIUI 被拦截的本地通知
-- 新增 `PowerkeeperFix`：解除 MIUI PowerKeeper 对 GMS 的黑名单管控
-- 上述各点均独立容错，非对应 ROM 上只打日志跳过，不影响其它模块
-
-### 工具
-
-- `Reflect` 新增 `setObjectField` / `setStaticObjectField`（PowerkeeperFix 需要）
-
-## 行为与身份
-
-- applicationId 由 `com.kooritea.fcmfix` 改为 `sumicya.fcmself`
-- 移除设置界面与白名单：所有修复对所有 FCM 目标应用始终生效，模块无启动图标、无任何配置项
-- 厂商特定修复覆盖 ColorOS / OxygenOS 与 MIUI / HyperOS
-
-## 代码质量与文档
-
-- 重构：清理死代码、统一字段与方法命名风格、抽取助手方法，行为不变
-- 健壮性小修：`MethodArgs.matches` 对负下标返回 `false`；`BroadcastFix` 挂载前增加下标非负校验
-- 新增单元测试 `ReflectTest`（反射封装），`MethodArgsTest` 补充负下标用例
-- README 精简为单页；清理 CI 工作流顶部历史注释
-
-## 环境升级
-
-- Android Gradle Plugin `8.13.0` → `9.4.0`，Gradle wrapper `8.13` → `9.6.0`
-- 改用 AGP 9 的 **built-in Kotlin**：删除 `apply plugin: 'kotlin-android'` 与顶层 `kotlin-gradle-plugin` classpath
-- `android.kotlinOptions{}` 迁移为顶层 `kotlin { compilerOptions{} }`；`jvmTarget` 对齐 17，`javaParameters` 保留
-- libxposed `api:101.0.1` → `102.0.0`（`targetApiVersion=102` 对齐）
-- `targetSdkVersion` `34` → `36`
-- 顺带把误入库的 `app/FcmFuck.apk` 从 Git 索引移除
+- 去配置化：删掉 SharedPreferences 配置缓存、通知开关、FCM Diagnostics 的 RECONNECT 按钮
+- 恢复 MIUI / HyperOS 自启动修复，新增 MIUI 本地通知与 PowerKeeper 修复
+- 身份迁移：`com.kooritea.fcmfix` → `sumicya.fcmself`，移除设置界面与白名单
+- 环境升级：AGP 9.4 / Gradle 9.6 / libxposed 102 / compileSdk 36 / built-in Kotlin
