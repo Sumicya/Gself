@@ -1,5 +1,5 @@
 // 插件与依赖仓库统一在 settings 里管理（旧版 buildscript classpath / allprojects 已废弃）。
-// 注：libxposed api 发布在 Maven Central；api.xposed.info 仓库仅为兼容保留。
+// 注：libxposed api 发布在 Maven Central，不需要 api.xposed.info。
 pluginManagement {
     repositories {
         google {
@@ -19,7 +19,6 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        maven("https://api.xposed.info/")
     }
 }
 
