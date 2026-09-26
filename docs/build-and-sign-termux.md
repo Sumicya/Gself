@@ -48,10 +48,6 @@ apksigner verify --print-certs -v ~/fcmself-signed.apk
 关于 zipalign：Termux 没有 `zipalign` 包，但 AGP 在打包阶段已经做过对齐，`apksigner` 签名会保持对齐，
 所以不需要单独跑。（如果以后想自己核对，需要装 Android SDK build-tools，见下。）
 
-> 提示：CI 里那次 `Sign APK` 失败（build-tools 37.0.0 的 apksigner，exit code 2）大概率是因为仓库没有配置
-> `SIGNINGKEYBASE64` 等 secrets，导致 keystore 是空的——不是 apksigner 版本问题。
-> 本地签名用的是同一个 apksigner（Termux 包也是 37.0.0），能正常签。
-
 ## 可选：完全在 Termux 里构建
 
 能跑，但重（Android SDK + Gradle 发行版约 2–4 GB，手机上编译很慢）。只在不想依赖 CI 时才需要。

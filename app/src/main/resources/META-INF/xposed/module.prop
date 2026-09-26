@@ -1,9 +1,11 @@
+# fcmself：纯 Hook 模块，无界面、无配置、无数据文件。
+#
 # 代码按 libxposed API 102 编译（compileOnly io.github.libxposed:api:102.0.0），
-# 因此最低要求 101（API 102 纯增量，不改变 101 行为）；API 100 框架本来也加载不了 target 102 的模块。
+# 最低要求 101（API 102 是纯增量，不改变 101 的行为）。
+# 入口类名写在 java_init.list（sumicya.fcmself.XposedMain），作用域见 scope.list。
 minApiVersion=101
-# target 102：LSPosed 2.1.0 起实现 API 102（纯增量，不改变 101 上的行为）。
-# 注意 API 102 起 targetApiVersion>=102 的模块不允许再调用 legacy API——
-# 本模块只依赖 io.github.libxposed.api.*，不受该限制。
 targetApiVersion=102
+# 作用域默认预选 system，用户仍可在 LSPosed 里改。
 staticScope=false
+# 拦截器自身抛出的异常由框架记录并当作「没有 hook」处理，不拖垮 system_server。
 exceptionMode=protective
