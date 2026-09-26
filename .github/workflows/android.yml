@@ -39,7 +39,7 @@ jobs:
       run: chmod +x gradlew
 
     - name: Retrieve version name
-      run: echo "VERSION_NAME=$(date "+%Y%m%d")_$(echo ${{ github.sha }} | head -c 7)" >> $GITHUB_ENV
+      run: echo "VERSION_NAME=$(date "+%Y%m%d")_$(echo ${{ github.event.pull_request.head.sha || github.sha }} | head -c 7)" >> $GITHUB_ENV
 
     - name: Retrieve version code
       run: echo "VERSION_CODE=$(cat ${{ github.workspace }}/app/build.gradle.kts | grep "versionCode" | grep -Eo "[0-9]+")" >> $GITHUB_ENV
