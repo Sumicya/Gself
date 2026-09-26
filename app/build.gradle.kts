@@ -16,16 +16,9 @@ android {
     }
 
     buildTypes {
-        debug {
-            // debug 也走 R8：把没用到的那 90%+ kotlin-stdlib 裁掉，
-            // 同时保持默认 debug 签名（可直接安装），不再需要手动 apksigner。
-            isMinifyEnabled = true
-            isShrinkResources = true
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-        }
-        release {
-            // 正式发布用：R8 裁剪 + 未签名。
-            // 入口类由 proguard-rules.pro 保留（LSPosed 按类名字符串加载）。
+        // debug / release 同一套裁剪（入口类由 proguard-rules.pro 保住，LSPosed 按类名字符串加载）。
+        // 唯一差别是签名：debug 用默认 debug 证书可直接装，release 产出未签名包、本地签。
+        configureEach {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")

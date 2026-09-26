@@ -19,7 +19,7 @@ pkg install -y openjdk-21 apksigner termux-tools
 
 ## 签名
 
-仓库里带了脚本，一条命令搞定（首次运行会自动生成密钥库并提示设密码）：
+仓库里带了脚本，一条命令搞定（首次运行自动生成密钥库并提示设密码）：
 
 ```bash
 git clone https://github.com/Sumicya/fcmself.git
@@ -27,53 +27,31 @@ cd fcmself
 ./scripts/sign-apk.sh ~/下载/fcmself-<版本>-unsigned.apk
 ```
 
-等价的手动命令：
+`~/fcmself.jks` 丢了就再也无法覆盖安装旧版本，**生成后务必备份**。脚本做的事看它自己就行
+（61 行，就三步：没有密钥库就生成 → `apksigner sign` → `apksigner verify --print-certs`）。
 
-```bash
-# 1) 生成密钥库（只做一次；fcmself.jks 丢了就再也无法覆盖安装旧版本，务必备份）
-keytool -genkeypair -v -keystore ~/fcmself.jks -alias fcmself \
-  -keyalg RSA -keysize 2048 -validity 10000 \
-  -dname "CN=fcmself, OU=dev, O=sumicya, C=SG"
+安装：`termux-open ~/fcmself-signed.apk`（调起系统安装器），已 root 也可以
+`su -c pm install -r ~/fcmself-signed.apk`。
 
-# 2) 签名
-apksigner sign --ks ~/fcmself.jks --ks-key-alias fcmself \
-  --out ~/fcmself-signed.apk ~/fcmself-unsigned.apk
-
-# 3) 校验
-apksigner verify --print-certs -v ~/fcmself-signed.apk
-```
-
-安装：`termux-open ~/fcmself-signed.apk`（调起系统安装器），已 root 也可以 `su -c pm install -r ~/fcmself-signed.apk`。
-
-关于 zipalign：Termux 没有 `zipalign` 包，但 AGP 在打包阶段已经做过对齐，`apksigner` 签名会保持对齐，
-所以不需要单独跑。（如果以后想自己核对，需要装 Android SDK build-tools，见下。）
+不需要单独跑 zipalign：AGP 打包阶段已对齐，`apksigner` 签名保持对齐（Termux 也没有 zipalign 包）。
 
 ## 可选：完全在 Termux 里构建
 
-能跑，但重（Android SDK + Gradle 发行版约 2–4 GB，手机上编译很慢）。只在不想依赖 CI 时才需要。
+能跑，但重（Android SDK + Gradle 发行版约 2–4 GB，手机上编译很慢）。只在不想依赖 CI 时才需要：
 
 ```bash
 pkg install -y openjdk-21 git unzip
-
-# Android SDK 命令行工具（下面这个文件名/版本号请以 developer.android.com 上的最新链接为准，
-# 我这边访问不到 dl.google.com，没法核实当前版本号）
-mkdir -p ~/android-sdk/cmdline-tools && cd ~/android-sdk/cmdline-tools
-curl -LO https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
-unzip -q commandlinetools-linux-*.zip
-mv cmdline-tools latest
-
+# 从 developer.android.com/studio 拿 commandlinetools-linux 最新链接，
+# 解压成 ~/android-sdk/cmdline-tools/latest，然后：
 export ANDROID_HOME="$HOME/android-sdk"
 export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
 yes | sdkmanager --licenses
 sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
 
-# 构建（首次会下载 Gradle 9.6.0 bin 发行包，约 130 MB）
-cd ~
 git clone https://github.com/Sumicya/fcmself.git
 cd fcmself
 ./gradlew assembleRelease
-
 ./scripts/sign-apk.sh app/build/outputs/apk/release/app-release-unsigned.apk
 ```
 
-`ANDROID_HOME` / `PATH` 那两行建议写进 `~/.bashrc`，否则新开 shell 会找不到 SDK。
+`ANDROID_HOME` / `PATH` 两行写进 `~/.bashrc`，否则新开 shell 找不到 SDK。
