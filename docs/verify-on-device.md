@@ -122,7 +122,7 @@ su -c "logcat -d | grep -iE '<包名>|c2dm|Background execution|not delivering|s
 
 ## 8. 1.0.0 需要重点验的两处（都是刻意砍掉的角）
 
-1. **appOp 不再改写**（旧版把 `OP_NONE` 抬成 `OP_POST_NOTIFICATION`）。
+1. **appOp 不再改写**（旧版把 `OP_NONE` 抬成 `OP_POST_NOTIFICATION`）—— **已验通**：通知照常弹出并被 `Keep notification` 保住，force-stop 后推送照常唤醒应用。
    验法：`am force-stop` 后推送，看通知能否弹出。若 ② 有日志、③ 没结果，且
    `dumpsys notification` 显示通知被 post 但没显示 → 可能就是缺这一改，按 `Fixes.kt` 里
    `ponytail:` 注释的路径加回来。
@@ -134,7 +134,7 @@ su -c "logcat -d | grep -iE '<包名>|c2dm|Background execution|not delivering|s
 | 项目 | 状态 |
 | --- | --- |
 | 1.0.0 冻结态链路 | **已验通**（OnePlus/ColorOS，build `20260926_1edb471`，详见第 11 节）：载入 / hook 装配 / 开机闸门 / `shouldProxy bypass` / `No Intercept` / `Add FLAG_INCLUDE_STOPPED_PACKAGES` / `unfreeze` / `Keep notification` 全命中，通知被保住 |
-| 1.0.0 force-stop 唤醒 | **未验通**：两次尝试零日志、进程未起。分辨方法与 appOp 回退方案见第 11 节 |
+| 1.0.0 force-stop 唤醒 | **已验通**（2026-09-26，OnePlus/ColorOS，nagramx fork）：`stopped=true` 下推送以新 pid 拉起应用，证据见第 11 节 |
 | 介入判据（`Push`） | 单测覆盖（`PushTest`）：action 分类 + 从散字符串实参里认包名 |
 | 参数按类型/按值识别 | **未验证**：无 JVM 单测（要真 Intent / 真 ROM 类），只能靠第 1 节的 `hook target:` 行与真机日志 |
 | release（R8）产物 | **未验证**：真机一直装 debug-signed，release 只过了 CI 的入口类 dex 检查 |
@@ -146,27 +146,40 @@ su -c "logcat -d | grep -iE '<包名>|c2dm|Background execution|not delivering|s
 - ROM 名称与版本、GMS 版本号、LSPosed 版本、Android 版本
 - 目标应用包名 + 「杀掉应用 → 推送」的复现步骤
 
-## 11. 真机现状（2026-09-26，OnePlus/ColorOS，nagramx fork）
+## 11. 真机现状（2026-09-26，OnePlus/ColorOS，nagramx fork，build `20260926_1edb471`）
 
-冻结态（`stopped=false`）整条链路命中，`Keep notification` 也打出来了 —— 通知确实被保住。
+冻结态（`stopped=false`）与 force-stop 后（`stopped=true`）两条路都验通了。
+`stopped=true` 的关键证据 —— 推送把应用以新 pid 拉起来，拉起它的正是 c2dm 广播的接收器：
 
-**force-stop 后 `stopped=true` 的唤醒没验通**：两次尝试 `logcat -d -s FcmSelf` 全空、
-`ps -A` 无进程。广播 hook 是无条件打日志的（与 stopped 无关，`stopped=false` 时它照打），
-全空说明那条广播没进 `broadcastIntentLocked` —— 失败在 hook 上游。两种可能还没分开：
-
-1. 窗口内根本没有推送到达设备 → 测试作废，重测即可；
-2. 推送到了但被 ColorOS 整个掐掉 → 0.9.0（versionCode 56）与 1.0.0 在这条路上唯一的
-   ColorOS 相关差别是 **appOp 写入**，A/B 装回 56 就能定性。
-
-分辨只要一条计数：
-
-```bash
-su -c "logcat -c"          # 然后发消息，等 30 秒
-su -c "logcat -d | grep -icE 'c2dm|firebase|MESSAGING_EVENT'"   # 0 = 情况 1；>0 = 情况 2
+```
+12:29:41.314  FcmSelf: Add FLAG_INCLUDE_STOPPED_PACKAGES: fork.risin42.nagramx
+12:29:41.316  FcmSelf: unfreeze: fork.risin42.nagramx uid=10323（4 参签名）
+12:29:41.317  FcmSelf: No Intercept: fork.risin42.nagramx
+12:29:41.322  ActivityManager: Start proc 24130:fork.risin42.nagramx/u0a323
+              for broadcast {fork.risin42.nagramx/com.google.firebase.iid.FirebaseInstanceIdReceiver}
 ```
 
-定性为情况 2 时的回退方案：把 appOp 写回 `OP_POST_NOTIFICATION`，取值规则用
-「紧跟 `Bundle bOptions` 之前的那个 int」，不要用 0.9.0 的硬编码下标 13
-（`intent@3` 之后依次是 requestCode@7 / userId@11 / flags@12 / appOp@13，换 ROM 会漂）。
+同时 `Keep notification` 也打出来了 —— 删掉 appOp 改写不影响通知。
+
+**空日志不等于失败，推送有延迟**：本轮多个 30 秒窗口里 `grep -icE 'c2dm|firebase'` 全是 0，
+但应用最后还是被拉起来了（`stopped=` 自己从 true 变回 false）—— force-stop 之后第一条推送迟到，
+30 秒窗口抓不到它。广播 hook 是无条件打日志的（与 stopped 无关），所以「全空」只说明
+这段时间广播没进 `broadcastIntentLocked`，不说明模块没生效。
+
+测这条等 **2–5 分钟**，并且用下面这条自打标签的循环抓（每窗自带时间戳，粘贴不会错位）：
+
+```bash
+su -c 'logcat -c; for i in $(seq 10); do sleep 30; echo "=== 第 $i 个 30 秒 $(date +%H:%M:%S) ===";
+  echo -n "c2dm/firebase 计数: "; logcat -d | grep -icE "c2dm|firebase|MESSAGING_EVENT";
+  logcat -d -s FcmSelf | tail -3; dumpsys package <目标包名> | grep -m1 -o "stopped=[a-z]*";
+  logcat -c; done'
+```
+
+计数为 0 只表示「这会儿还没到」；判失败要看 5 分钟后 `stopped=` 是否仍为 true、
+且 `FcmSelf` 一行都没有。
+
+备忘：若将来某台机器确实需要写 appOp，取值用「紧跟 `Bundle bOptions` 之前的那个 int」，
+不要用 0.9.0 的硬编码下标 13（`intent@3` 之后依次是 requestCode@7 / userId@11 /
+flags@12 / appOp@13，换 ROM 会漂）。本机不需要。
 
 已修：`Boot Complete` 双打（`finishBooting` 在该机命中两次，隔 2 秒），见 `89eded0`。
