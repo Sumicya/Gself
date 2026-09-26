@@ -31,10 +31,10 @@
   只留介入判据一份 `PushTest`（判据是全模块单一支点，判错了就是全放行或全不放行）
 - 构建不再需要 `-parameters` / `javaParameters`（参数名兜底已删）
 
-> CI workflow 本轮**未改动**：改 `.github/workflows/` 需要 `workflows` 权限，GitHub App 推不动。
-> 两处建议留给人手：① 删掉「构建失败往 PR 贴日志评论」那一步与随之而来的
+> CI workflow 两处收尾（改 `.github/workflows/` 要 `workflows` 权限，GitHub App 推不动，
+> v1.0.0 之后由人工落地）：① 删掉「构建失败往 PR 贴日志评论」那一步与随之而来的
 > `pull-requests: write` 权限（日志已经在 job summary 里，不值得为它扩大仓库权限）；
-> ② 步骤注释里的「参数下标解析的单元测试」已不准确，现在是介入判据（`PushTest`）。
+> ② 步骤注释里的「参数下标解析的单元测试」改为介入判据（`PushTest`）。
 
 ### 换上的
 

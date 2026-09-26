@@ -23,8 +23,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      # 构建失败时需要往 PR 贴日志评论
-      pull-requests: write
     steps:
     - uses: actions/checkout@v7
 
@@ -48,7 +46,7 @@ jobs:
       shell: bash
       run: |
         set -o pipefail
-        # test 放在最前：参数下标解析的单元测试不通过就不必继续构建
+        # test 放在最前：介入判据（PushTest）不通过就不必继续构建
         ./gradlew -Pfcmself.versionName="${{ env.VERSION_NAME }}" test assembleRelease assembleDebug 2>&1 | tee build.log
 
     - name: Rename artifacts
@@ -99,19 +97,3 @@ jobs:
           tail -n 150 build.log
           echo '```'
         } >> "$GITHUB_STEP_SUMMARY"
-
-    - name: Post build log tail to PR on failure
-      if: failure() && github.event_name == 'pull_request'
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      shell: bash
-      run: |
-        {
-          echo '### Gradle build log (tail 120)'
-          echo '```'
-          tail -n 120 build.log
-          echo '```'
-        } > /tmp/build-log-tail.md
-        gh pr comment "${{ github.event.pull_request.number }}" \
-          --repo "${{ github.repository }}" \
-          --body-file /tmp/build-log-tail.md
