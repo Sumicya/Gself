@@ -5,12 +5,12 @@
 ## 1.0.0 —— 推倒重写
 
 > 上一轮（0.9.0）的产物整体删除：`git rm` 掉 2501 行 Kotlin（含 559 行测试）后从零重写。
-> 新实现 **543 行主代码 + 56 行测试，4 个文件，1 个包**（原来 17 个文件、4 层包）。
+> 新实现 **548 行主代码 + 56 行测试，4 个文件，1 个包**（原来 17 个文件、4 层包）。
 > 规范：[ponytail](https://github.com/DietrichGebert/ponytail) ultra——
 > 最好的代码是没写的代码，删除优先于新增，刻意砍掉的角用 `ponytail:` 注释标明代价与加回条件。
 > 本轮允许行为调整，不保证与 0.9.0 逐点一致。
 
-### 删掉的（2501 → 543 行）
+### 删掉的（2501 → 548 行）
 
 - **`ReconnectManagerFix`（275 行）**：GMS 心跳/重连倒计时修复，全仓库最复杂的一块
   （自动发现 timer 类、反射改倒计时、诊断日志转发），也是唯一跑在 GMS 进程里的 Hook 组。
@@ -52,26 +52,19 @@
   （0.9.0 的验证清单里这两处标着「无法直接观测」）
 - 版本 0.9.0 → 1.0.0，versionCode 56 → 60，入口类仍是 `XposedMain`（CI 的 dex 校验查的就是这个字符串，改名要动 workflow 权限，不值得）
 
-### 刻意砍掉的角（代码里都有 `ponytail:` 注释）
+### 刻意砍掉的角
 
-- **不再改写 appOp**（旧版 `OP_NONE` → `OP_POST_NOTIFICATION`）。原因有两条：
-  一是 `broadcastIntentLocked` 里 appOp 前面排着 `requestCode` / `userId` / `flags` 三个 int，
-  没有任何「按类型/按位置」的规则能可靠认出它——0.9.0 那种「版本候选表 + 类型校验」正是本轮要删的东西，
-  而「intent 之后第一个 int」这条看似优雅的规则实际会命中 `requestCode@7`（appOp 在 @13），
-  是个会静默改错参数的 bug；二是唤醒停止态应用靠的是 `FLAG_INCLUDE_STOPPED_PACKAGES`（AOSP 明文语义），
-  appOp 那一改是上游 fcmfix 的传闻逻辑，方向还可疑（`OP_NONE` = 不做 op 检查，
-  改成 `OP_POST_NOTIFICATION` 反而多一道检查）。加回条件与定位规则写在注释里
-- **不再补调 `checkAbnormalBroadcastInQueueLocked`**（MIUI 12/13 放行后留一条「异常广播」记录）。
-  补调要按名字反射调一个签名未知的 ROM 私有方法，只为留痕；这一删也让 MIUI 12/13 与 HyperOS
-  三个点变成完全同形状，才能进同一张表
-- **通知取消原因按值认**：别的 int 参数恰好等于 8 时会误拦一次取消（只影响「通知没被清掉」，
-  不影响投递）。升级路径写在注释里
-- **bypass 日志全局节流**（旧版按包名分别节流）：60 秒内第二个应用的 bypass 日志被吞掉，只留计数。
-  省下 `ConcurrentHashMap<String, LongArray>` + `synchronized` 那 25 行
-- **`intent` 字段不做反射缓存**：没有该字段的宿主类每次调用付一次 `NoSuchFieldException`。
-  这些挂载点是 ROM 的自启动闸门、不在最热路径上
-- **`whiteApps` 的 GMS 移除沿用上游实测逻辑**，该列表语义未被证实（若实为「允许后台的白名单」，
-  移除反而收紧）——真机核实前不动
+代价与加回条件都写在代码里的 `ponytail:` 注释旁边，这里只列清单，不复述理由
+（复述就是把复杂度当散文再塞回来一遍）：
+
+| 砍掉的角 | 位置 | 一句话代价 |
+| --- | --- | --- |
+| 不再改写 appOp | `Fixes.kt` `wakeStoppedApps` | 「intent 之后第一个 int」实际命中 `requestCode@7` 而非 `appOp@13`，会静默改错参数 |
+| 不再补调 `checkAbnormalBroadcastInQueueLocked` | `Fixes.kt` `autoStartFixes` | MIUI 少一条「异常广播」留痕；换来三个点同形状、能进同一张表 |
+| 通知取消原因按值认 | `Fixes.kt` `notificationFixes` | 别的 int 参数恰好等于 8 时误拦一次取消（只影响「通知没被清掉」） |
+| bypass 日志全局节流 | `Fixes.kt` `logBypass` | 60 秒内第二个应用的 bypass 日志被吞掉，只留计数 |
+| `intent` 字段不做反射缓存 | `Push.kt` `intentFieldOf` | 没有该字段的宿主类每次调用付一次 `NoSuchFieldException` |
+| **不再动 `whiteApps`** | `Fixes.kt` `miuiFixes` | 上游 fcmfix 连它一起移除 GMS + `ext.services`，但该列表语义从未被证实：若它其实是「允许后台的白名单」，移除是在**收紧**而不是放开。一条可能反向起作用的逻辑不该带着 |
 
 ### 保留
 

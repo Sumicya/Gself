@@ -170,14 +170,14 @@ fun Hook.miuiFixes() {
             val self = chain.thisObject
             if (self != null) {
                 strings(self, "mSystemBlackList")?.remove(GMS)
-                // ponytail: whiteApps 的移除沿用上游 fcmfix 的实测逻辑，该列表语义未被证实
-                //             （若实为「允许后台的白名单」，移除反而收紧）。真机核实前不动。
-                strings(self, "whiteApps")?.removeAll { it == GMS || it == EXT_SERVICES }
                 strings(self, "mDataWhiteList")?.let { if (GMS !in it) it.add(GMS) }
                 trace("MilletPolicy 名单已调整")
             }
             null
         }
+        // ponytail: 不再动 whiteApps（上游 fcmfix 时代连它一起移除 GMS + ext.services）。
+        //             该列表语义始终未被证实：若它其实是「允许后台的白名单」，移除 GMS 是在**收紧**
+        //             而不是放开——一条可能反向起作用的逻辑，不该带着。真机确认它是黑名单再加回来。
     }
 }
 
@@ -311,7 +311,6 @@ private const val NMS_INJECTOR = "com.android.server.notification.NotificationMa
 private const val NMS_IMPL = "com.android.server.notification.NotificationManagerServiceImpl"
 private const val GMS_CONTROL = "gms_control"
 private const val GMS = "com.google.android.gms"
-private const val EXT_SERVICES = "com.google.android.ext.services"
 private const val WAKELOCK_TAG = "FCMXX"
 private const val WAKELOCK_OWNER = "FcmSelf"
 private const val BYPASS_LOG_INTERVAL = 60_000L
