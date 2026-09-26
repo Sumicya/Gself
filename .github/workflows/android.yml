@@ -6,9 +6,9 @@
 #
 # 要点：
 #   1. 单变体：产物是 app-release-unsigned.apk / app-debug.apk
-#   2. 先跑 ./gradlew test，参数下标解析的单元测试不过就不继续构建
-#   3. 构建失败时把日志尾部写进 job summary，并在 PR 上贴评论
-#   4. 触发 push 到 master 与 pull_request 到 master 两种事件
+#   2. 先跑 ./gradlew test，介入判据（PushTest）不过就不继续构建
+#   3. 校验 R8 没有裁掉入口类（裁掉了构建仍然成功，但模块会静默不加载）
+#   4. 构建失败时把日志尾部写进 job summary
 
 name: Android CI
 
