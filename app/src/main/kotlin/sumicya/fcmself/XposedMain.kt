@@ -65,13 +65,19 @@ class XposedMain : XposedModule() {
     }
 
     private companion object {
-        /** system_server 内安装的挂载点组，顺序即安装顺序。 */
-        val FIXES: List<Pair<String, Fixes>> = listOf(
-            "唤醒已停止的应用" to ::wakeStoppedApps,
-            "自启动限制" to ::autoStartFixes,
-            "通知不被自动清除" to ::notificationFixes,
-            "MIUI 电源策略" to ::miuiFixes,
-            "ColorOS 后台代理" to ::oplusFixes,
+        /**
+         * system_server 内安装的挂载点组，顺序即安装顺序。
+         *
+         * 写成 `{ wakeStoppedApps() }` 而不是 `::wakeStoppedApps`：顶层扩展函数的 callable
+         * reference 类型是 `(Hook) -> Unit`，不会适配成 [Fixes] 的 `Hook.() -> Unit`
+         * （lambda 会适配，引用不会，编译器报 receiver type mismatch）。
+         */
+        val FIXES = listOf<Pair<String, Fixes>>(
+            "唤醒已停止的应用" to { wakeStoppedApps() },
+            "自启动限制" to { autoStartFixes() },
+            "通知不被自动清除" to { notificationFixes() },
+            "MIUI 电源策略" to { miuiFixes() },
+            "ColorOS 后台代理" to { oplusFixes() },
         )
     }
 }
