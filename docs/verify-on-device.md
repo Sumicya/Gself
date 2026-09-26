@@ -133,7 +133,8 @@ su -c "logcat -d | grep -iE '<包名>|c2dm|Background execution|not delivering|s
 
 | 项目 | 状态 |
 | --- | --- |
-| 1.0.0 全部行为 | **未验证**：本轮删掉 2501 行后从零重写，还没上真机。基线是 0.9.0 在 OnePlus PLC110 / ColorOS（Android 16, API 36）/ GMS 26.33.32 上全链路通过 |
+| 1.0.0 冻结态链路 | **已验通**（OnePlus/ColorOS，build `20260926_1edb471`，详见第 11 节）：载入 / hook 装配 / 开机闸门 / `shouldProxy bypass` / `No Intercept` / `Add FLAG_INCLUDE_STOPPED_PACKAGES` / `unfreeze` / `Keep notification` 全命中，通知被保住 |
+| 1.0.0 force-stop 唤醒 | **未验通**：两次尝试零日志、进程未起。分辨方法与 appOp 回退方案见第 11 节 |
 | 介入判据（`Push`） | 单测覆盖（`PushTest`）：action 分类 + 从散字符串实参里认包名 |
 | 参数按类型/按值识别 | **未验证**：无 JVM 单测（要真 Intent / 真 ROM 类），只能靠第 1 节的 `hook target:` 行与真机日志 |
 | release（R8）产物 | **未验证**：真机一直装 debug-signed，release 只过了 CI 的入口类 dex 检查 |
@@ -144,3 +145,28 @@ su -c "logcat -d | grep -iE '<包名>|c2dm|Background execution|not delivering|s
 - 从重启开始的完整 `FcmSelf` 日志（尤其 `hook target:` 与所有 `hook skip` 行）
 - ROM 名称与版本、GMS 版本号、LSPosed 版本、Android 版本
 - 目标应用包名 + 「杀掉应用 → 推送」的复现步骤
+
+## 11. 真机现状（2026-09-26，OnePlus/ColorOS，nagramx fork）
+
+冻结态（`stopped=false`）整条链路命中，`Keep notification` 也打出来了 —— 通知确实被保住。
+
+**force-stop 后 `stopped=true` 的唤醒没验通**：两次尝试 `logcat -d -s FcmSelf` 全空、
+`ps -A` 无进程。广播 hook 是无条件打日志的（与 stopped 无关，`stopped=false` 时它照打），
+全空说明那条广播没进 `broadcastIntentLocked` —— 失败在 hook 上游。两种可能还没分开：
+
+1. 窗口内根本没有推送到达设备 → 测试作废，重测即可；
+2. 推送到了但被 ColorOS 整个掐掉 → 0.9.0（versionCode 56）与 1.0.0 在这条路上唯一的
+   ColorOS 相关差别是 **appOp 写入**，A/B 装回 56 就能定性。
+
+分辨只要一条计数：
+
+```bash
+su -c "logcat -c"          # 然后发消息，等 30 秒
+su -c "logcat -d | grep -icE 'c2dm|firebase|MESSAGING_EVENT'"   # 0 = 情况 1；>0 = 情况 2
+```
+
+定性为情况 2 时的回退方案：把 appOp 写回 `OP_POST_NOTIFICATION`，取值规则用
+「紧跟 `Bundle bOptions` 之前的那个 int」，不要用 0.9.0 的硬编码下标 13
+（`intent@3` 之后依次是 requestCode@7 / userId@11 / flags@12 / appOp@13，换 ROM 会漂）。
+
+已修：`Boot Complete` 双打（`finishBooting` 在该机命中两次，隔 2 秒），见 `89eded0`。
