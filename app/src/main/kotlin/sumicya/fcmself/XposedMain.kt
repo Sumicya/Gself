@@ -3,6 +3,8 @@ package sumicya.fcmself
 import android.os.Build
 import android.util.Log
 
+import java.util.concurrent.atomic.AtomicBoolean
+
 import io.github.libxposed.api.XposedInterface
 import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedModuleInterface
@@ -55,8 +57,11 @@ class XposedMain : XposedModule() {
         if (!installed) bootLater()
     }
 
+    /** finishBooting 在部分 ROM 上会命中多次（真机日志：两次，隔 2 秒），闸门只起一次表。 */
+    private val bootScheduled = AtomicBoolean()
+
     private fun bootLater() {
-        if (booted) return
+        if (!bootScheduled.compareAndSet(false, true)) return
         Thread({
             Thread.sleep(BOOT_DELAY_MS)
             booted = true
