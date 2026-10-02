@@ -1,0 +1,11 @@
+Gself —— 合并自 fcmself、GooglePasswordManagerUnlock、GboardHook。
+
+本仓库整体采用 GNU General Public License v3.0 or later（GPL-3.0-or-later）。
+原因：并入的 chenyue404/GboardHook 以 GPL-3.0 发布，合并作品须同证。
+
+完整许可文本见 https://www.gnu.org/licenses/gpl-3.0.txt
+
+上游归属：
+- fcmself（Sumicya）—— 原「仅供学习交流」，并入后随本仓 GPL-3.0。
+- GooglePasswordManagerUnlock（yangFenTuoZi）—— 通行密钥解限逻辑。
+- GboardHook（chenyue404）—— GPL-3.0，剪贴板逻辑。

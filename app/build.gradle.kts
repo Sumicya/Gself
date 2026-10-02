@@ -7,12 +7,15 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "sumicya.fcmself"
+        // 对外身份是 Gself；内部包名（namespace / 入口类）不变，CI 的 R8 入口校验仍查 sumicya/fcmself/XposedMain
+        applicationId = "sumicya.gself"
         minSdk = 29
         targetSdk = 36
-        versionCode = 60
-        // CI 通过 -Pfcmself.versionName 注入「日期_短SHA」版本；本地构建回落到语义版本
-        versionName = providers.gradleProperty("fcmself.versionName").getOrElse("1.0.0")
+        // 构建数：CI 注入 github.run_number（第几次 CI 构建），本地回落到 gradle.properties。
+        // versionCode = 构建数；versionName = 26.10.1.<构建数>。
+        val buildNumber = providers.gradleProperty("fcmself.buildNumber").getOrElse("1").toInt()
+        versionName = "26.10.1.$buildNumber"
+        versionCode = buildNumber
     }
 
     buildTypes {
@@ -50,6 +53,7 @@ kotlin {
 
 dependencies {
     compileOnly(libs.libxposed.api)
+    implementation(libs.dexkit)
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.platform.launcher)
 }

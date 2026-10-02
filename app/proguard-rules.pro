@@ -10,3 +10,7 @@
 # `hook skip <组名>: <异常>` 是排查「这台设备有没有这个挂载点」的唯一线索，
 # 异常类名被混淆成「q1:」就没意义了——只保留类名，不保留成员。
 -keepnames class sumicya.fcmself.Hook$Missing
+
+# DexKit 靠反射/JNI 访问自身内部，release R8 不能裁
+-keep class org.luckypray.dexkit.** { *; }
+-keep class org.luckypray.dexkit.**$* { *; }

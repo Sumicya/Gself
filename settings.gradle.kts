@@ -22,5 +22,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "fcmself"
+rootProject.name = "Gself"
 include(":app")
