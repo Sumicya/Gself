@@ -23,7 +23,7 @@ fcmself（推送修复）、GooglePasswordManagerUnlock（通行密钥解限）�
 ./gradlew test assembleDebug   # 产物：app/build/outputs/apk/debug/app-debug.apk
 ```
 
-CI 跑单测 + 编译 debug + 校验 R8 入口类，上传一个 debug 包（零 secrets）。真机验证见 [`docs/verify-on-device.md`](docs/verify-on-device.md)。
+CI 对 `main` 的 push 和 PR 运行单测、debug 编译及 R8 入口类检查，并上传 debug 包（无需 secrets）。`main` 成功构建或从 `main` 手动运行 `Android CI` 成功后，工作流会清理自身生成的 GitHub Actions 产物，只保留最新 1 个；范围包含 PR 与其他分支的历史产物（包括旧 `fcmself-*` 命名），不触碰其他工作流、Release 或标签。每个产物设 5 天过期兜底；PR 检查不执行清理。清理脚本见 [`.github/scripts/cleanup_artifacts.py`](.github/scripts/cleanup_artifacts.py)。真机验证见 [`docs/verify-on-device.md`](docs/verify-on-device.md)。
 
 ## 许可证
 

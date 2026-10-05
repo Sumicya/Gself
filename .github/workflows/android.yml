@@ -1,5 +1,5 @@
 # Android CI —— 「零 secrets」配置：仓库不需要任何签名密钥 / 发布 token。
-# CI 只做三件事——跑单元测试、编译 debug 包、上传一个产物：
+# build job 只做三件事——跑单元测试、编译 debug 包、上传一个产物；清理由独立 job 完成：
 #   - Gself-<版本>-debug.apk ：debug 签名，可直接安装测试
 # 本地签名步骤见 docs/build-and-sign-termux.md。
 #
@@ -8,6 +8,7 @@
 #   2. 先跑 ./gradlew test，介入判据（PushTest）不过就不继续构建
 #   3. 校验 R8 没有裁掉入口类（裁掉了构建仍然成功，但模块会静默不加载）
 #   4. 构建失败时把日志尾部写进 job summary
+#   5. main 成功构建后只保留 Android CI 工作流最新 1 个 artifact；PR 不执行清理
 
 name: Android CI
 
@@ -16,6 +17,7 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+  workflow_dispatch: {}
 
 jobs:
   build:
@@ -75,6 +77,7 @@ jobs:
       with:
         name: Gself-${{ env.VERSION_NAME }}
         path: ${{ github.workspace }}/app/build/outputs/apk/debug/Gself-${{ env.VERSION_NAME }}-debug.apk
+        retention-days: 5
 
     - name: Dump build log tail on failure
       if: failure()
@@ -86,3 +89,24 @@ jobs:
           tail -n 150 build.log
           echo '```'
         } >> "$GITHUB_STEP_SUMMARY"
+
+  cleanup_artifacts:
+    name: Clean old CI artifacts
+    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: gself-artifact-retention
+      cancel-in-progress: false
+    permissions:
+      actions: write
+      contents: read
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Retain latest Android CI artifact
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        KEEP_ARTIFACT: "1"
+      run: python3 .github/scripts/cleanup_artifacts.py
