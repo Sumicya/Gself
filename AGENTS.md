@@ -1,8 +1,12 @@
 # Gself 项目规则
 
-本文件承载本仓库常驻规则。全局工程规范以 [Sumicya/selfs 的 GLOBAL.md](https://github.com/Sumicya/selfs/blob/main/GLOBAL.md) 为准。
+本文件承载本仓库常驻规则。全局工程规范以 [Sumicya/selfs 的 GLOBAL.md](https://github.com/Sumicya/selfs/blob/main/GLOBAL.md) 为唯一权威。
 
-## 全局规范同步（2026-10-05，第十五版）
+- 规范最新版：<https://github.com/Sumicya/selfs/blob/main/GLOBAL.md>
+- 本仓库上次同步 = 第十六版
+- 仓库名：`Gself`（原 `fcmself` 已迁至此名；文档与 CI 对外一律写 Gself）
+
+## 全局规范同步（2026-10-05，第十六版）
 
 以下规则继承自 Sumicya/selfs 的 GLOBAL.md，适用于本仓库：
 
@@ -27,7 +31,7 @@
 
 ## 本项目核对清单
 
-- **版本**：五段 `yy.m.d.当日序号.总序号`，由 Android CI 的「Compute release version」一处算定（日期取本次运行的 `created_at`），构建配置只读 `-PversionName` / `-PversionCode`，不自己算日期。
+- **版本**：五段 `yy.m.d.当日序号.总序号`（第四段当日序号、第五段总序号），由 Android CI 的「Compute release version」一处算定（日期取本次运行的 `created_at`），构建配置只读 `-PversionName` / `-PversionCode`，不自己算日期。
   - 总序号 = `versionCode` = `github.run_number`（本工作流第几次运行，单调递增，且天然大于设备上旧版的 versionCode）。
   - 当日序号 = 当天 main 分支出包运行（push / workflow_dispatch）中 run 号不大于本次的个数，含本次、从 1 起；PR 与其它分支的运行不占号。
   - 非发行构建（PR 检查、手动构建其它分支、本地构建）写 `dev-<构建数>`，不伪造发行序号。
@@ -38,5 +42,6 @@
 - **下载与安装命令**：按 README「下载与安装」一节给，逐条可跑（id 在命令里自己算、产物按前缀过滤、`su -c cp` 到 `/data/local/tmp` 再装），末尾带本地清理。
 - **术语表**：`docs/glossary.md`；新增术语时同步。
 - **文档同步点**：`module.prop` 的 `minApiVersion`、`scope.list` 的作用域、README 的功能清单与代码三方保持一致。
+- **内部包名**：历史可能仍为 `sumicya.fcmself`（改包名会破坏已装模块）；对外名一律 Gself。
 
-本仓库上次同步 = 第十五版。
+规范指针：按 `GLOBAL.md` 最新版执行；本文件只保留本仓库专属条目，不复制全局规则。
