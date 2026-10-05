@@ -28,7 +28,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -137,7 +137,7 @@ jobs:
     # 只在 main 出包成功后清理；PR 检查不执行，写权限不进未信任 PR 代码
     if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     # 与同仓库的其它清理串行，不并发删（避免按过期列表删掉更新的产物）
     concurrency:
