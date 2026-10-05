@@ -43,7 +43,7 @@
 - **构建**：只在 CI 构建（Android SDK / JDK 不常备）；本地构建产出非发行版本，不能当发行版引用。
 - **下载与安装命令**：按 `GLOBAL.md`「下载与安装命令」一节，在每轮汇报里给可复制的命令块（run-id / artifact-id 在命令里自己算、产物按前缀过滤 `Gself-<五段版本>`、`su -c cp` 到 `/data/local/tmp` 再 `pm install`、末尾带本地清理）；本仓库不发 Release，不写 release 下载入口。
 - **术语表**：`docs/glossary.md`；新增术语时同步。
-- **文档同步点**：`module.prop` 的 `minApiVersion`、`scope.list` 的作用域、README 的功能清单与代码三方保持一致。
+- **文档同步点**：`module.prop` 的 `minApiVersion`、`scope.list` 的作用域、README 的功能清单与代码三方保持一致；平台要求（minSdk 36 / 只做新包）以 `app/build.gradle.kts` 为准，README 与 `module.prop` 同步。
 - **内部包名**：历史可能仍为 `sumicya.fcmself`（改包名会破坏已装模块）；对外名一律 Gself。
 
 规范指针：按 `GLOBAL.md` 最新版执行；本文件只保留本仓库专属条目，不复制全局规则。

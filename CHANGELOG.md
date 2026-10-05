@@ -51,9 +51,13 @@
   查 `aosp-mirror/platform_frameworks_base` 的 `services/core/java/com/android/server/am/`：`BroadcastController.java`
   首次出现在 `android-16.0.0_r1`，`android-14.0.0_r1` 与 `android-15.0.0_r1` 的 am 包下都没有这个文件。
   结论改为「Android 16+（API 36）在 `BroadcastController`，Android 10–15 在 AMS」，同一台设备只挂一处、不做新旧双写。
-- **只做新包与不做降级**（第十七版）：推送唤醒不做逐档展开（只在运行期选一处挂载点），不支持的环境仍然明确拒绝
-  （两个类都不存在时由 `install()` 打出 `hook skip 推送唤醒`）；不擅自收窄兼容范围（minSdk 29 不变），
-  代价与加回条件照旧写在代码的 `ponytail:` 注释旁。
+- **只做新包与不做降级**（第十七版，已落地）：推送唤醒**只实现** Android 16 起的 `BroadcastController`，
+  删掉 Android 10–15 的 AMS 回退路径；`minSdk` 29 → 36，旧版本在安装时由系统明确拒绝，README 与 `module.prop`
+  写明「Android 16+」，不在文档里假装支持。ColorOS 解冻同理：只认当前 4 参 `unfreezeIfNeed` 签名，
+  不再做 3 参旧签名的逐档回退，签名对不上就打一条 `unfreeze 跳过：…`（功能不生效，不静默装作成功）。
+  最坏失败模式：类/方法不存在时 `install()` 打 `hook skip 推送唤醒`，整组不生效，不损坏系统。
+  与【Ponytail 与工程原则】「不擅自改变兼容范围」存在冲突，按权威顺序（主人当轮指示 = 规范高于一切）执行
+  更新的第十七版；若主人要保留 Android 10–15 兼容，回退点是本提交里删掉的那两段。
 - **滚动清理对象收窄**（主人批准）：保留名额只算发行对象（`Gself-<五段版本>` 与历史命名 `fcmself-*`），
   PR 的非发行构建 `Gself-dev-<构建数>` 不占名额、按 `retention-days: 5` 过期。原因是实测发现连续的 PR 运行
   会把最新发行产物挤出「最近 5 个」，下载入口会取不到包。

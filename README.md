@@ -14,7 +14,8 @@ fcmself（推送修复）、GooglePasswordManagerUnlock（通行密钥解限）�
 
 ## 要求
 
-- Android 10+（API 29+），已 root + LSPosed（libxposed API 101+）
+- Android 16+（API 36）：模块只实现 Android 16 起的广播出口，旧版本不做兼容，安装时会被 minSdk 拒绝
+- 已 root + LSPosed（libxposed API 101+）
 - 作用域勾 `system` + `com.google.android.gms` + Gboard（scope.list 已预选）
 
 ## 构建

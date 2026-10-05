@@ -71,6 +71,17 @@ jobs:
           require('gradleProperty("versionName")' in gradle, "app/build.gradle.kts 未从 -PversionName 读取版本名")
           require('gradleProperty("versionCode")' in gradle, "app/build.gradle.kts 未从 -PversionCode 读取版本号")
           require(not re.search(r'"\d+\.\d+\.\d+\.\d+', gradle), "app/build.gradle.kts 里写死了四段发行版本")
+
+          # 3b) 只做新包与不做降级：只实现 Android 16 起的广播出口，不双写旧出口；
+          #     不支持的环境在安装时明确拒绝（minSdk），文档不假装支持
+          fixes_path = root / "app" / "src" / "main" / "kotlin" / "sumicya" / "fcmself" / "Fixes.kt"
+          require(fixes_path.exists(), "缺少 Fixes.kt")
+          fixes = fixes_path.read_text(encoding="utf-8") if fixes_path.exists() else ""
+          require("minSdk = 36" in gradle, "minSdk 应为 36（只做新包：旧版本安装时明确拒绝）")
+          require('classOf(CONTROLLER)' in fixes, "推送唤醒未直接挂 BroadcastController（新机制）")
+          require("ActivityManagerService" not in fixes, "Fixes.kt 仍保留旧广播出口（AMS），违反只做新包")
+          readme = (root / "README.md").read_text(encoding="utf-8")
+          require("Android 16+" in readme, "README 未写明 Android 16+ 要求（不支持的环境要说明，不假装支持）")
           android = (root / ".github" / "workflows" / "android.yml").read_text(encoding="utf-8")
           require('"VERSION_NAME=' in android and '"VERSION_CODE=' in android, "android.yml 未一处算定并导出 VERSION_NAME / VERSION_CODE")
           require("github.run_number" in android, "android.yml 的总序号未使用 github.run_number")

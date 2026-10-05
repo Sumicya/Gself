@@ -9,7 +9,9 @@ android {
     defaultConfig {
         // 对外身份是 Gself；内部包名（namespace / 入口类）不变，CI 的 R8 入口校验仍查 sumicya/fcmself/XposedMain
         applicationId = "sumicya.gself"
-        minSdk = 29
+        // 只做新包（GLOBAL.md 第十七版）：广播出口只实现 Android 16+ 的 BroadcastController，
+        // 旧版本不做兼容，安装时由 minSdk 明确拒绝。
+        minSdk = 36
         targetSdk = 36
         // 发行版本（五段 yy.m.d.当日序号.总序号）由 CI 一处算定，这里只读，不自己算日期。
         // 取不到 = 非发行构建：名字带 dev- 前缀，绝不伪装成发行版本。

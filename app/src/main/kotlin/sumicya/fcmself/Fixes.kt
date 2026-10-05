@@ -24,11 +24,13 @@ import java.util.concurrent.atomic.AtomicReference
  * GMS 常常不带，ROM 又各自加了闸门，于是应用被划掉之后就再也收不到推送。
  */
 fun Hook.wakeStoppedApps() {
-    // 广播出口只有一处：Android 16+（API 36）在 BroadcastController，Android 10–15 在 AMS。
-    // 上游证据（aosp-mirror/platform_frameworks_base，services/core/java/com/android/server/am/）：
-    // BroadcastController.java 首次出现在 android-16.0.0_r1，android-14.0.0_r1 与 android-15.0.0_r1
-    // 的 am 包下都没有这个文件。同一台设备只挂一处，不做新旧双写（见 CHANGELOG 26.10.5）。
-    val entry = find(classIfExists(CONTROLLER) ?: classOf(AMS), "broadcastIntentLocked")
+    // 只做新包（GLOBAL.md 第十七版）：广播出口只实现 Android 16+（API 36）的 BroadcastController，
+    // 不写 Android 10–15 的旧出口、不做双路径回退。上游证据（aosp-mirror/platform_frameworks_base
+    // services/core/java/com/android/server/am/）：BroadcastController.java 首次出现于 android-16.0.0_r1，
+    // android-14.0.0_r1 与 android-15.0.0_r1 的 am 包下都没有这个文件。
+    // 不支持的环境由 minSdk = 36 在安装时明确拒绝；类/方法缺失时 [install] 打一条 `hook skip 推送唤醒`
+    // 后整组不生效（功能不生效，不会损坏系统）。
+    val entry = find(classOf(CONTROLLER), "broadcastIntentLocked")
     trace("hook target: ${entry.declaringClass.name}#${entry.name}(${entry.parameterCount})")
 
     hook(entry) { chain ->
@@ -113,24 +115,25 @@ private fun unfreeze(target: String?) {
     val lock = wakelock.get() ?: return
     if (target == null) return
     val uid = uidOf(target) ?: return
-    // 3 参与 4 参两代签名（ROM 在尾部加了 owner）：参数多的先试，试通就记住复用
+    // 只做新包（GLOBAL.md 第十七版）：只认当前 ColorOS 的 4 参签名（尾部带 owner），
+    // 不做 3 参旧签名的逐档回退；签名对不上就明确跳过，不静默装作解冻过。
     val known = knownUnfreeze
     val candidates = known?.let { listOf(it) } ?: lock.javaClass.declaredMethods
-        .filter { it.name == "unfreezeIfNeed" && it.parameterCount in 3..4 }
-        .sortedByDescending { it.parameterCount }
+        .filter { it.name == "unfreezeIfNeed" && it.parameterCount == 4 }
+    if (known == null && candidates.isEmpty()) {
+        trace("unfreeze 跳过：没有 4 参 unfreezeIfNeed 签名")
+        return
+    }
     for (method in candidates) {
-        val args = if (method.parameterCount == 4) {
-            arrayOf<Any?>(uid, WorkSource(), WAKELOCK_TAG, WAKELOCK_OWNER)
-        } else {
-            arrayOf<Any?>(uid, WorkSource(), WAKELOCK_TAG)
-        }
+        val args = arrayOf<Any?>(uid, WorkSource(), WAKELOCK_TAG, WAKELOCK_OWNER)
         if (runCatching { method.apply { isAccessible = true }.invoke(lock, *args) }.isSuccess) {
             // 只记「找到了可用签名」这一次，不每条推送打一行
-            if (knownUnfreeze == null) trace("unfreeze 可用（${method.parameterCount} 参签名）")
+            if (knownUnfreeze == null) trace("unfreeze 可用（4 参签名）")
             knownUnfreeze = method
             return
         }
     }
+    if (known == null) trace("unfreeze 跳过：4 参签名调用失败")
 }
 
 /** system Context 只为给包名换 uid（ColorOS 解冻用），入口跑在 system_server 里，直接取现成的。 */
@@ -156,8 +159,6 @@ private var knownUnfreeze: Method? = null
  * 以及 ColorOS 15 / OxygenOS 15 自造的 10020 / 10021。
  */
 private val BLOCKED_REASONS = setOf(NotificationListenerService.REASON_PACKAGE_CHANGED, 10020, 10021)
-
-internal const val AMS = "com.android.server.am.ActivityManagerService"
 
 private const val CONTROLLER = "com.android.server.am.BroadcastController"
 private const val STARTUP = "com.android.server.am.OplusAppStartupManager"

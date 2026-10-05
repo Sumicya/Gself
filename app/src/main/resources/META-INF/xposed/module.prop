@@ -3,6 +3,7 @@
 #
 # 代码按 libxposed API 102 编译（compileOnly io.github.libxposed:api:102.0.0），
 # 最低要求 101（API 102 是纯增量，不改变 101 的行为）。
+# 平台要求 Android 16+（API 36，minSdk 同样钉在 36）：只做新包，旧广播出口不实现。
 # 入口类名写在 java_init.list（sumicya.fcmself.XposedMain），作用域见 scope.list：
 # system（推送/通知/ColorOS）+ com.google.android.gms（通行密钥）+ Gboard（剪贴板）。
 minApiVersion=101
