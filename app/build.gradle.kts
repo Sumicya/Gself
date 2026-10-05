@@ -11,11 +11,12 @@ android {
         applicationId = "sumicya.gself"
         minSdk = 29
         targetSdk = 36
-        // 构建数：CI 注入 github.run_number（第几次 CI 构建），本地回落到 gradle.properties。
-        // versionCode = 构建数；versionName = 26.10.1.<构建数>。
+        // CI 固化 yy.m.d.当日序号.总序号；本地构建使用非发行开发版本。
         val buildNumber = providers.gradleProperty("fcmself.buildNumber").getOrElse("1").toInt()
-        versionName = "26.10.1.$buildNumber"
-        versionCode = buildNumber
+        val releaseName = providers.gradleProperty("versionName").orNull
+        val releaseCode = providers.gradleProperty("versionCode").orNull?.toIntOrNull()
+        versionName = releaseName ?: "0.0.0.0.$buildNumber"
+        versionCode = releaseCode ?: buildNumber
     }
 
     buildTypes {
