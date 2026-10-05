@@ -12,7 +12,10 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     permissions:
+      # 默认只读；「Compute release version」要查 run 历史，按规范加 actions: read。
+      # 出包（upload-artifact）不需要写权限。
       contents: read
+      actions: read
     steps:
     - uses: actions/checkout@v7
 
@@ -35,6 +38,19 @@ jobs:
         if [ "${{ github.event_name }}" = "push" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
           if [ "${{ github.ref }}" = "refs/heads/main" ]; then release=true; fi
         fi
+        # 总序号必须单调递增，但本工作流 2026-10-05 从 android.yml 改名成 build.yml 后
+        # GITHUB_RUN_NUMBER 归零（旧的 Android CI 工作流最后停在 run#127）。不写死现值，只用查法兜底：
+        #   repo_floor    = 本仓库所有工作流里最大的 run 号 + 1
+        #   artifact_floor = 现存发行产物（Gself-<五段版本>）名里第五段的最大值 + 1
+        # 两个都取不到时回落到本工作流自己的 run 号。发行与非发行构建共用这个总序号当 versionCode，
+        # 两种包互相覆盖安装都不会因版本号回退被拦。
+        repo_floor="$(( $(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?per_page=100" \
+          --jq '.workflow_runs[].run_number' | sort -n | tail -1) + 1 ))"
+        artifact_floor="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" \
+          --jq '[.artifacts[].name | select(test("^Gself-[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$"))]
+                | map(split(".") | .[4] | tonumber) | (max // 0) + 1' 2>/dev/null || echo 0)"
+        floor=$(( repo_floor > artifact_floor ? repo_floor : artifact_floor ))
+        total=$(( floor > GITHUB_RUN_NUMBER ? floor : GITHUB_RUN_NUMBER ))
         if [ "$release" = "true" ]; then
           stamp="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq '.created_at')"
           day="$(TZ=Asia/Shanghai date -d "$stamp" +%y.%-m.%-d)"
@@ -43,17 +59,19 @@ jobs:
           today="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/build.yml/runs?created=>=$since&per_page=100" \
             --jq '.workflow_runs[] | select((.event == "push" or .event == "workflow_dispatch") and .head_branch == "main") | .run_number' \
             | awk -v n="$GITHUB_RUN_NUMBER" '$1 <= n' | wc -l)"
-          name="$day.$today.$GITHUB_RUN_NUMBER"
+          name="$day.$today.$total"
         else
+          # PR / 其它分支：版本名不伪造发行序号，versionCode 仍用同一个总序号
           name="dev-$GITHUB_RUN_NUMBER"
         fi
         echo "VERSION_NAME=$name" >> "$GITHUB_ENV"
-        echo "VERSION_CODE=$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+        echo "VERSION_CODE=$total" >> "$GITHUB_ENV"
+        echo "VERSION_TOTAL=$total" >> "$GITHUB_ENV"
         {
           echo "### 本次版本"
           echo
           echo "- versionName: \`$name\`"
-          echo "- versionCode: \`$GITHUB_RUN_NUMBER\`"
+          echo "- versionCode: \`$total\`（总序号，跨工作流改名不回退）"
         } >> "$GITHUB_STEP_SUMMARY"
 
     - name: Build with Gradle
@@ -90,6 +108,7 @@ jobs:
         name: Gself-${{ env.VERSION_NAME }}
         path: ${{ github.workspace }}/app/build/outputs/apk/debug/Gself-${{ env.VERSION_NAME }}.apk
         retention-days: 5
+        if-no-files-found: error
 
     - name: Dump build log tail on failure
       if: failure()

@@ -2,6 +2,39 @@
 
 > 本仓库由 fcmfix 迁移而来。0.9.0 及以前压缩为要点，完整历史见 `git log`。
 
+## 26.10.5.1 —— 对齐 GLOBAL.md 第二十一版
+
+> 规范自第十七版更新到第二十一版，本仓库按最新版收口：CI 少流程、禁旧、出包三要素、清理默认启用并当轮清积压。
+
+### CI
+
+- **删除 `.github/workflows/spec-check.yml`**：第二十版起规范自检由 agent 在会话中完成，不设规范检查工作流；
+  「一份职责只留一个工作流」，本仓库唯一工作流是 `.github/workflows/build.yml`（构建 + 出包 + 清理）。
+  此前我把它扩成 127 行静态检查属于逆着规范加码，已整文件删除。
+- **禁旧**：`runs-on: ubuntu-latest` → `ubuntu-24.04`（`ubuntu-latest` 会打迁移告警，规范明令禁止）；
+  Action 保持现行档（`checkout@v7`、`setup-java@v6`、`upload-artifact@v7`）。
+- **出包三要素**：`actions/upload-artifact` 补 `if-no-files-found: error`（原有 `name: Gself-<版本>`、`retention-days: 5`）。
+  构建 job 权限加 `actions: read`（要查 run 历史），出包本身不需要写权限。
+- **总序号跨改名不回退**：工作流由 `android.yml` 改名 `build.yml` 后 `GITHUB_RUN_NUMBER` 归零（旧工作流停在 run#127），
+  直接用它会让 `versionCode` 从 1 起、覆盖安装被降级拦截。改成取「本仓库所有工作流最大 run 号 + 1」与
+  「现存发行产物第五段 + 1」的较大者（只用查法，不写死现值），发行与非发行构建共用它当 `versionCode`。
+- **滚动清理按第二十一版口径**：默认启用、不需逐仓批准；范围按项目名前缀筛选（`Gself-`、遗留 `fcmself-` / `fcmfix-`），
+  保留**最近 5 个**（PR 的非发行包同样计入）。清理由 `cleanup_artifacts` job 执行：`needs: build`、`concurrency` 串行、
+  PR 事件不执行、权限只有 `actions: write` + `contents: read`、删除前打印完整清单、本次产物不可见就整轮放弃。
+  已知代价：PR 包比发行包新时发行包会被清出窗口，用 `gh workflow run build.yml --ref main` 可在 main 上补一次出包。
+
+### 文档
+
+- `AGENTS.md`：版本戳 第十七版 → 第二十一版；删掉「只读规范检查工作流」条目，补上清理默认启用、前缀筛选、
+  出包三要素与「CI 出包：有 / CI 发版：未授权」的汇报口径。
+- `README.md`：CI 徽章指向改名后的 `Build` 工作流；构建段说明产物走 Actions artifact、不发 Release。
+- `docs/glossary.md`：更新「滚动清理」「保留数」口径（最近 5 个，含非发行包）。
+
+### 待落地（需要主人）
+
+- 清理 job 必须存在于**默认分支**的构建工作流里才算实现：本分支的 PR #13 合并进 `main` 后生效；
+  合并前 main 上既没有清理 job，也仍是旧的 `android.yml` + `ubuntu-latest`。
+
 ## 26.10.5 —— 版本单一来源 + CI 滚动清理 + 文档同步
 
 > 这一轮按 Sumicya/selfs 的 GLOBAL.md 第十五版对齐：版本只留一个来源、CI 加滚动清理与静态规范检查、

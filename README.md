@@ -1,6 +1,6 @@
 # Gself
 
-[![Android CI](https://github.com/Sumicya/Gself/workflows/Android%20CI/badge.svg)](https://github.com/Sumicya/Gself/actions)
+[![Build](https://github.com/Sumicya/Gself/workflows/Build/badge.svg)](https://github.com/Sumicya/Gself/actions)
 
 基于 LSPosed 的纯 Hook 模块，把 Google 在国产 ROM 上被砍掉的语义补回来。合并自三个项目：
 fcmself（推送修复）、GooglePasswordManagerUnlock（通行密钥解限）、GboardHook（剪贴板）。
@@ -24,7 +24,7 @@ fcmself（推送修复）、GooglePasswordManagerUnlock（通行密钥解限）�
 ./gradlew test assembleDebug   # 产物：app/build/outputs/apk/debug/app-debug.apk
 ```
 
-CI 跑单测 + 编译 debug + 校验 R8 入口类，上传一个 debug 包（零 secrets）。真机验证见 [`docs/verify-on-device.md`](docs/verify-on-device.md)。
+CI（`Build`）跑单测 + 编译 debug + 校验 R8 入口类，产物 `Gself-<版本>.apk` 走 Actions artifact（保留最近 5 个，5 天过期）；不发 Release。真机验证见 [`docs/verify-on-device.md`](docs/verify-on-device.md)。
 
 ## 许可证
 

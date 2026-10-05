@@ -52,5 +52,6 @@
 | 单一版本来源 | 版本只在 Android CI 的「Compute release version」算一次，产物名、artifact 名与构建元数据都从它生成 |
 | artifact（Actions 产物） | GitHub Actions 的上传产物；本仓库只发 `Gself-<版本>.apk`，不发 Release |
 | Release / tag | GitHub 的发行与标签；本仓库不发 Release、不打 tag |
-| 滚动清理 | 出包成功后自动删除旧 artifact，只保留最近 N 个（本仓库 N = 5，由 `KEEP_ARTIFACT` 指定） |
+| 滚动清理 | 出包成功后自动删除旧 artifact，只保留最近 5 个（`KEEP_ARTIFACT` 指定）；范围按项目名前缀 `Gself-`（含遗留 `fcmself-` / `fcmfix-`）筛选，非发行包同样计入 |
 | `retention-days` | artifact 的时间兜底过期天数（本仓库 5 天），不代替按数量的滚动清理 |
+| 项目名前缀筛选 | 清理只按 artifact 名前缀（本项目名 + `-`，大小写不敏感）圈定对象，不按「最新 N 个」直接删无关对象 |
