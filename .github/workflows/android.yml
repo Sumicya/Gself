@@ -35,22 +35,38 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
-    - name: Retrieve version name
-      # 构建数 = github.run_number（第几次 CI 构建），versionCode 同源（见 build.gradle.kts）
-      run: echo "VERSION_NAME=26.10.1.${{ github.run_number }}" >> $GITHUB_ENV
+    - name: Compute release version
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        stamp="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq '.created_at')"
+        day="$(TZ=Asia/Shanghai date -d "$stamp" +%y.%-m.%-d)"
+        local_day="$(TZ=Asia/Shanghai date -d "$stamp" +%Y-%m-%d)"
+        since="$(TZ=Asia/Shanghai date -u -d "$local_day 00:00:00" +%Y-%m-%dT%H:%M:%SZ)"
+        if [ "${{ github.event_name }}" = "push" ]; then
+          today="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/android.yml/runs?event=push&created=>=$since&per_page=1" --jq '.total_count')"
+          total="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/android.yml/runs?event=push&per_page=1" --jq '.total_count')"
+          name="$day.$today.$total"
+          code="$total"
+        else
+          name="$day.0.0"
+          code="1"
+        fi
+        echo "VERSION_NAME=$name" >> "$GITHUB_ENV"
+        echo "VERSION_CODE=$code" >> "$GITHUB_ENV"
 
     - name: Build with Gradle
       shell: bash
       run: |
         set -o pipefail
         # test 放在最前：介入判据（PushTest）不通过就不必继续构建
-        ./gradlew -Pfcmself.buildNumber="${{ github.run_number }}" test assembleDebug 2>&1 | tee build.log
+        ./gradlew -Pfcmself.buildNumber="${{ github.run_number }}" -PversionName="${{ env.VERSION_NAME }}" -PversionCode="${{ env.VERSION_CODE }}" test assembleDebug 2>&1 | tee build.log
 
     - name: Rename artifact
       shell: bash
       run: |
         cd ${{ github.workspace }}/app/build/outputs/apk
-        mv debug/app-debug.apk debug/Gself-${{ env.VERSION_NAME }}-debug.apk
+        mv debug/app-debug.apk debug/Gself-${{ env.VERSION_NAME }}.apk
 
     - name: Verify R8 kept the Xposed entry class
       shell: bash
@@ -74,7 +90,8 @@ jobs:
       uses: actions/upload-artifact@v7
       with:
         name: Gself-${{ env.VERSION_NAME }}
-        path: ${{ github.workspace }}/app/build/outputs/apk/debug/Gself-${{ env.VERSION_NAME }}-debug.apk
+        path: ${{ github.workspace }}/app/build/outputs/apk/debug/Gself-${{ env.VERSION_NAME }}.apk
+        retention-days: 5
 
     - name: Dump build log tail on failure
       if: failure()
