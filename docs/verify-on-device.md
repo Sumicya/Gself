@@ -1,6 +1,6 @@
 # 真机验证清单
 
-模块没有界面，行为全在日志里。tag 固定 `FcmSelf`，每条同时写进 logcat 与 LSPosed 框架日志：
+模块没有界面，行为全在日志里。日志 tag 固定 `FcmSelf`，每条同时写进 logcat 与 LSPosed 框架日志：
 
 ```bash
 su -c 'logcat -d -s FcmSelf'
@@ -11,9 +11,10 @@ toybox grep **不支持 `\|` 交替**，多关键字用 `-E`：`grep -hE 'wake|k
 
 ## 0. 准备
 
-1. 装 CI 产物 `fcmself-<版本>-debug-signed.apk`（或本地 `scripts/sign-apk.sh` 签一个）
-2. LSPosed 启用模块，作用域勾 `system`（**只需这一个**）
-3. 重启，立刻开始抓日志
+1. 装 CI 产物 `Gself-<版本>.apk`（debug 签名，可直接安装；取法见 README「下载与安装」），
+   或用 `scripts/sign-apk.sh` 给自己的包签名后安装
+2. LSPosed 启用模块，作用域勾 `system` + `com.google.android.gms` + Gboard（`scope.list` 已预选）
+3. 重启设备，立刻开始抓日志（system_server 里的 Hook 只能靠重启生效）
 
 ## 1. 模块有没有被加载
 
@@ -27,6 +28,9 @@ toybox grep **不支持 `\|` 交替**，多关键字用 `-E`：`grep -hE 'wake|k
 - 什么都没有 → LSPosed 没加载模块：查启用状态、作用域、是否重启过（改作用域必须重启）
 - 只有第一行 + 一堆 `hook skip` → 模块加载了，但这台 ROM 上没有对应挂载点
 - 26.10.1 起**没有开机闸门**：`Boot Complete` 那行不会再出现，载入即介入
+- 三组进程各有一条安装日志：system 侧是上面的行，GMS 侧是
+  `通行密钥解限 Hook 已安装`，Gboard 侧是 `Gboard 剪贴板 Hook 已安装`（后两条在各自应用的进程里，
+  用 `su -c 'logcat -d -s FcmSelf'` 同样能看到）
 
 **必须没有的一行**（出现说明核心挂载点没找到，模块整体不工作）：
 
@@ -100,7 +104,7 @@ su -c "logcat -c"    # 清空后推一条消息，等 10 秒
 su -c "logcat -d | grep -iE '<包名>|c2dm|Background execution|not delivering|stopped'"
 ```
 
-## 6. 26.10.1 需要重点验的三处（都是这一轮砍掉的角）
+## 6. 26.10.1 那轮砍掉的角（装上后重点验这三处）
 
 1. **没有开机闸门**：开机后立刻推一条，看 `wake:` 有没有打出来、系统稳不稳。
    若开机阶段出现异常，把 1.0.0 的 `finishBooting` 闸门从 git 历史里取回来。
@@ -117,18 +121,21 @@ su -c "logcat -d | grep -iE '<包名>|c2dm|Background execution|not delivering|s
 
 | 项目 | 状态 |
 | --- | --- |
-| 编译 + `PushTest` | **已验证**（PR #11 的 Android CI，run 36788287654）：`./gradlew test assembleRelease assembleDebug` 全绿，R8 入口类 dex 校验通过。沙箱本身没有 JDK / Android SDK / 外网，跑不了 |
+| 编译 + `PushTest` | **已验证**：本仓库 Android CI（2026-10-05 起每次 main 出包与 PR 都跑 `./gradlew test assembleDebug`，R8 入口类 dex 校验通过）。沙箱没有 JDK / Android SDK，跑不了构建 |
+| 五段版本与产物名 | **部分验证**：产物与 artifact 名 `Gself-<版本>.apk` 由 CI 实跑产生；本轮又修了算定逻辑（总序号改用 `github.run_number`、当日序号按 run 号计数、当天起点改用 `+08:00` 显式偏移），修复后的步骤已在本机按真实 run 复算通过（run 109 → `26.10.5.4.109`），但还没在 main 上出过包 |
+| 滚动清理 | **部分验证**：`cleanup_artifacts.py` 对本仓库现有 87 个在范围内的 artifact 跑过 `--dry-run`（保留 5 个、计划删除 82 个、2 个并发更新的延后）；**实删未验证**——要等本分支合并进 main 后的下一次出包，删除清单会打在 job 日志里 |
 | 26.10.1 真机全链路 | **未验证**：还没装到设备上 |
+| 26.10.5 的 CI / 版本 / 文档改动 | **未验证**：只过了 CI 与本地静态检查，没上机 |
 | 1.0.0 冻结态链路 | 已验通（OnePlus/ColorOS，build `20260926_1edb471`）：载入 / hook 装配 / `shouldProxy bypass` / `No Intercept` / flag / `unfreeze` / `Keep notification` 全命中 |
 | 1.0.0 force-stop 唤醒 | 已验通（2026-09-26，OnePlus/ColorOS，nagramx fork）：`stopped=true` 下推送以新 pid 拉起应用 |
 | 介入判据（`Push.isPush`） | 单测覆盖（`PushTest`）；`isTargeted` 要真 Intent，只能靠真机日志 |
 | 参数按类型/按值识别 | **未验证**：无 JVM 单测（要真 Intent / 真 ROM 类） |
-| release（R8）产物 | **未验证**：真机一直装 debug-signed，release 只过了 CI 的入口类 dex 检查 |
+| release（R8）产物 | **未验证**：CI 只出 debug 包，release 变体只在本地产出、没人装上验过 |
 
 ## 8. 反馈问题时请附上
 
 - 从重启开始的完整 `FcmSelf` 日志（尤其 `hook target:` 与所有 `hook skip` 行）
-- ROM 名称与版本、GMS 版本号、LSPosed 版本、Android 版本
+- 产物版本号（artifact 名 `Gself-<版本>`）、ROM 名称与版本、GMS 版本号、LSPosed 版本、Android 版本
 - 目标应用包名 + 「杀掉应用 → 推送」的复现步骤
 
 ## 9. 真机现状参考（2026-09-26 / 2026-10-01，OnePlus/ColorOS，nagramx fork）

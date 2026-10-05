@@ -2,7 +2,54 @@
 
 > 本仓库由 fcmfix 迁移而来。0.9.0 及以前压缩为要点，完整历史见 `git log`。
 
-## Gself —— 三合一 + 换 GPL-3.0
+## 26.10.5 —— 版本单一来源 + CI 滚动清理 + 文档同步
+
+> 这一轮按 Sumicya/selfs 的 GLOBAL.md 第十五版对齐：版本只留一个来源、CI 加滚动清理与静态规范检查、
+> 文档回到 Gself 的实际产物与安装方式。三组 Hook 的行为没改。
+
+### 版本（五段，单一来源）
+
+- 发行版本由 Android CI 的「Compute release version」一处算定：`yy.m.d.当日序号.总序号`。
+  构建配置只读 `-PversionName` / `-PversionCode`，删掉 `gradle.properties` 里的 `fcmself.buildNumber`
+  与 `build.gradle.kts` 里第二套回落版本。
+- 总序号（`versionCode`）改用 `github.run_number`。旧写法取「android.yml 历史 push 运行总数」，
+  于是 artifact `Gself-26.10.5.4.24` 的 versionCode 是 24，比设备上已装的 26.10.1.100+
+  （它们的 versionCode = 构建数）更小，普通升级会被降级拦住。
+- 当日序号改用「当天 main 出包运行中 run 号不大于本次的个数」。旧写法取当天 push 运行总数，
+  并发运行会算出同一个号（2026-10-05 的 run 108 与 109 都得到 26.10.5.4.x）；现在分别是 3、4。
+- 修复当天起点：`date -u -d "$local_day 00:00:00"` 里 TZ 不参与输入解析，窗口实际从北京时间 08:00 起，
+  会漏算北京时间 0–8 点的运行；改成显式 `+08:00` 偏移。
+- 非发行构建（PR 检查、手动构建其它分支、本地构建）写 `dev-<构建数>`，不伪造发行序号。
+
+### CI
+
+- 新增 `.github/scripts/cleanup_artifacts.py` 与 `cleanup_artifacts` job：main 出包成功后只保留最近 5 个
+  artifact（首次运行清掉既有积压）。范围按该 workflow 的 run id 界定、完整分页、按创建时间倒序，
+  并发更新的对象延迟处理；本次运行的 artifact 不可见就整轮放弃；权限只有 `actions: write` + `contents: read`，
+  与同仓库其它清理串行；PR 检查不执行清理。
+- `android.yml` 增 `workflow_dispatch`，且只有 ref 是 main 时才算发行 / 清理；产物名与上传路径不变。
+- `spec-check.yml` 扩成静态检查：AGENTS.md 指针与版本戳（执行的规范版本写在检查里，与 AGENTS.md 必须一致）、
+  常驻规则条目、版本单一来源、禁止自动发版（工作流 + `.github/scripts`）、写权限最小化
+  （只允许 `android.yml` 的清理 job 拿 `actions: write`）、滚动保留策略落地。规范检查保持 `contents: read`。
+- 清理脚本先跑 `--dry-run` 验证：当前 89 个 artifact 里 87 个属于本工作流，保留 5 个、计划删除 82 个。
+
+### 文档
+
+- README 增补「下载与安装」：从 Actions artifact 取 `Gself-<版本>.apk`（id 在命令里自己算、产物按前缀过滤），
+  `su -c cp` 到 `/data/local/tmp` 再 `pm install`，末尾带本地清理；并补「相关文档」一节。
+- `docs/verify-on-device.md`：安装步骤与作用域改成 Gself 的实际值（`Gself-<版本>.apk`，
+  作用域 system + GMS + Gboard），验证状态表按本轮证据重写。
+- `docs/build-and-sign-termux.md` 重写为「本地构建（非发行版本）+ 自备密钥签名」，
+  删掉早已不存在的 release 未签名产物描述。
+- `scripts/sign-apk.sh`：环境变量改 `GSELF_KEYSTORE` / `GSELF_KEY_ALIAS`，安装提示改用 `/data/local/tmp`。
+- 新增 `docs/glossary.md` 术语表；`AGENTS.md` 补齐本项目的版本口径、查法与滚动清理授权范围。
+
+### 未验证
+
+- 真机：本轮没上设备，`docs/verify-on-device.md` 里的 26.10.1 全链路仍是「未验证」。
+- 滚动清理的实删：只在本机跑过 `--dry-run`；实删要等本分支合并进 main 后的下一次出包。
+
+## 26.10.1 —— Gself：三合一 + 换 GPL-3.0
 
 > 把三个项目合成一个 libxposed 模块：fcmself（推送/通知/ColorOS，system_server）、
 > GooglePasswordManagerUnlock（通行密钥解限，GMS 进程）、GboardHook（剪贴板，Gboard 进程）。
@@ -14,7 +61,7 @@
 - `onPackageLoaded` 按包名分发：`com.google.android.gms` → 通行密钥解限；Gboard → 剪贴板。
 - `Gms.kt` 移植通行密钥解限：DexKit 稳定字符串定位来源解析器，**唯一候选才 Hook**（保留其安全边界），
   来源构造函数记录 origin、解析器据其改写。加 `org.luckypray:dexkit:2.2.0` 依赖。
-- `Gboard.kt` 移植剪贴板：改写 `ClipboardContentProvider#query` 的时间下限与 `limit 5`（默认 10 条 / 3 天），
+- `Gboard.kt` 移植剪贴板：改写 `ClipboardContentProvider#query` 的时间下限与 `limit 5`（默认 10 条、过期时间放宽到实际不限），
   并写死 `enable_clipboard_entity_extraction` / `enable_clipboard_query_refactoring` 两个开关。
 - `scope.list` 加 GMS 与 Gboard 两个包；`module.prop` 注释同步。
 

@@ -11,17 +11,18 @@ android {
         applicationId = "sumicya.gself"
         minSdk = 29
         targetSdk = 36
-        // CI 固化 yy.m.d.当日序号.总序号；本地构建使用非发行开发版本。
-        val buildNumber = providers.gradleProperty("fcmself.buildNumber").getOrElse("1").toInt()
-        val releaseName = providers.gradleProperty("versionName").orNull
-        val releaseCode = providers.gradleProperty("versionCode").orNull?.toIntOrNull()
-        versionName = releaseName ?: "0.0.0.0.$buildNumber"
-        versionCode = releaseCode ?: buildNumber
+        // 发行版本（五段 yy.m.d.当日序号.总序号）由 CI 一处算定，这里只读，不自己算日期。
+        // 取不到 = 非发行构建：名字带 dev- 前缀，绝不伪装成发行版本。
+        // versionCode 仍按构建数单调递增，本地可传 -PversionCode=<CI run 号> 保持升级路径。
+        val buildNumber = providers.gradleProperty("versionCode").orNull?.toIntOrNull() ?: 1
+        versionName = providers.gradleProperty("versionName").orNull ?: "dev-$buildNumber"
+        versionCode = buildNumber
     }
 
     buildTypes {
         // debug / release 同一套裁剪（入口类由 proguard-rules.pro 保住，LSPosed 按类名字符串加载）。
-        // 唯一差别是签名：debug 用默认 debug 证书可直接装，release 产出未签名包、本地签。
+        // CI 只出 debug 包：它用默认 debug 证书签名，可直接安装测试；
+        // release 变体保留给本地按需构建（未签名，用 scripts/sign-apk.sh 签）。
         configureEach {
             isMinifyEnabled = true
             isShrinkResources = true

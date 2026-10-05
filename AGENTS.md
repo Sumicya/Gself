@@ -1,13 +1,13 @@
 # Gself 项目规则
 
-本文件承载本仓库常驻规则。全局工程规范以 Sumicya/selfs/GLOBAL.md 第十五版为准.
+本文件承载本仓库常驻规则。全局工程规范以 [Sumicya/selfs 的 GLOBAL.md](https://github.com/Sumicya/selfs/blob/main/GLOBAL.md) 为准。
 
 ## 全局规范同步（2026-10-05，第十五版）
 
 以下规则继承自 Sumicya/selfs 的 GLOBAL.md，适用于本仓库：
 
 - 任何本轮本地改动必须最终提交并推送到当前远端分支；任务结束时不得留下未提交或已提交但未推送的改动。
-- CI 必须符合全局规范；应有只读规范检查，且规范检查不得拥有发布写权限。
+- CI 必须符合全局规范；本仓库的只读规范检查是 `.github/workflows/spec-check.yml`，它只做静态核对，不得拥有 contents: write、actions: write 或其它发布写权限。
 - CI 不得自动创建 Release、正式发行 tag 或正式 Release asset。正式发版必须先获得主人对项目、版本和触发条件的明确允许。
 - 发版授权与清理授权分离。获准人工发版完成后，CI 可以自动清理旧 Release、关联 tag 和 Actions artifact。
 - 默认保留：Release 1 个、关联 tag 1 个、Actions artifact 5 个；artifact 另以 retention-days: 5 作为时间兜底。
@@ -15,4 +15,28 @@
 - 发布/清理 job 只授予所需最小写权限；PR 检查与规范检查保持只读，不把写权限暴露给未信任 PR 代码。
 - 对外动作（正式发版、删除远程分支、删除标签等）不得由普通 CI 触发器隐式执行。
 
-本仓库若已有更严格的项目专属规则，以更严格者为准；若与全局规范冲突，以 Sumicya/selfs/GLOBAL.md 为准，并在修改时说明冲突。
+### 本仓库的滚动清理授权（2026-10-05 主人已批准）
+
+- 只清理 Android CI（`.github/workflows/android.yml`）自己产生的 Actions artifact，保留最近 5 个（`KEEP_ARTIFACT: "5"`）。
+- 清理由 `android.yml` 的 `cleanup_artifacts` job 执行：只在 main 出包成功后运行，权限只有 `actions: write` + `contents: read`，与同仓库其它清理串行。
+- PR 检查、规范检查与其它分支的运行都不执行清理，也不获得写权限。
+- 本仓库没有 Release 与正式发行 tag，清理范围不扩展到其它工作流、手工上传的对象或任何 Release/tag。
+- 改保留数、改清理范围都需要主人重新授权，并同步本文件与 `spec-check.yml` 的检查项。
+
+本仓库若已有更严格的项目专属规则，以更严格者为准；若与全局规范冲突，以 Sumicya/selfs 的 GLOBAL.md 为准，并在修改时说明冲突。
+
+## 本项目核对清单
+
+- **版本**：五段 `yy.m.d.当日序号.总序号`，由 Android CI 的「Compute release version」一处算定（日期取本次运行的 `created_at`），构建配置只读 `-PversionName` / `-PversionCode`，不自己算日期。
+  - 总序号 = `versionCode` = `github.run_number`（本工作流第几次运行，单调递增，且天然大于设备上旧版的 versionCode）。
+  - 当日序号 = 当天 main 分支出包运行（push / workflow_dispatch）中 run 号不大于本次的个数，含本次、从 1 起；PR 与其它分支的运行不占号。
+  - 非发行构建（PR 检查、手动构建其它分支、本地构建）写 `dev-<构建数>`，不伪造发行序号。
+  - 查当前最大总序号（现值会过期，只记查法）：
+    `gh api 'repos/Sumicya/Gself/actions/workflows/android.yml/runs?per_page=1' --jq '.workflow_runs[0].run_number'`
+- **产物**：单一产物 `Gself-<版本>.apk`（debug 签名、可直装），由 CI 构建、经 Actions artifact 分发。**本仓库不发 Release、不打 tag，文档里不写 release 下载入口**；要么走 artifact，要么本地构建 + 本地签名（见 `docs/build-and-sign-termux.md`）。
+- **构建**：只在 CI 构建（Android SDK / JDK 不常备）；本地构建产出非发行版本，不能当发行版引用。
+- **下载与安装命令**：按 README「下载与安装」一节给，逐条可跑（id 在命令里自己算、产物按前缀过滤、`su -c cp` 到 `/data/local/tmp` 再装），末尾带本地清理。
+- **术语表**：`docs/glossary.md`；新增术语时同步。
+- **文档同步点**：`module.prop` 的 `minApiVersion`、`scope.list` 的作用域、README 的功能清单与代码三方保持一致。
+
+本仓库上次同步 = 第十五版。

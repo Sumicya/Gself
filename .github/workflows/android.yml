@@ -1,6 +1,6 @@
 # Android CI —— 「零 secrets」配置：仓库不需要任何签名密钥 / 发布 token。
-# CI 只做三件事——跑单元测试、编译 debug 包、上传一个产物：
-#   - Gself-<版本>-debug.apk ：debug 签名，可直接安装测试
+# build job 只做三件事——跑单元测试、编译 debug 包、上传一个产物：
+#   - Gself-<版本>.apk ：debug 签名，可直接安装测试
 # 本地签名步骤见 docs/build-and-sign-termux.md。
 #
 # 要点：
@@ -8,6 +8,12 @@
 #   2. 先跑 ./gradlew test，介入判据（PushTest）不过就不继续构建
 #   3. 校验 R8 没有裁掉入口类（裁掉了构建仍然成功，但模块会静默不加载）
 #   4. 构建失败时把日志尾部写进 job summary
+#   5. 版本在这里一处算定（五段 yy.m.d.当日序号.总序号，versionCode = 总序号）；
+#      构建配置只读 -PversionName / -PversionCode，不自己算日期
+#   6. main 出包成功后才清理旧 artifact（只保留最近 5 个，见 AGENTS.md 的授权范围）；
+#      PR 检查与规范检查保持只读，写权限只在 cleanup_artifacts job 里
+#
+# 本工作流不创建 Release、不打 tag、不上传正式 Release asset：发版须先有主人明确授权。
 
 name: Android CI
 
@@ -16,6 +22,8 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+  # 仅用于手动出包 / 手动触发一次清理；清理 job 另限定 ref 必须是 main
+  workflow_dispatch: {}
 
 jobs:
   build:
@@ -39,28 +47,47 @@ jobs:
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
-        stamp="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq '.created_at')"
-        day="$(TZ=Asia/Shanghai date -d "$stamp" +%y.%-m.%-d)"
-        local_day="$(TZ=Asia/Shanghai date -d "$stamp" +%Y-%m-%d)"
-        since="$(TZ=Asia/Shanghai date -u -d "$local_day 00:00:00" +%Y-%m-%dT%H:%M:%SZ)"
-        if [ "${{ github.event_name }}" = "push" ]; then
-          today="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/android.yml/runs?event=push&created=>=$since&per_page=1" --jq '.total_count')"
-          total="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/android.yml/runs?event=push&per_page=1" --jq '.total_count')"
-          name="$day.$today.$total"
-          code="$total"
-        else
-          name="$day.0.0"
-          code="1"
+        set -euo pipefail
+        # 五段发行版本只从 main 出包：main 的 push，或从 main 手动触发。
+        # 手动触发别的分支、以及 PR 检查，都算非发行版本，不占用日期与序号。
+        release=false
+        if [ "${{ github.event_name }}" = "push" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then release=true; fi
         fi
+        if [ "$release" = "true" ]; then
+          # 日期按本次运行的创建时间取（不按构建机本地时间），一次取齐
+          stamp="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq '.created_at')"
+          day="$(TZ=Asia/Shanghai date -d "$stamp" +%y.%-m.%-d)"
+          local_day="$(TZ=Asia/Shanghai date -d "$stamp" +%Y-%m-%d)"
+          # 当日 00:00（Asia/Shanghai）= 前一天 16:00Z。这里写显式偏移，
+          # 不用 date -u -d "$local_day 00:00:00"：那种写法下 TZ 不参与输入解析，会漏掉北京时间 0–8 点的运行
+          since="$(date -u -d "${local_day}T00:00:00+08:00" +%Y-%m-%dT%H:%M:%SZ)"
+          # 当日序号 = 当天 main 分支出包运行中 run 号不大于本次的个数，含本次、从 1 起。
+          # 用「run 号计数」而不是 total_count：并发运行不会分到同一个当日序号。
+          today="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/android.yml/runs?created=>=$since&per_page=100" \
+            --jq '.workflow_runs[] | select((.event == "push" or .event == "workflow_dispatch") and .head_branch == "main") | .run_number' \
+            | awk -v n="$GITHUB_RUN_NUMBER" '$1 <= n' | wc -l)"
+          name="$day.$today.$GITHUB_RUN_NUMBER"
+        else
+          name="dev-$GITHUB_RUN_NUMBER"
+        fi
+        # 总序号 = versionCode = github.run_number：本工作流第几次运行，单调递增，
+        # 且天然大于设备上已装旧版的 versionCode（普通升级即可）
         echo "VERSION_NAME=$name" >> "$GITHUB_ENV"
-        echo "VERSION_CODE=$code" >> "$GITHUB_ENV"
+        echo "VERSION_CODE=$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+        {
+          echo "### 本次版本"
+          echo
+          echo "- versionName: \`$name\`"
+          echo "- versionCode: \`$GITHUB_RUN_NUMBER\`"
+        } >> "$GITHUB_STEP_SUMMARY"
 
     - name: Build with Gradle
       shell: bash
       run: |
         set -o pipefail
         # test 放在最前：介入判据（PushTest）不通过就不必继续构建
-        ./gradlew -Pfcmself.buildNumber="${{ github.run_number }}" -PversionName="${{ env.VERSION_NAME }}" -PversionCode="${{ env.VERSION_CODE }}" test assembleDebug 2>&1 | tee build.log
+        ./gradlew -PversionName="${{ env.VERSION_NAME }}" -PversionCode="${{ env.VERSION_CODE }}" test assembleDebug 2>&1 | tee build.log
 
     - name: Rename artifact
       shell: bash
@@ -103,3 +130,26 @@ jobs:
           tail -n 150 build.log
           echo '```'
         } >> "$GITHUB_STEP_SUMMARY"
+
+  cleanup_artifacts:
+    name: 清理旧 Actions artifact
+    # 只在 main 出包成功后清理；PR 检查不执行，写权限不进未信任 PR 代码
+    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # 与同仓库的其它清理串行，不并发删（避免按过期列表删掉更新的产物）
+    concurrency:
+      group: gself-artifact-retention
+      cancel-in-progress: false
+    permissions:
+      actions: write
+      contents: read
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: 只保留最近 5 个 artifact
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        KEEP_ARTIFACT: "5"
+      run: python3 .github/scripts/cleanup_artifacts.py
