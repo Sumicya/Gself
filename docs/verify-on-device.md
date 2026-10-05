@@ -11,8 +11,9 @@ toybox grep **不支持 `\|` 交替**，多关键字用 `-E`：`grep -hE 'wake|k
 
 ## 0. 准备
 
-1. 装 CI 产物 `Gself-<版本>.apk`（debug 签名，可直接安装；取法见 README「下载与安装」），
-   或用 `scripts/sign-apk.sh` 给自己的包签名后安装
+1. 装 CI 产物 `Gself-<版本>.apk`（debug 签名，可直接安装；取法见会话汇报里的下载命令块，
+   artifact 按前缀 `Gself-` 过滤），或用 `scripts/sign-apk.sh` 给自己的包签名后安装。
+   平台要求 **Android 16+（API 36）**：低版本会被系统在安装时拒绝
 2. LSPosed 启用模块，作用域勾 `system` + `com.google.android.gms` + Gboard（`scope.list` 已预选）
 3. 重启设备，立刻开始抓日志（system_server 里的 Hook 只能靠重启生效）
 
@@ -121,9 +122,9 @@ su -c "logcat -d | grep -iE '<包名>|c2dm|Background execution|not delivering|s
 
 | 项目 | 状态 |
 | --- | --- |
-| 编译 + `PushTest` | **已验证**：本仓库 Android CI（2026-10-05 起每次 main 出包与 PR 都跑 `./gradlew test assembleDebug`，R8 入口类 dex 校验通过）。沙箱没有 JDK / Android SDK，跑不了构建 |
-| 五段版本与产物名 | **部分验证**：产物与 artifact 名 `Gself-<版本>.apk` 由 CI 实跑产生；本轮又修了算定逻辑（总序号改用 `github.run_number`、当日序号按 run 号计数、当天起点改用 `+08:00` 显式偏移），修复后的步骤已在本机按真实 run 复算通过（run 109 → `26.10.5.4.109`），但还没在 main 上出过包 |
-| 滚动清理 | **部分验证**：`cleanup_artifacts.py` 对本仓库现有 87 个在范围内的 artifact 跑过 `--dry-run`（保留 5 个、计划删除 82 个、2 个并发更新的延后）；**实删未验证**——要等本分支合并进 main 后的下一次出包，删除清单会打在 job 日志里 |
+| 编译 + `PushTest` | **已验证**：本仓库 `Build` 工作流（2026-10-05 起每次 push 与 PR 都跑 `./gradlew test assembleDebug`，R8 入口类 dex 校验通过）。沙箱没有 JDK / Android SDK，跑不了构建 |
+| 五段版本与产物名 | **部分验证**：产物与 artifact 名 `Gself-<版本>.apk` 由 CI 实跑产生，可编译；总序号改为「仓库最大 run 号 / 现存发行产物第五段取大 + 1」后，已在本机按真实数据复算（发行位 `26.10.5.1.128`，`versionCode` 128）。**尚未在 main 上出过发行包**（分支上的产物都是 `Gself-dev-<run号>`） |
+| 滚动清理 | **已验证（CI 实跑）**：2026-10-05 的 push 运行里 `cleanup_artifacts` job 成功执行，artifact 从 27 个清到 7 个（保留 5 个 + 3 个比该次运行更新的延后；下次非 PR 出包会收敛到 ≤5）。清理逻辑与清单打印见 `.github/scripts/cleanup_artifacts.py` |
 | 26.10.1 真机全链路 | **未验证**：还没装到设备上 |
 | 26.10.5 的 CI / 版本 / 文档改动 | **未验证**：只过了 CI 与本地静态检查，没上机 |
 | 1.0.0 冻结态链路 | 已验通（OnePlus/ColorOS，build `20260926_1edb471`）：载入 / hook 装配 / `shouldProxy bypass` / `No Intercept` / flag / `unfreeze` / `Keep notification` 全命中 |

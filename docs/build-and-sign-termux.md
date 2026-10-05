@@ -1,8 +1,8 @@
 # 在 Termux 里构建与签名
 
-本仓库的 CI **不发 Release**：它只编译 debug 包，并上传一个 artifact `Gself-<版本>.apk`（debug 签名，
-可直接安装，取法见 README「下载与安装」）。这份文档讲两件可选的事：不依赖 CI 的本地构建，
-以及用自己的密钥签名（需要长期覆盖安装、或改过包内容时用）。
+本仓库的 CI **不发 Release**：`Build` 工作流只编译 debug 包，并上传一个 artifact `Gself-<版本>.apk`
+（debug 签名，可直接安装；取法见会话汇报里的下载命令块，按前缀 `Gself-` 过滤 artifact）。
+这份文档讲两件可选的事：不依赖 CI 的本地构建，以及用自己的密钥签名（需要长期覆盖安装、或改过包内容时用）。
 
 ## 一次性准备
 
@@ -34,13 +34,13 @@ cd Gself
 
 `ANDROID_HOME` / `PATH` 两行写进 `~/.bashrc`，否则新开 shell 找不到 SDK。
 
-本地构建**不传版本参数**，得到的是非发行版本：`versionName` 是 `dev-<构建数>`、`versionCode` 是 1，
+本地构建**不传版本参数**，得到的是非发行版本：`versionName` 是 `dev-1`、`versionCode` 是 1，
 产物在 `app/build/outputs/apk/debug/app-debug.apk`。发行版本（五段 `yy.m.d.当日序号.总序号`）只在
-main 的 CI 出包链路里产生，查法见 `AGENTS.md`。想让本地包的 `versionCode` 接着 CI 的序号走
-（覆盖安装时不降级）：
+main 的 CI 出包链路里产生，查法见 `AGENTS.md`。想让本地包覆盖安装时不降级，把 `versionCode`
+设成不比已装包小（已装包的总序号 = 产物名第五段，或看 CI 运行摘要里的 `versionCode`）：
 
 ```bash
-./gradlew -PversionCode=<CI 最近一次 run 号> assembleDebug
+./gradlew -PversionCode=128 assembleDebug     # 128 只是示例，按上面两处实际值取
 ```
 
 ## 可选二：用自己的密钥签名
