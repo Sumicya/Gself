@@ -1,5 +1,5 @@
 # 只读规范检查：不写任何东西，不使用任何 secrets，只做静态核对。
-# 检查范围（对应 Sumicya/selfs GLOBAL.md 第十六版）：
+# 检查范围（对应 Sumicya/selfs GLOBAL.md 第十七版）：
 #   1. AGENTS.md 存在，且带规范指针（Sumicya/selfs）与「上次同步 = 第 N 版」版本戳
 #   2. AGENTS.md 仍写有发版禁令、滚动保留授权与只读写权限的常驻规则
 #   3. 版本单一来源：构建配置只读 -PversionName / -PversionCode，工作流一处算定
@@ -40,7 +40,7 @@ jobs:
           # 1) AGENTS.md：规范指针 + 版本戳
           # 本检查执行的规范版本；与 AGENTS.md 的版本戳必须一致——升版时两处一起改，
           # 只改一处就会被这里拦住（避免「AGENTS.md 说第十七版、检查还按第十五版跑」）。
-          spec_version = "第十六版"
+          spec_version = "第十七版"
           agents_path = root / "AGENTS.md"
           require(agents_path.exists(), "缺少 AGENTS.md")
           agents = agents_path.read_text(encoding="utf-8") if agents_path.exists() else ""
@@ -91,7 +91,7 @@ jobs:
                   continue
               text = path.read_text(encoding="utf-8")
               match = forbidden.search(text)
-              require(match is None, f"{path} 含自动发版实现（{match.group(0) if match else ''}）；第十六版规范禁止 CI 自动发版")
+              require(match is None, f"{path} 含自动发版实现（{match.group(0) if match else ''}）；第十七版规范禁止 CI 自动发版")
 
           # 5) 权限最小化：只有 android.yml 的清理 job 可以拿 actions: write
           write_permission = re.compile(
@@ -115,4 +115,4 @@ jobs:
               for item in failures:
                   print(f"::error::{item}")
               raise SystemExit(f"规范检查未通过（{len(failures)} 项）")
-          print("第十六版规范检查通过")
+          print("第十七版规范检查通过")
