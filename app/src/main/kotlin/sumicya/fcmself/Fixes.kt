@@ -24,7 +24,10 @@ import java.util.concurrent.atomic.AtomicReference
  * GMS 常常不带，ROM 又各自加了闸门，于是应用被划掉之后就再也收不到推送。
  */
 fun Hook.wakeStoppedApps() {
-    // Android 15+ 广播出口挪进了 BroadcastController，10–14 还在 AMS
+    // 广播出口只有一处：Android 16+（API 36）在 BroadcastController，Android 10–15 在 AMS。
+    // 上游证据（aosp-mirror/platform_frameworks_base，services/core/java/com/android/server/am/）：
+    // BroadcastController.java 首次出现在 android-16.0.0_r1，android-14.0.0_r1 与 android-15.0.0_r1
+    // 的 am 包下都没有这个文件。同一台设备只挂一处，不做新旧双写（见 CHANGELOG 26.10.5）。
     val entry = find(classIfExists(CONTROLLER) ?: classOf(AMS), "broadcastIntentLocked")
     trace("hook target: ${entry.declaringClass.name}#${entry.name}(${entry.parameterCount})")
 

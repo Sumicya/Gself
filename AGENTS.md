@@ -22,7 +22,8 @@
 
 ### 本仓库的滚动清理授权（2026-10-05 主人已批准）
 
-- 只清理 Android CI（`.github/workflows/android.yml`）自己产生的 Actions artifact，保留最近 5 个（`KEEP_ARTIFACT: "5"`）。
+- 只清理 Android CI（`.github/workflows/android.yml`）自己产生的 Actions artifact，保留最近 5 个**发行对象**（`Gself-<五段版本>`，以及历史一代命名 `fcmself-*`）。
+- PR 检查 / 手动构建其它分支产生的非发行构建 `Gself-dev-<构建数>` **不占保留名额**：它们由 `retention-days: 5` 自然过期。理由：混在一起计数时，连续的 PR 运行会把最新发行产物挤出窗口，下载入口就取不到包。
 - 清理由 `android.yml` 的 `cleanup_artifacts` job 执行：只在 main 出包成功后运行，权限只有 `actions: write` + `contents: read`，与同仓库其它清理串行。
 - PR 检查、规范检查与其它分支的运行都不执行清理，也不获得写权限。
 - 本仓库没有 Release 与正式发行 tag，清理范围不扩展到其它工作流、手工上传的对象或任何 Release/tag。

@@ -10,7 +10,8 @@
 #   4. 构建失败时把日志尾部写进 job summary
 #   5. 版本在这里一处算定（五段 yy.m.d.当日序号.总序号，versionCode = 总序号）；
 #      构建配置只读 -PversionName / -PversionCode，不自己算日期
-#   6. main 出包成功后才清理旧 artifact（只保留最近 5 个，见 AGENTS.md 的授权范围）；
+#   6. main 出包成功后才清理旧 artifact：保留最近 5 个发行对象（见 AGENTS.md 的授权范围）；
+#      PR 产生的非发行构建 Gself-dev-<构建数> 不占名额，按 retention-days: 5 自然过期。
 #      PR 检查与规范检查保持只读，写权限只在 cleanup_artifacts job 里
 #
 # 本工作流不创建 Release、不打 tag、不上传正式 Release asset：发版须先有主人明确授权。

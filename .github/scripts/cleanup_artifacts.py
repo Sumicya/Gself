@@ -3,7 +3,12 @@
 
 只清理 Android CI（.github/workflows/android.yml）这个工作流自己产生的 artifact：
 按 workflow_run.id 属于该工作流的运行来筛选，不碰其它工作流、Release、tag 或手工上传的对象。
-按创建时间倒序完整分页后，保留最近 KEEP_ARTIFACT 个（默认 5，必须为正整数），其余删除。
+
+保留名额只算**发行对象**：本工作流产出的产物里，除 PR 检查 / 手动构建其它分支产生的
+非发行构建（`Gself-dev-<构建数>`）之外，按创建时间倒序保留最近 KEEP_ARTIFACT 个（默认 5，
+必须为正整数），其余删除；历史上一代命名（`fcmself-*`）也在保留对象里，一并纳入既有积压清理。
+非发行构建不占名额，交给 upload-artifact 的 `retention-days: 5` 自然过期——否则它们会把发行产物
+挤出保留窗口，让下载入口取不到包。
 
 只在 main 出包成功后运行（由 workflow 控制）；删除前二次确认：
   - 本次运行自己的 artifact 必须已经可见，否则整轮放弃，不删任何东西；
@@ -21,6 +26,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from datetime import datetime
 from typing import Any
@@ -32,6 +38,8 @@ WORKFLOW_FILENAME = "android.yml"
 WORKFLOW_PATH = ".github/workflows/android.yml"
 PAGE_SIZE = 100
 DEFAULT_KEEP = 5
+# 非发行构建的命名（PR 检查 / 手动构建其它分支）：不占保留名额，按 retention-days 过期
+NON_RELEASE_NAME = re.compile(r"^Gself-dev-\d+$")
 
 
 class GitHubAPI:
@@ -123,7 +131,8 @@ def run() -> int:
     run_started = parse_time(current_run["created_at"])
 
     # 3) 全部 artifact（完整分页），只留属于该工作流的
-    candidates: list[dict[str, Any]] = []
+    release_candidates: list[dict[str, Any]] = []
+    non_release: list[dict[str, Any]] = []
     deferred: list[dict[str, Any]] = []
     current_visible = False
     for artifact in api.list_all("actions/artifacts", "artifacts"):
@@ -133,28 +142,34 @@ def run() -> int:
         artifact["_created_at"] = parse_time(artifact["created_at"])
         if artifact_run_id == run_id:
             current_visible = True
-        if artifact["_created_at"] > run_started:
+        if NON_RELEASE_NAME.match(artifact["name"]):
+            # 非发行构建：不占保留名额，交给 retention-days 自然过期
+            non_release.append(artifact)
+        elif artifact["_created_at"] > run_started:
             # 并发运行可能在本轮开始后上传，延迟到下一轮再判断
             deferred.append(artifact)
         else:
-            candidates.append(artifact)
+            release_candidates.append(artifact)
 
     if not current_visible:
         raise RuntimeError("本次运行的 artifact 还不可见：放弃清理，避免删掉刚产出的包")
 
-    # 4) 按创建时间倒序，保留最近 keep 个
-    candidates.sort(key=lambda item: (item["_created_at"], int(item["id"])), reverse=True)
-    kept, to_delete = candidates[:keep], candidates[keep:]
+    # 4) 发行产物按创建时间倒序，保留最近 keep 个
+    release_candidates.sort(key=lambda item: (item["_created_at"], int(item["id"])), reverse=True)
+    kept, to_delete = release_candidates[:keep], release_candidates[keep:]
 
     print(
         f"工作流 {workflow.get('name', WORKFLOW_FILENAME)}（id {workflow_id}）；"
-        f"待选 artifact {len(candidates)} 个；保留 {len(kept)} 个；"
+        f"保留对象（发行产物 / 历史命名）{len(release_candidates)} 个；保留 {len(kept)} 个；"
+        f"非发行构建 {len(non_release)} 个（不占名额，按 5 天过期）；"
         f"延后（并发更新的）{len(deferred)} 个"
     )
     for artifact in kept:
         print(f"KEEP   id={artifact['id']} name={artifact['name']} created={artifact['created_at']}")
     for artifact in deferred:
         print(f"DEFER  id={artifact['id']} name={artifact['name']} created={artifact['created_at']}")
+    for artifact in non_release:
+        print(f"SKIP   id={artifact['id']} name={artifact['name']} created={artifact['created_at']}（非发行构建）")
 
     deleted = 0
     for artifact in to_delete:

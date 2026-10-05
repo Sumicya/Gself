@@ -110,6 +110,14 @@ jobs:
           keep = re.search(r'KEEP_ARTIFACT:\s*"(\d+)"', android)
           require(keep is not None and int(keep.group(1)) >= 1, "KEEP_ARTIFACT 必须是正整数")
           require(re.search(r"retention-days:\s*[1-9]\d*", android) is not None, "upload-artifact 缺少 retention-days 时间兜底")
+          # 保留对象只算发行产物：非发行构建（Gself-dev-*）不占名额，否则会把发行包挤出窗口
+          cleanup_path = root / ".github" / "scripts" / "cleanup_artifacts.py"
+          require(cleanup_path.exists(), "缺少 .github/scripts/cleanup_artifacts.py")
+          cleanup = cleanup_path.read_text(encoding="utf-8") if cleanup_path.exists() else ""
+          require("Gself-dev-" in cleanup, "清理脚本未声明非发行构建（Gself-dev-*）不占保留名额")
+          require("NON_RELEASE" in cleanup, "清理脚本缺少非发行构建的判定常量")
+          require(re.search(r"NON_RELEASE_NAME\.match", cleanup) is not None, "清理脚本未把非发行构建排除在保留窗口之外")
+          require("Gself-dev-" in agents and "不占保留名额" in agents, "AGENTS.md 未写明非发行构建不占保留名额")
 
           if failures:
               for item in failures:

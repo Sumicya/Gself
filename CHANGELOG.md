@@ -44,6 +44,22 @@
 - `scripts/sign-apk.sh`：环境变量改 `GSELF_KEYSTORE` / `GSELF_KEY_ALIAS`，安装提示改用 `/data/local/tmp`。
 - 新增 `docs/glossary.md` 术语表；`AGENTS.md` 补齐本项目的版本口径、查法与滚动清理授权范围。
 
+### 复查补正（同日）
+
+- **段位口径**（第十六版更正）：`docs/glossary.md` 里当日序号、总序号的段位写反了，改为「当日序号 = 第四段、总序号 = 第五段」。
+- **平台声明取证**（第十七版「先查证再动手」）：`Fixes.kt` 原注「Android 15+ 广播出口挪进 `BroadcastController`」不准确。
+  查 `aosp-mirror/platform_frameworks_base` 的 `services/core/java/com/android/server/am/`：`BroadcastController.java`
+  首次出现在 `android-16.0.0_r1`，`android-14.0.0_r1` 与 `android-15.0.0_r1` 的 am 包下都没有这个文件。
+  结论改为「Android 16+（API 36）在 `BroadcastController`，Android 10–15 在 AMS」，同一台设备只挂一处、不做新旧双写。
+- **只做新包与不做降级**（第十七版）：推送唤醒不做逐档展开（只在运行期选一处挂载点），不支持的环境仍然明确拒绝
+  （两个类都不存在时由 `install()` 打出 `hook skip 推送唤醒`）；不擅自收窄兼容范围（minSdk 29 不变），
+  代价与加回条件照旧写在代码的 `ponytail:` 注释旁。
+- **滚动清理对象收窄**（主人批准）：保留名额只算发行对象（`Gself-<五段版本>` 与历史命名 `fcmself-*`），
+  PR 的非发行构建 `Gself-dev-<构建数>` 不占名额、按 `retention-days: 5` 过期。原因是实测发现连续的 PR 运行
+  会把最新发行产物挤出「最近 5 个」，下载入口会取不到包。
+- **继承说明**：滚动清理移植自已关闭、未合并的 PR #12（其分支已删除），保留数由 1 改为 5，并补 PR 隔离与并发延后。
+- **README 口径**：维持极简（主人选择），下载与安装命令按规范在每轮汇报里给出，不在 README 里重复。
+
 ### 未验证
 
 - 真机：本轮没上设备，`docs/verify-on-device.md` 里的 26.10.1 全链路仍是「未验证」。
