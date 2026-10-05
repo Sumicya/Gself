@@ -30,6 +30,18 @@
 - `README.md`：CI 徽章指向改名后的 `Build` 工作流；构建段说明产物走 Actions artifact、不发 Release。
 - `docs/glossary.md`：更新「滚动清理」「保留数」口径（最近 5 个，含非发行包）。
 
+### 真机验证（2026-10-05 22:13，OnePlus/ColorOS，Android 16 / API 36）
+
+- 装上分支产物（`Gself-dev-*`）重启后，system_server 三组挂载点全部命中：
+  `hook target: BroadcastController#broadcastIntentLocked(25)`、`OplusAppStartup 自启动闸门已关`、
+  `OplusProxyBroadcast 代理已全关`、`Hans GMS 限制已置空`、`OplusProxyWakeLock instance captured`。
+- 运行期证据：`unfreeze 可用（4 参签名）` + `wake: com.zhiliaoapp.musically`（核心修复命中抖音的定向推送）；
+  `keep notification: com.termux / mark.via / com.android.devicelockcontroller`（按值认原因的设计行为，见文档第 9 节）。
+- 「只做新包」在真机成立：Android 16 上 `BroadcastController` 存在、ColorOS `unfreezeIfNeed` 4 参签名可用，无 `hook skip`。
+- `通行密钥解限 Hook 已安装` 出现两次（GMS 进程重启过）；**`Gboard 剪贴板 Hook 已安装` 未见**——
+  待确认 Gboard 是否为当前输入法（若不是，属预期；若是，按文档第 1 节的排查命令继续）。
+- 参数个数实测 25（早期样机 19），文档样例行已改成「随 ROM 变化」的写法，不再写死一个数。
+
 ### 待落地（需要主人）
 
 - 清理 job 必须存在于**默认分支**的构建工作流里才算实现：本分支的 PR #13 合并进 `main` 后生效；

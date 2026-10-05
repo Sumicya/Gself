@@ -21,7 +21,9 @@ toybox grep **不支持 `\|` 交替**，多关键字用 `-E`：`grep -hE 'wake|k
 
 ```
 [fcmself] fcmself 载入 system_server（Android 16 / API 36）
-[fcmself] hook target: com.android.server.am.BroadcastController#broadcastIntentLocked(19)
+[fcmself] hook target: com.android.server.am.BroadcastController#broadcastIntentLocked(25)
+                                          ↑ 括号里是参数个数，随 ROM / 版本不同（本机 ColorOS + Android 16 实测 25，早期样机是 19）；
+                                            代码按「参数最多」的重载取，不依赖具体数字
 [fcmself] OplusProxyWakeLock instance captured        ← 仅 ColorOS
 [fcmself] unfreeze 可用（4 参签名）                    ← 仅 ColorOS，只打一次
 ```
@@ -31,7 +33,9 @@ toybox grep **不支持 `\|` 交替**，多关键字用 `-E`：`grep -hE 'wake|k
 - 26.10.1 起**没有开机闸门**：`Boot Complete` 那行不会再出现，载入即介入
 - 三组进程各有一条安装日志：system 侧是上面的行，GMS 侧是
   `通行密钥解限 Hook 已安装`，Gboard 侧是 `Gboard 剪贴板 Hook 已安装`（后两条在各自应用的进程里，
-  用 `su -c 'logcat -d -s FcmSelf'` 同样能看到）
+  用 `su -c 'logcat -d -s FcmSelf'` 同样能看到）。**Gboard 那条只有在 Gboard 作为当前输入法被加载过之后才会出现**；
+  一次都没看到就先确认当前输入法：`su -c "settings get secure default_input_method"`
+- `hook target:` 那行只在 system_server 载入时打一次；`keep notification` / `wake` 是运行期日志，按需出现
 
 **必须没有的一行**（出现说明核心挂载点没找到，模块整体不工作）：
 
@@ -125,8 +129,11 @@ su -c "logcat -d | grep -iE '<包名>|c2dm|Background execution|not delivering|s
 | 编译 + `PushTest` | **已验证**：本仓库 `Build` 工作流（2026-10-05 起每次 push 与 PR 都跑 `./gradlew test assembleDebug`，R8 入口类 dex 校验通过）。沙箱没有 JDK / Android SDK，跑不了构建 |
 | 五段版本与产物名 | **部分验证**：产物与 artifact 名 `Gself-<版本>.apk` 由 CI 实跑产生，可编译；总序号改为「仓库最大 run 号 / 现存发行产物第五段取大 + 1」后，已在本机按真实数据复算（发行位 `26.10.5.1.128`，`versionCode` 128）。**尚未在 main 上出过发行包**（分支上的产物都是 `Gself-dev-<run号>`） |
 | 滚动清理 | **已验证（CI 实跑）**：2026-10-05 的 push 运行里 `cleanup_artifacts` job 成功执行，artifact 从 27 个清到 7 个（保留 5 个 + 3 个比该次运行更新的延后；下次非 PR 出包会收敛到 ≤5）。清理逻辑与清单打印见 `.github/scripts/cleanup_artifacts.py` |
-| 26.10.1 真机全链路 | **未验证**：还没装到设备上 |
-| 26.10.5 的 CI / 版本 / 文档改动 | **未验证**：只过了 CI 与本地静态检查，没上机 |
+| system_server 三组 Hook（推送 / 通知 / ColorOS） | **已验证**（2026-10-05 22:13，Android 16 / API 36，ColorOS）：载入、`hook target: BroadcastController#broadcastIntentLocked(25)`、`OplusAppStartup 自启动闸门已关`、`OplusProxyBroadcast 代理已全关`、`Hans GMS 限制已置空`、`OplusProxyWakeLock instance captured`、`keep notification`、`unfreeze 可用（4 参签名）`、`wake: com.zhiliaoapp.musically` 全部出现（日志见第 9 节） |
+| 只做新包（minSdk 36 / 只挂 BroadcastController / 4 参 unfreeze） | **已验证**（同一份日志）：Android 16 上 `BroadcastController` 存在并挂上，ColorOS 的 `unfreezeIfNeed` 4 参签名可用；无 `hook skip`、无 AMS 回退痕迹 |
+| GMS 通行密钥解限 | **仅装点已验证**：`通行密钥解限 Hook 已安装` 出现两次（GMS 进程重启过）；「非 Chrome 浏览器能用通行密钥」要实际调一次才知道 |
+| Gboard 剪贴板 | **未见日志**：日志里没有 `Gboard 剪贴板 Hook 已安装`，也没有 `hook skip`——先确认 Gboard 是不是当前输入法（见第 1 节），是的话这条要查 |
+| 26.10.5 的 CI / 版本 / 文档改动 | **部分验证**：CI 侧已验证（`Build` 出包、滚动清理实跑）；设备侧只验了 Hook 装点，**发行版本号与产物名还没在 main 上出过包** |
 | 1.0.0 冻结态链路 | 已验通（OnePlus/ColorOS，build `20260926_1edb471`）：载入 / hook 装配 / `shouldProxy bypass` / `No Intercept` / flag / `unfreeze` / `Keep notification` 全命中 |
 | 1.0.0 force-stop 唤醒 | 已验通（2026-09-26，OnePlus/ColorOS，nagramx fork）：`stopped=true` 下推送以新 pid 拉起应用 |
 | 介入判据（`Push.isPush`） | 单测覆盖（`PushTest`）；`isTargeted` 要真 Intent，只能靠真机日志 |
@@ -139,7 +146,7 @@ su -c "logcat -d | grep -iE '<包名>|c2dm|Background execution|not delivering|s
 - 产物版本号（artifact 名 `Gself-<版本>`）、ROM 名称与版本、GMS 版本号、LSPosed 版本、Android 版本
 - 目标应用包名 + 「杀掉应用 → 推送」的复现步骤
 
-## 9. 真机现状参考（2026-09-26 / 2026-10-01，OnePlus/ColorOS，nagramx fork）
+## 9. 真机现状参考（2026-09-26 / 2026-10-01 / 2026-10-05，OnePlus/ColorOS）
 
 1.0.0 在这台机器上 3 小时的日志里，`Add FLAG_INCLUDE_STOPPED_PACKAGES` / `unfreeze` /
 `No Intercept` 每条推送各打一行，共几百行 —— 26.10.1 把 `unfreeze` 收成一次性、删掉后两条，
@@ -152,6 +159,44 @@ su -c "logcat -d | grep -iE '<包名>|c2dm|Background execution|not delivering|s
 12:29:41.322  ActivityManager: Start proc 24130:fork.risin42.nagramx/u0a323
               for broadcast {fork.risin42.nagramx/com.google.firebase.iid.FirebaseInstanceIdReceiver}
 ```
+
+### 2026-10-05 22:13（Android 16 / API 36，ColorOS，分支产物 `Gself-dev-*`）
+
+模块载入与三组挂载点（重启后立刻抓）：
+
+```
+22:13:34.026 [fcmself] fcmself 载入 system_server（Android 16 / API 36）
+22:13:34.028 [fcmself] hook target: com.android.server.am.BroadcastController#broadcastIntentLocked(25)
+22:13:34.033 [fcmself] OplusAppStartup 自启动闸门已关
+22:13:34.034 [fcmself] OplusProxyBroadcast 代理已全关
+22:13:34.036 [fcmself] Hans GMS 限制已置空
+22:13:34.222 [fcmself] OplusProxyWakeLock instance captured
+```
+
+运行期（7 分钟内）：
+
+```
+22:13:50.129 [fcmself] 通行密钥解限 Hook 已安装        ← GMS 进程
+22:14:12.658 [fcmself] 通行密钥解限 Hook 已安装        ← GMS 又重启了一次
+22:15:03.882 [fcmself] keep notification: com.termux
+22:16:14.331 [fcmself] keep notification: com.android.devicelockcontroller
+22:20:03.971 [fcmself] keep notification: com.termux
+22:20:30.716 [fcmself] keep notification: mark.via
+22:20:31.053 [fcmself] keep notification: com.termux
+22:20:44.214 [fcmself] unfreeze 可用（4 参签名）        ← ColorOS 解冻，只打一次
+22:20:44.215 [fcmself] wake: com.zhiliaoapp.musically   ← 核心修复命中（抖音收到定向推送）
+```
+
+判读：
+
+- `wake:` + `unfreeze 可用（4 参签名）` 说明**核心链路在 Android 16 / ColorOS 上成立**，
+  且「只做新包」的挂载点选择正确（`BroadcastController` 在这台机器上存在）。
+- `keep notification` 打给 `com.termux` / `mark.via` / `devicelockcontroller` 属**设计行为**：
+  拦的是「取消原因为 8 / 10020 / 10021 的整包取消」，对所有包生效、没有白名单——
+  这些多是 ColorOS 空闲清理或包变化触发的取消。要判断有没有误拦，按第 6 节第 3 条验。
+- 没有任何 `hook skip`，也没有 `Gboard 剪贴板 Hook 已安装`：Gboard 那组只在 Gboard 被加载过之后才打日志，
+  先确认当前输入法（见第 1 节）；若 Gboard 就是当前输入法却仍无日志，把
+  `su -c 'logcat -d | grep -iE "gboard|clipboard"' | head -40` 的结果贴回来。
 
 **空日志不等于失败，推送有延迟**：多个 30 秒窗口里 `grep -icE 'c2dm|firebase'` 全是 0，
 但应用最后还是被拉起来了（`stopped=` 自己从 true 变回 false）—— force-stop 之后第一条推送迟到，
