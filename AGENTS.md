@@ -40,7 +40,7 @@
     `gh api 'repos/Sumicya/Gself/actions/workflows/android.yml/runs?per_page=1' --jq '.workflow_runs[0].run_number'`
 - **产物**：单一产物 `Gself-<版本>.apk`（debug 签名、可直装），由 CI 构建、经 Actions artifact 分发。**本仓库不发 Release、不打 tag，文档里不写 release 下载入口**；要么走 artifact，要么本地构建 + 本地签名（见 `docs/build-and-sign-termux.md`）。
 - **构建**：只在 CI 构建（Android SDK / JDK 不常备）；本地构建产出非发行版本，不能当发行版引用。
-- **下载与安装命令**：按 README「下载与安装」一节给，逐条可跑（id 在命令里自己算、产物按前缀过滤、`su -c cp` 到 `/data/local/tmp` 再装），末尾带本地清理。
+- **下载与安装命令**：按 `GLOBAL.md`「下载与安装命令」一节，在每轮汇报里给可复制的命令块（run-id / artifact-id 在命令里自己算、产物按前缀过滤 `Gself-<五段版本>`、`su -c cp` 到 `/data/local/tmp` 再 `pm install`、末尾带本地清理）；本仓库不发 Release，不写 release 下载入口。
 - **术语表**：`docs/glossary.md`；新增术语时同步。
 - **文档同步点**：`module.prop` 的 `minApiVersion`、`scope.list` 的作用域、README 的功能清单与代码三方保持一致。
 - **内部包名**：历史可能仍为 `sumicya.fcmself`（改包名会破坏已装模块）；对外名一律 Gself。

@@ -10,7 +10,7 @@ fcmself（推送修复）、GooglePasswordManagerUnlock（通行密钥解限）�
 
 - **system**：补 `FLAG_INCLUDE_STOPPED_PACKAGES` 唤醒已停止应用；忽略「包变化」类通知取消；放开 ColorOS 后台限制
 - **com.google.android.gms**：移除 Google 密码管理器的「特权浏览器允许列表」检查，非 Chrome 也能用通行密钥
-- **com.google.android.inputmethod.latin**：改写 Gboard 剪贴板显示个数（10）与过期（3 天）
+- **com.google.android.inputmethod.latin**：改写 Gboard 剪贴板显示个数（10）与过期时间（放宽到实际不限）
 
 ## 要求
 

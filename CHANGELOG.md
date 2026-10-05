@@ -23,7 +23,7 @@
 
 ### CI
 
-- 新增 `.github/scripts/cleanup_artifacts.py` 与 `cleanup_artifacts` job：main 出包成功后只保留最近 5 个
+- 新增 `.github/scripts/cleanup_artifacts.py` 与 `cleanup_artifacts` job（移植自已关闭、未合并的 PR #12，保留数由 1 改为 5，并加上 PR 隔离、并发延后与「本次产物不可见就整轮放弃」）：main 出包成功后只保留最近 5 个
   artifact（首次运行清掉既有积压）。范围按该 workflow 的 run id 界定、完整分页、按创建时间倒序，
   并发更新的对象延迟处理；本次运行的 artifact 不可见就整轮放弃；权限只有 `actions: write` + `contents: read`，
   与同仓库其它清理串行；PR 检查不执行清理。
