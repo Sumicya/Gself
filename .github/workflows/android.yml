@@ -10,9 +10,8 @@
 #   4. 构建失败时把日志尾部写进 job summary
 #   5. 版本在这里一处算定（五段 yy.m.d.当日序号.总序号，versionCode = 总序号）；
 #      构建配置只读 -PversionName / -PversionCode，不自己算日期
-#   6. main 出包成功后才清理旧 artifact：保留最近 5 个发行对象（见 AGENTS.md 的授权范围）；
-#      PR 产生的非发行构建 Gself-dev-<构建数> 不占名额，按 retention-days: 5 自然过期。
-#      PR 检查与规范检查保持只读，写权限只在 cleanup_artifacts job 里
+#   6. 出包成功后自动清：保留最近 5 个发行对象；任意分支 push / 手动都跑，PR 不跑。
+#      非发行构建 Gself-dev-* 不占名额，按 retention-days: 5 自然过期。
 #
 # 本工作流不创建 Release、不打 tag、不上传正式 Release asset：发版须先有主人明确授权。
 
@@ -20,10 +19,7 @@ name: Android CI
 
 on:
   push:
-    branches: [ "main" ]
   pull_request:
-    branches: [ "main" ]
-  # 仅用于手动出包 / 手动触发一次清理；清理 job 另限定 ref 必须是 main
   workflow_dispatch: {}
 
 jobs:
@@ -50,21 +46,16 @@ jobs:
       run: |
         set -euo pipefail
         # 五段发行版本只从 main 出包：main 的 push，或从 main 手动触发。
-        # 手动触发别的分支、以及 PR 检查，都算非发行版本，不占用日期与序号。
+        # 其它分支与 PR 检查写 dev-<run>，不占用发行序号。
         release=false
         if [ "${{ github.event_name }}" = "push" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
           if [ "${{ github.ref }}" = "refs/heads/main" ]; then release=true; fi
         fi
         if [ "$release" = "true" ]; then
-          # 日期按本次运行的创建时间取（不按构建机本地时间），一次取齐
           stamp="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq '.created_at')"
           day="$(TZ=Asia/Shanghai date -d "$stamp" +%y.%-m.%-d)"
           local_day="$(TZ=Asia/Shanghai date -d "$stamp" +%Y-%m-%d)"
-          # 当日 00:00（Asia/Shanghai）= 前一天 16:00Z。这里写显式偏移，
-          # 不用 date -u -d "$local_day 00:00:00"：那种写法下 TZ 不参与输入解析，会漏掉北京时间 0–8 点的运行
           since="$(date -u -d "${local_day}T00:00:00+08:00" +%Y-%m-%dT%H:%M:%SZ)"
-          # 当日序号 = 当天 main 分支出包运行中 run 号不大于本次的个数，含本次、从 1 起。
-          # 用「run 号计数」而不是 total_count：并发运行不会分到同一个当日序号。
           today="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/android.yml/runs?created=>=$since&per_page=100" \
             --jq '.workflow_runs[] | select((.event == "push" or .event == "workflow_dispatch") and .head_branch == "main") | .run_number' \
             | awk -v n="$GITHUB_RUN_NUMBER" '$1 <= n' | wc -l)"
@@ -72,8 +63,6 @@ jobs:
         else
           name="dev-$GITHUB_RUN_NUMBER"
         fi
-        # 总序号 = versionCode = github.run_number：本工作流第几次运行，单调递增，
-        # 且天然大于设备上已装旧版的 versionCode（普通升级即可）
         echo "VERSION_NAME=$name" >> "$GITHUB_ENV"
         echo "VERSION_CODE=$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
         {
@@ -87,7 +76,6 @@ jobs:
       shell: bash
       run: |
         set -o pipefail
-        # test 放在最前：介入判据（PushTest）不通过就不必继续构建
         ./gradlew -PversionName="${{ env.VERSION_NAME }}" -PversionCode="${{ env.VERSION_CODE }}" test assembleDebug 2>&1 | tee build.log
 
     - name: Rename artifact
@@ -99,8 +87,6 @@ jobs:
     - name: Verify R8 kept the Xposed entry class
       shell: bash
       run: |
-        # LSPosed 按 META-INF/xposed/java_init.list 里的类名字符串加载入口类。
-        # R8 若把它改名或裁剪，构建仍会成功，但模块会静默不加载——所以在 CI 里直接查 dex。
         python3 - <<'PY'
         import glob, sys, zipfile
         apk = sorted(glob.glob('app/build/outputs/apk/debug/*.apk'))[0]
@@ -134,12 +120,10 @@ jobs:
 
   cleanup_artifacts:
     name: 清理旧 Actions artifact
-    # 只在 main 出包成功后清理；PR 检查不执行，写权限不进未信任 PR 代码
-    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+    if: ${{ github.event_name != 'pull_request' }}
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    # 与同仓库的其它清理串行，不并发删（避免按过期列表删掉更新的产物）
     concurrency:
       group: gself-artifact-retention
       cancel-in-progress: false
