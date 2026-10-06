@@ -38,8 +38,8 @@ jobs:
         # GITHUB_RUN_NUMBER 归零（旧的 Android CI 工作流最后停在 run#127）。不写死现值，只用查法兜底：
         #   repo_floor    = 本仓库所有工作流里最大的 run 号 + 1
         #   artifact_floor = 现存发行产物（Gself-<五段版本>）名里第五段的最大值 + 1
-        # 两个都取不到时回落到本工作流自己的 run 号。发行与非发行构建共用这个总序号当 versionCode，
-        # 两种包互相覆盖安装都不会因版本号回退被拦。
+        # 两个都取不到时回落到本工作流自己的 run 号。所有 CI 构建共用这个总序号当 versionCode，
+        # 版本格式统一为五段版本，避免不同分支产生不同命名体系。
         repo_floor="$(( $(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?per_page=100" \
           --jq '.workflow_runs[].run_number' | sort -n | tail -1) + 1 ))"
         artifact_floor="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" \
@@ -58,6 +58,7 @@ jobs:
         if [ "$today" -lt 1 ]; then today=1; fi
         name="$day.$today.$total"
 
+        echo "VERSION_NAME=$name" >> "$GITHUB_ENV"
         echo "VERSION_CODE=$total" >> "$GITHUB_ENV"
         echo "VERSION_TOTAL=$total" >> "$GITHUB_ENV"
         {
