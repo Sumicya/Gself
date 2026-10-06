@@ -34,10 +34,6 @@ jobs:
         GH_TOKEN: ${{ github.token }}
       run: |
         set -euo pipefail
-        release=false
-        if [ "${{ github.event_name }}" = "push" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-          if [ "${{ github.ref }}" = "refs/heads/main" ]; then release=true; fi
-        fi
         # 总序号必须单调递增，但本工作流 2026-10-05 从 android.yml 改名成 build.yml 后
         # GITHUB_RUN_NUMBER 归零（旧的 Android CI 工作流最后停在 run#127）。不写死现值，只用查法兜底：
         #   repo_floor    = 本仓库所有工作流里最大的 run 号 + 1
@@ -51,20 +47,17 @@ jobs:
                 | map(split(".") | .[4] | tonumber) | (max // 0) + 1' 2>/dev/null || echo 0)"
         floor=$(( repo_floor > artifact_floor ? repo_floor : artifact_floor ))
         total=$(( floor > GITHUB_RUN_NUMBER ? floor : GITHUB_RUN_NUMBER ))
-        if [ "$release" = "true" ]; then
-          stamp="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq '.created_at')"
-          day="$(TZ=Asia/Shanghai date -d "$stamp" +%y.%-m.%-d)"
-          local_day="$(TZ=Asia/Shanghai date -d "$stamp" +%Y-%m-%d)"
-          since="$(date -u -d "${local_day}T00:00:00+08:00" +%Y-%m-%dT%H:%M:%SZ)"
-          today="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/build.yml/runs?created=>=$since&per_page=100" \
-            --jq '.workflow_runs[] | select((.event == "push" or .event == "workflow_dispatch") and .head_branch == "main") | .run_number' \
-            | awk -v n="$GITHUB_RUN_NUMBER" '$1 <= n' | wc -l)"
-          name="$day.$today.$total"
-        else
-          # PR / 其它分支：版本名不伪造发行序号，versionCode 仍用同一个总序号
-          name="dev-$GITHUB_RUN_NUMBER"
-        fi
-        echo "VERSION_NAME=$name" >> "$GITHUB_ENV"
+        stamp="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq '.created_at')"
+        day="$(TZ=Asia/Shanghai date -d "$stamp" +%y.%-m.%-d)"
+        local_day="$(TZ=Asia/Shanghai date -d "$stamp" +%Y-%m-%d)"
+        since="$(date -u -d "${local_day}T00:00:00+08:00" +%Y-%m-%dT%H:%M:%SZ)"
+        today="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/build.yml/runs?created=>=$since&per_page=100" \
+          --jq '.workflow_runs[] | select((.event == "push" or .event == "workflow_dispatch") and .head_branch == "main") | .run_number' \
+          | awk -v n="$GITHUB_RUN_NUMBER" '$1 <= n' | wc -l)"
+        # PR / 其它分支不占当日序号；若当天尚无 main 出包，统一版本仍从当日序号 1 起。
+        if [ "$today" -lt 1 ]; then today=1; fi
+        name="$day.$today.$total"
+
         echo "VERSION_CODE=$total" >> "$GITHUB_ENV"
         echo "VERSION_TOTAL=$total" >> "$GITHUB_ENV"
         {
