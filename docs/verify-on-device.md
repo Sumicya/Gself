@@ -140,6 +140,56 @@ su -c "logcat -d | grep -iE '<包名>|c2dm|Background execution|not delivering|s
 | 参数按类型/按值识别 | **未验证**：无 JVM 单测（要真 Intent / 真 ROM 类） |
 | release（R8）产物 | **未验证**：CI 只出 debug 包，release 变体只在本地产出、没人装上验过 |
 
+## 7.1 消息延迟 / 滞留：怎么抓日志
+
+症状是「消息晚了 / 卡住，事后才补到」。分两步：先确认**还能回溯到什么时候**，再决定补抓历史还是转长期抓取。
+
+**第一步：现有日志能回溯多远**（模块自己的日志写在 LSPosed 日志文件里，不受 logcat 环形缓冲影响）
+
+```bash
+su -c 'ls -l /data/adb/lspd/log/'
+su -c 'grep -h fcmself /data/adb/lspd/log/*.log | head -3'    # 最早一行 = 可回溯起点
+su -c 'grep -h fcmself /data/adb/lspd/log/*.log | tail -80'
+```
+
+**第二步：系统侧转长期抓取**（logcat 自带轮转，写到文件，不会因为缓冲被冲掉）
+
+```bash
+su -c 'logcat -c'                     # 清一次，窗口从此刻开始
+su -c 'nohup logcat -v threadtime -b all -f /data/local/tmp/gself.log -r 8192 -n 6 >/dev/null 2>&1 &'
+su -c 'ls -l /data/local/tmp/gself.log*'   # 确认在写；6 个文件各 8 MB，通常够 1–2 天
+```
+
+复现后取回（先筛关键行，再决定要不要整段）：
+
+```bash
+su -c 'grep -hE "FcmSelf|c2dm|firebase|MESSAGING_EVENT|NotificationManager|BroadcastQueue|ActivityManager" \
+  /data/local/tmp/gself.log*' | tail -200
+su -c 'cp /data/local/tmp/gself.log* /sdcard/Download/'   # 整段带回来
+```
+
+**判读：消息卡在哪一段**（对着第 5 节的三段归因看）
+
+| 缺哪一类行 | 说明卡在 |
+| --- | --- |
+| 完全没有 `c2dm` / `firebase` / `MESSAGING_EVENT` 广播行 | 到达系统之前（服务器 / 网络 / GMS 心跳），模块不介入 |
+| 有广播行、没有 `wake:` | 广播没带目标包名（非定向），或没判上——后者属模块 |
+| 有 `wake: <包名>`、之后没有 `Start proc` | 广播发出去了但进程没起来（ROM 拦截 / 冻结 / 应用自杀） |
+| 有 `Start proc`、没有通知入队行 | 应用侧问题（没解析消息 / 没调 `notify()` / 渠道与权限被拦） |
+
+**按墙钟窗口截取**（比定时循环靠谱）：把「服务端发出时间」和「通知出现时间」各记一个，然后按时间戳 grep
+（`threadtime` 格式是 `10-06 12:03:41.123`）：
+
+```bash
+su -c 'grep -nE "^10-06 (1[12]):" /data/local/tmp/gself.log*' | head -100
+```
+
+**重启也要抓**：重启前最后一步 `su -c 'logcat -c'`，重启后马上起第二条的长抓取；
+LSPosed 日志本身会在模块载入时自动记一行，两条路互相兜底。
+
+> 这一节的命令按 toybox / Android `logcat` 的标准写法给，**未在真机上跑过**（我没有设备）；
+> 哪条报错把原文贴回来，我按实际改。
+
 ## 8. 反馈问题时请附上
 
 - 从重启开始的完整 `FcmSelf` 日志（尤其 `hook target:` 与所有 `hook skip` 行）
@@ -192,7 +242,8 @@ su -c "logcat -d | grep -iE '<包名>|c2dm|Background execution|not delivering|s
 - `wake:` + `unfreeze 可用（4 参签名）` 说明**核心链路在 Android 16 / ColorOS 上成立**，
   且「只做新包」的挂载点选择正确（`BroadcastController` 在这台机器上存在）。
 - `keep notification` 打给 `com.termux` / `mark.via` / `devicelockcontroller` 属**设计行为**：
-  拦的是「取消原因为 8 / 10020 / 10021 的整包取消」，对所有包生效、没有白名单——
+  拦的是「取消原因为 8 / 10020 / 10021 的整包取消」，对所有包生效、没有白名单；
+  自 26.10.5.1 起日志带原因值（`keep notification: <包名>（reason=10020）`），据此判断是不是误拦——
   这些多是 ColorOS 空闲清理或包变化触发的取消。要判断有没有误拦，按第 6 节第 3 条验。
 - 没有任何 `hook skip`，也没有 `Gboard 剪贴板 Hook 已安装`：Gboard 那组只在 Gboard 被加载过之后才打日志，
   先确认当前输入法（见第 1 节）；若 Gboard 就是当前输入法却仍无日志，把

@@ -60,10 +60,12 @@ fun Hook.notificationFixes() {
         hook(find(nms, "cancelAllNotificationsInt")) { chain ->
             // ponytail: reason 按值认，不按下标——ROM 签名里 pkg / reason 的位置都随版本漂移，
             //             而 reason 是唯一取值落在这三个数里的 int。代价是别的 int 参数恰好等于 8 时
-            //             会误拦一次取消（只影响「通知没被清掉」，不影响投递）。真机若出现误拦，
-            //             改成「第一个 String 之后、值为 8/10020/10021 的那个 int」。
-            if (chain.args.filterIsInstance<Int>().none { it in BLOCKED_REASONS }) return@hook chain.proceed()
-            trace("keep notification: ${chain.args.filterIsInstance<String>().firstOrNull()}")
+            //             会误拦一次取消（只影响「通知没被清掉」，不影响投递）。
+            //             日志里带上命中的 reason 值：真机日志按值判定误拦（例如出现 reason=8 却并非包变化）。
+            val reason = chain.args.filterIsInstance<Int>().firstOrNull { it in BLOCKED_REASONS }
+                ?: return@hook chain.proceed()
+            val pkg = chain.args.filterIsInstance<String>().firstOrNull()
+            trace("keep notification: $pkg（reason=$reason）")
             null
         }
     }

@@ -5,6 +5,11 @@
 以及改名前的遗留前缀 `fcmself-` / `fcmfix-`。不碰其它项目、手工上传的对象、Release 与 tag。
 保留：按创建时间倒序完整分页后，保留最近 KEEP_ARTIFACT 个（默认 5，必须为正整数），其余删除。
 
+保留窗口只算**发行对象**（`Gself-<五段版本>` 与遗留名）：PR / 其它分支的非发行包 `Gself-dev-<构建数>`
+不占名额，交给 `upload-artifact` 的 `retention-days: 5` 过期。
+与规范字面的差异：规范第二十一版写「Actions artifact 保留最近 5 个」，主人当轮指示为「只按发行包计数」；
+按【权威与冲突】的权威顺序（主人当轮指示 > 规范最新版）执行主人指示，并在 CHANGELOG 记账。
+
 安全闸（缺一不动手）：
   - 本次运行自己的 artifact 必须已经可见，否则整轮放弃，避免删掉刚产出的包；
   - 比本次运行更新的 artifact（并发运行刚上传的）延后到下一轮再判断；
@@ -34,6 +39,8 @@ PAGE_SIZE = 100
 DEFAULT_KEEP = 5
 # 本项目自己的 artifact 名前缀：对外名 Gself，改名前的遗留名一并纳入（首次启用时清理积压）
 PROJECT_PREFIXES = ("gself-", "fcmself-", "fcmfix-")
+# 非发行构建（PR / 其它分支）：不占保留名额，按 retention-days 过期
+NON_RELEASE_NAME = re.compile(r"^Gself-dev-\d+$")
 
 
 class GitHubAPI:
@@ -119,6 +126,7 @@ def run() -> int:
     run_started = parse_time(current_run["created_at"])
 
     candidates: list[dict[str, Any]] = []
+    non_release: list[dict[str, Any]] = []
     deferred: list[dict[str, Any]] = []
     current_visible = False
     for artifact in api.list_all("actions/artifacts", "artifacts"):
@@ -127,7 +135,9 @@ def run() -> int:
         artifact["_created_at"] = parse_time(artifact["created_at"])
         if str((artifact.get("workflow_run") or {}).get("id", "")) == run_id:
             current_visible = True
-        if artifact["_created_at"] > run_started:
+        if NON_RELEASE_NAME.match(artifact["name"]):
+            non_release.append(artifact)
+        elif artifact["_created_at"] > run_started:
             deferred.append(artifact)
         else:
             candidates.append(artifact)
@@ -140,8 +150,8 @@ def run() -> int:
     kept_ids = {artifact["id"] for artifact in kept}
 
     print(
-        f"本项目（前缀 {'、'.join(PROJECT_PREFIXES)}）在范围内 {len(candidates)} 个；"
-        f"保留最近 {len(kept)} 个；延后（并发更新的）{len(deferred)} 个"
+        f"本项目（前缀 {'、'.join(PROJECT_PREFIXES)}）发行对象 {len(candidates)} 个；"
+        f"保留最近 {len(kept)} 个；非发行 {len(non_release)} 个（不占名额）；延后 {len(deferred)} 个"
     )
     for artifact in candidates:
         tag = "KEEP  " if artifact["id"] in kept_ids else "DELETE"
@@ -149,6 +159,8 @@ def run() -> int:
             f"{tag} id={artifact['id']} name={artifact['name']} "
             f"created={artifact['created_at']} size={artifact['size_in_bytes']}B"
         )
+    for artifact in non_release:
+        print(f"SKIP   id={artifact['id']} name={artifact['name']} created={artifact['created_at']}（非发行，按 5 天过期）")
     for artifact in deferred:
         print(f"DEFER  id={artifact['id']} name={artifact['name']} created={artifact['created_at']}")
 
