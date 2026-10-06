@@ -2,6 +2,35 @@
 
 > 本仓库由 fcmfix 迁移而来。0.9.0 及以前压缩为要点，完整历史见 `git log`。
 
+## 规范同步 —— GLOBAL.md 第二十二版
+
+> 对齐 Sumicya/selfs/GLOBAL.md 第二十二版（2026-10-06）。模块代码零改动，只动
+> `AGENTS.md` 与 CI。
+
+### 删掉的
+
+- `spec-check.yml` 整条工作流：第二十二版简单性要求 CI 围绕实际构建与清理安排，
+  不设规范检查工作流，规范由 agent 在会话中核对。AGENTS.md 第十五版「应有只读规范
+  检查」的条目与之冲突，按全局规范优先处理。
+
+### 换上的
+
+- `AGENTS.md` 按第二十二版格式重写：只记项目事实、版本计数口径、数量清理与必要限制，
+  版本戳更新为「上次同步 = 第二十二版」。
+- runner `ubuntu-latest` → `ubuntu-24.04`（第二十二版：用具体、受支持的镜像）。
+- 版本计数统一五段 `yy.m.d.当日序号.总序号`：push 与 PR 同一序号池（此前 PR 固定
+  `yy.m.d.0.0`、versionCode=1）；序号来自 android.yml 的真实运行记录并锚定本次运行，
+  失败运行同样计数，同次重试复用版本。取数失败或校验不过立即停止出包与上传
+  （此前有版本为空的运行照样上传了 `Gself-` 空名产物）。
+- `upload-artifact` 补 `if-no-files-found: error`。
+
+### 新增
+
+- `cleanup` job：上传成功后保留最近 **5 个** artifact（跨分支、跨触发事件，含改名前
+  遗留名），完整分页、按创建时间排序，删除前在 job summary 列出保留与删除清单；
+  最小写权限 `actions: write`；fork PR 无写权限不执行，由后续 push 运行补清。
+  当前 23 个积压产物会在下一次出包运行收到尾。
+
 ## Gself —— 三合一 + 换 GPL-3.0
 
 > 把三个项目合成一个 libxposed 模块：fcmself（推送/通知/ColorOS，system_server）、
