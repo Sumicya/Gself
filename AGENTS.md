@@ -25,7 +25,7 @@
 - 范围：本仓库自己工作流产出的对象，按项目名前缀筛选——`Gself-`（大小写不敏感）与改名前的遗留前缀
   `fcmself-` / `fcmfix-`；不碰其它项目、手工上传的对象、Release 与 tag。
 - 保留数：**发行对象保留最近 5 个**（`KEEP_ARTIFACT: "5"`，对象 = `Gself-<五段版本>` 及遗留名），按创建时间倒序完整分页后计算；另以 `retention-days: 5` 作时间兜底。
-  PR / 其它分支的非发行包（`Gself-dev-<构建数>`）**不占名额**，按 `retention-days: 5` 过期。
+  现行 CI 统一使用 `Gself-<五段版本>`；历史遗留的 `Gself-dev-<构建数>` 仍视为旧非发行包，不占名额并按 `retention-days: 5` 过期。
 - 与规范字面的差异（按【权威与冲突】裁决后落地）：规范第二十一版写「Actions artifact 保留最近 5 个」，
   主人当轮指示为「只按发行包计数」；权威顺序是**主人当轮指示 > 规范最新版**，故按主人指示执行，并在 CHANGELOG 记账。
   这样下载入口永远能取到发行包，代价是非发行包最多多占几天、由 5 天过期兜底。
@@ -55,7 +55,7 @@
 - **版本**：五段 `yy.m.d.当日序号.总序号`（第四段当日序号、第五段总序号），由 Android CI 的「Compute release version」一处算定（日期取本次运行的 `created_at`），构建配置只读 `-PversionName` / `-PversionCode`，不自己算日期。
   - 总序号 = `versionCode` = max(仓库所有工作流最大 run 号 + 1, 现存发行产物第五段 + 1, 本工作流 run 号)：跨工作流改名也不回退；发行与非发行构建共用它，两种包互相覆盖安装都不被版本号拦。
   - 当日序号 = 当天 main 分支出包运行（push / workflow_dispatch）中 run 号不大于本次的个数，含本次、从 1 起；PR 与其它分支的运行不占号。
-  - 非发行构建（PR 检查、手动构建其它分支、本地构建）写 `dev-<构建数>`，不伪造发行序号。
+  - CI 统一版本名：PR、其它分支与 main 均使用 `yy.m.d.当日序号.总序号`；PR 与其它分支不占第四段当日序号，但不再使用 `dev-*` 分叉版本。历史遗留 `dev-*` 仅保留作清理兼容。
   - 查当前最大总序号（现值会过期，只记查法）：
     `gh api 'repos/Sumicya/Gself/actions/workflows/build.yml/runs?per_page=1' --jq '.workflow_runs[0].run_number'`
 - **产物**：单一产物 `Gself-<版本>.apk`（debug 签名、可直装），由 CI 构建、经 Actions artifact 分发。**本仓库不发 Release、不打 tag，文档里不写 release 下载入口**；要么走 artifact，要么本地构建 + 本地签名（见 `docs/build-and-sign-termux.md`）。
