@@ -1,0 +1,137 @@
+# Build —— 「零 secrets」：单元测试、debug 包、上传产物；出包后自动清（保留 5 个发行对象）。
+# 不创建 Release / tag / Release asset。
+
+name: Build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    permissions:
+      # 默认只读；「Compute release version」要查 run 历史，按规范加 actions: read。
+      # 出包（upload-artifact）不需要写权限。
+      contents: read
+      actions: read
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: set up JDK 21
+      uses: actions/setup-java@v6
+      with:
+        java-version: '21'
+        distribution: 'temurin'
+        cache: gradle
+
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+
+    - name: Compute release version
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        # 总序号必须单调递增，但本工作流 2026-10-05 从 android.yml 改名成 build.yml 后
+        # GITHUB_RUN_NUMBER 归零（旧的 Android CI 工作流最后停在 run#127）。不写死现值，只用查法兜底：
+        #   repo_floor    = 本仓库所有工作流里最大的 run 号 + 1
+        #   artifact_floor = 现存发行产物（Gself-<五段版本>）名里第五段的最大值 + 1
+        # 两个都取不到时回落到本工作流自己的 run 号。所有 CI 构建共用这个总序号当 versionCode，
+        # 版本格式统一为五段版本，避免不同分支产生不同命名体系。
+        repo_floor="$(( $(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?per_page=100" \
+          --jq '.workflow_runs[].run_number' | sort -n | tail -1) + 1 ))"
+        artifact_floor="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" \
+          --jq '[.artifacts[].name | select(test("^Gself-[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$"))]
+                | map(split(".") | .[4] | tonumber) | (max // 0) + 1' 2>/dev/null || echo 0)"
+        floor=$(( repo_floor > artifact_floor ? repo_floor : artifact_floor ))
+        total=$(( floor > GITHUB_RUN_NUMBER ? floor : GITHUB_RUN_NUMBER ))
+        stamp="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq '.created_at')"
+        day="$(TZ=Asia/Shanghai date -d "$stamp" +%y.%-m.%-d)"
+        local_day="$(TZ=Asia/Shanghai date -d "$stamp" +%Y-%m-%d)"
+        since="$(date -u -d "${local_day}T00:00:00+08:00" +%Y-%m-%dT%H:%M:%SZ)"
+        today="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/build.yml/runs?created=>=$since&per_page=100" \
+          --jq '.workflow_runs[] | select((.event == "push" or .event == "workflow_dispatch") and .head_branch == "main") | .run_number' \
+          | awk -v n="$GITHUB_RUN_NUMBER" '$1 <= n' | wc -l)"
+        # PR / 其它分支不占当日序号；若当天尚无 main 出包，统一版本仍从当日序号 1 起。
+        if [ "$today" -lt 1 ]; then today=1; fi
+        name="$day.$today.$total"
+
+        echo "VERSION_NAME=$name" >> "$GITHUB_ENV"
+        echo "VERSION_CODE=$total" >> "$GITHUB_ENV"
+        echo "VERSION_TOTAL=$total" >> "$GITHUB_ENV"
+        {
+          echo "### 本次版本"
+          echo
+          echo "- versionName: \`$name\`"
+          echo "- versionCode: \`$total\`（总序号，跨工作流改名不回退）"
+        } >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Build with Gradle
+      shell: bash
+      run: |
+        set -o pipefail
+        ./gradlew -PversionName="${{ env.VERSION_NAME }}" -PversionCode="${{ env.VERSION_CODE }}" test assembleDebug 2>&1 | tee build.log
+
+    - name: Rename artifact
+      shell: bash
+      run: |
+        cd ${{ github.workspace }}/app/build/outputs/apk
+        mv debug/app-debug.apk debug/Gself-${{ env.VERSION_NAME }}.apk
+
+    - name: Verify R8 kept the Xposed entry class
+      shell: bash
+      run: |
+        python3 - <<'PY'
+        import glob, sys, zipfile
+        apk = sorted(glob.glob('app/build/outputs/apk/debug/*.apk'))[0]
+        with zipfile.ZipFile(apk) as z:
+            dex = b''.join(z.read(n) for n in z.namelist()
+                           if n.startswith('classes') and n.endswith('.dex'))
+        ok = b'Lsumicya/fcmself/XposedMain;' in dex
+        print(f'{apk}: 入口类 sumicya.fcmself.XposedMain '
+              + ('已保留' if ok else '被 R8 改名或裁剪'))
+        print(f'dex 合计 {len(dex)} 字节')
+        sys.exit(0 if ok else 1)
+        PY
+
+    - name: Upload apk
+      uses: actions/upload-artifact@v7
+      with:
+        name: Gself-${{ env.VERSION_NAME }}
+        path: ${{ github.workspace }}/app/build/outputs/apk/debug/Gself-${{ env.VERSION_NAME }}.apk
+        retention-days: 5
+        if-no-files-found: error
+
+    - name: Dump build log tail on failure
+      if: failure()
+      shell: bash
+      run: |
+        {
+          echo '### Gradle build log (tail)'
+          echo '```'
+          tail -n 150 build.log
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"
+
+  cleanup_artifacts:
+    name: 清理旧 Actions artifact
+    if: ${{ github.event_name != 'pull_request' }}
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    concurrency:
+      group: gself-artifact-retention
+      cancel-in-progress: false
+    permissions:
+      actions: write
+      contents: read
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: 只保留最近 5 个 artifact
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        KEEP_ARTIFACT: "5"
+      run: python3 .github/scripts/cleanup_artifacts.py

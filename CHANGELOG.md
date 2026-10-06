@@ -2,7 +2,149 @@
 
 > 本仓库由 fcmfix 迁移而来。0.9.0 及以前压缩为要点，完整历史见 `git log`。
 
-## Gself —— 三合一 + 换 GPL-3.0
+## 26.10.5.1 —— 对齐 GLOBAL.md 第二十一版
+
+> 规范自第十七版更新到第二十一版，本仓库按最新版收口：CI 少流程、禁旧、出包三要素、清理默认启用并当轮清积压。
+
+### CI
+
+- **删除 `.github/workflows/spec-check.yml`**：第二十版起规范自检由 agent 在会话中完成，不设规范检查工作流；
+  「一份职责只留一个工作流」，本仓库唯一工作流是 `.github/workflows/build.yml`（构建 + 出包 + 清理）。
+  此前我把它扩成 127 行静态检查属于逆着规范加码，已整文件删除。
+- **禁旧**：`runs-on: ubuntu-latest` → `ubuntu-24.04`（`ubuntu-latest` 会打迁移告警，规范明令禁止）；
+  Action 保持现行档（`checkout@v7`、`setup-java@v6`、`upload-artifact@v7`）。
+- **出包三要素**：`actions/upload-artifact` 补 `if-no-files-found: error`（原有 `name: Gself-<版本>`、`retention-days: 5`）。
+  构建 job 权限加 `actions: read`（要查 run 历史），出包本身不需要写权限。
+- **总序号跨改名不回退**：工作流由 `android.yml` 改名 `build.yml` 后 `GITHUB_RUN_NUMBER` 归零（旧工作流停在 run#127），
+  直接用它会让 `versionCode` 从 1 起、覆盖安装被降级拦截。改成取「本仓库所有工作流最大 run 号 + 1」与
+  「现存发行产物第五段 + 1」的较大者（只用查法，不写死现值），发行与非发行构建共用它当 `versionCode`。
+- **滚动清理按第二十一版口径**：默认启用、不需逐仓批准；范围按项目名前缀筛选（`Gself-`、遗留 `fcmself-` / `fcmfix-`），
+  保留**最近 5 个**（当时 PR 的非发行包同样计入；本条后被「复查补正」按主人指示改为只算发行对象）。清理由 `cleanup_artifacts` job 执行：`needs: build`、`concurrency` 串行、
+  PR 事件不执行、权限只有 `actions: write` + `contents: read`、删除前打印完整清单、本次产物不可见就整轮放弃。
+  已知代价：PR 包比发行包新时发行包会被清出窗口，用 `gh workflow run build.yml --ref main` 可在 main 上补一次出包（此代价随上面裁决一并作废）。
+
+### 文档
+
+- `AGENTS.md`：版本戳 第十七版 → 第二十一版；删掉「只读规范检查工作流」条目，补上清理默认启用、前缀筛选、
+  出包三要素与「CI 出包：有 / CI 发版：未授权」的汇报口径。
+- `README.md`：CI 徽章指向改名后的 `Build` 工作流；构建段说明产物走 Actions artifact、不发 Release。
+- `docs/glossary.md`：更新「滚动清理」「保留数」口径（最近 5 个，含非发行包）。
+
+### 真机验证（2026-10-05 22:13，OnePlus/ColorOS，Android 16 / API 36）
+
+- 装上分支产物（`Gself-dev-*`）重启后，system_server 三组挂载点全部命中：
+  `hook target: BroadcastController#broadcastIntentLocked(25)`、`OplusAppStartup 自启动闸门已关`、
+  `OplusProxyBroadcast 代理已全关`、`Hans GMS 限制已置空`、`OplusProxyWakeLock instance captured`。
+- 运行期证据：`unfreeze 可用（4 参签名）` + `wake: com.zhiliaoapp.musically`（核心修复命中抖音的定向推送）；
+  `keep notification: com.termux / mark.via / com.android.devicelockcontroller`（按值认原因的设计行为，见文档第 9 节）。
+- 「只做新包」在真机成立：Android 16 上 `BroadcastController` 存在、ColorOS `unfreezeIfNeed` 4 参签名可用，无 `hook skip`。
+- `通行密钥解限 Hook 已安装` 出现两次（GMS 进程重启过）；**`Gboard 剪贴板 Hook 已安装` 未见**——
+  待确认 Gboard 是否为当前输入法（若不是，属预期；若是，按文档第 1 节的排查命令继续）。
+- 参数个数实测 25（早期样机 19），文档样例行已改成「随 ROM 变化」的写法，不再写死一个数。
+
+### 复查补正（真机日志之后，2026-10-05）
+
+- `Fixes.kt` `notificationFixes`：日志带上命中的取消原因值——`keep notification: <包名>（reason=10020）`。
+  真机上 `com.termux` / `mark.via` / `com.android.devicelockcontroller` 在 7 分钟里被拦了 6 次，
+  只打包名无法判断拦对没拦对；带上原因值后可直接对照 8 / 10020 / 10021 的实际含义排查误拦。
+- 滚动清理的保留窗口按【权威与冲突】**回到主人指示**：只按发行对象计数保留 5 个，`Gself-dev-<构建数>` 不占名额。
+  规范第二十一版字面为「Actions artifact 保留最近 5 个」，两者冲突；权威顺序是主人当轮指示 > 规范最新版，
+  故按主人指示执行并在此记账。对象范围仍按规范的项目名前缀筛选（`Gself-` 与遗留 `fcmself-` / `fcmfix-`）。
+- **权威冲突与问题清单（2026-10-06）**：此前只写结论、没把冲突摆清，本轮补 `AGENTS.md`「权威冲突台账」四条——
+  ① 保留数：规范第 250 行「最近 5 个」↔ 主人「只按发行包计数」；② 清理 job 必须在默认分支才算实现（第 248 行）
+  ↔ 主人「PR #13 不合」，故 `main` 上现为「合规地未实现」；③ 积压清理（第 270 行「当轮清到保留数以内」）
+  ↔ 主人口径（dev 不占名额）：现存 13 个 artifact 全是 `Gself-dev-*`，按字面该删 8 个、按主人口径 0 个，**待裁决**；
+  ④ 规范「规则错就改本文件」（第 19、23 行）——该文件在 Sumicya/selfs，本仓库只能记账，**待裁决**是否需要我去改规范。
+- **文档一致性补正（2026-10-06）**：三处说明与实现不符，按实现改写——
+  `docs/glossary.md` 的「非发行包同样计入」（实际不占名额）与「总序号 = `github.run_number`」
+  （实际是三者取大的查法）、`AGENTS.md` 的「PR 包比发行包新时发行包会被清出窗口」（只算发行对象后不存在此场景）；
+  `README.md` 同步为「最近 5 个发行包」。
+- `docs/verify-on-device.md` 新增「7.1 消息延迟 / 滞留：怎么抓日志」：LSPosed 日志的回溯起点查法、
+  `logcat -f` 轮转长期抓取、按「缺哪一类行」判断卡在哪一段、按墙钟窗口截取；命令**未在真机跑过**，已标注。
+
+### 真机证据（2026-10-05 23:41–23:50 洪水，2026-10-06 追记）
+
+- 22:13 重启后约 1.5 小时，`fork.risin42.nagramx` 在 8.7 分钟内被 `wake:` 77 次（平均 6.9 秒一条，
+  其中 12 组同秒双发），之后到次日 08:12 归于安静——**积压倒灌**的形状（消息集中在一个窗口投递）。
+- 同窗内两次 `keep notification: fork.risin42.nagramx`（23:48:18 / 23:58:22）说明有整包取消被拦下；
+  是否误拦要看 `reason=`（自本次提交起打印，对应产物 `Gself-dev-11` / `Gself-dev-12`）。
+- 无法从模块日志判定「当时应用是否停止态」「消息是服务端晚发还是设备侧排队」：前者要当时抓
+  `dumpsys package` / `ps` 快照，后者要拿发送时间减 `wake:` 时间量化延迟。两条方法已写进
+  `docs/verify-on-device.md` 第 7.1 节。
+
+### 待落地（需要主人）
+
+- 清理 job 必须存在于**默认分支**的构建工作流里才算实现：本分支的 PR #13 合并进 `main` 后生效；
+  合并前 main 上既没有清理 job，也仍是旧的 `android.yml` + `ubuntu-latest`。
+
+## 26.10.5 —— 版本单一来源 + CI 滚动清理 + 文档同步
+
+> 这一轮按 Sumicya/selfs 的 GLOBAL.md 第十五版对齐：版本只留一个来源、CI 加滚动清理与静态规范检查、
+> 文档回到 Gself 的实际产物与安装方式。三组 Hook 的行为没改。
+
+### 版本（五段，单一来源）
+
+- 发行版本由 Android CI 的「Compute release version」一处算定：`yy.m.d.当日序号.总序号`。
+  构建配置只读 `-PversionName` / `-PversionCode`，删掉 `gradle.properties` 里的 `fcmself.buildNumber`
+  与 `build.gradle.kts` 里第二套回落版本。
+- 总序号（`versionCode`）改用 `github.run_number`。旧写法取「android.yml 历史 push 运行总数」，
+  于是 artifact `Gself-26.10.5.4.24` 的 versionCode 是 24，比设备上已装的 26.10.1.100+
+  （它们的 versionCode = 构建数）更小，普通升级会被降级拦住。
+- 当日序号改用「当天 main 出包运行中 run 号不大于本次的个数」。旧写法取当天 push 运行总数，
+  并发运行会算出同一个号（2026-10-05 的 run 108 与 109 都得到 26.10.5.4.x）；现在分别是 3、4。
+- 修复当天起点：`date -u -d "$local_day 00:00:00"` 里 TZ 不参与输入解析，窗口实际从北京时间 08:00 起，
+  会漏算北京时间 0–8 点的运行；改成显式 `+08:00` 偏移。
+- 非发行构建（PR 检查、手动构建其它分支、本地构建）写 `dev-<构建数>`，不伪造发行序号。
+
+### CI
+
+- 新增 `.github/scripts/cleanup_artifacts.py` 与 `cleanup_artifacts` job（移植自已关闭、未合并的 PR #12，保留数由 1 改为 5，并加上 PR 隔离、并发延后与「本次产物不可见就整轮放弃」）：main 出包成功后只保留最近 5 个
+  artifact（首次运行清掉既有积压）。范围按该 workflow 的 run id 界定、完整分页、按创建时间倒序，
+  并发更新的对象延迟处理；本次运行的 artifact 不可见就整轮放弃；权限只有 `actions: write` + `contents: read`，
+  与同仓库其它清理串行；PR 检查不执行清理。
+- `android.yml` 增 `workflow_dispatch`，且只有 ref 是 main 时才算发行 / 清理；产物名与上传路径不变。
+- `spec-check.yml` 扩成静态检查：AGENTS.md 指针与版本戳（执行的规范版本写在检查里，与 AGENTS.md 必须一致）、
+  常驻规则条目、版本单一来源、禁止自动发版（工作流 + `.github/scripts`）、写权限最小化
+  （只允许 `android.yml` 的清理 job 拿 `actions: write`）、滚动保留策略落地。规范检查保持 `contents: read`。
+- 清理脚本先跑 `--dry-run` 验证：当前 89 个 artifact 里 87 个属于本工作流，保留 5 个、计划删除 82 个。
+
+### 文档
+
+- README 增补「下载与安装」：从 Actions artifact 取 `Gself-<版本>.apk`（id 在命令里自己算、产物按前缀过滤），
+  `su -c cp` 到 `/data/local/tmp` 再 `pm install`，末尾带本地清理；并补「相关文档」一节。
+- `docs/verify-on-device.md`：安装步骤与作用域改成 Gself 的实际值（`Gself-<版本>.apk`，
+  作用域 system + GMS + Gboard），验证状态表按本轮证据重写。
+- `docs/build-and-sign-termux.md` 重写为「本地构建（非发行版本）+ 自备密钥签名」，
+  删掉早已不存在的 release 未签名产物描述。
+- `scripts/sign-apk.sh`：环境变量改 `GSELF_KEYSTORE` / `GSELF_KEY_ALIAS`，安装提示改用 `/data/local/tmp`。
+- 新增 `docs/glossary.md` 术语表；`AGENTS.md` 补齐本项目的版本口径、查法与滚动清理授权范围。
+
+### 复查补正（同日）
+
+- **段位口径**（第十六版更正）：`docs/glossary.md` 里当日序号、总序号的段位写反了，改为「当日序号 = 第四段、总序号 = 第五段」。
+- **平台声明取证**（第十七版「先查证再动手」）：`Fixes.kt` 原注「Android 15+ 广播出口挪进 `BroadcastController`」不准确。
+  查 `aosp-mirror/platform_frameworks_base` 的 `services/core/java/com/android/server/am/`：`BroadcastController.java`
+  首次出现在 `android-16.0.0_r1`，`android-14.0.0_r1` 与 `android-15.0.0_r1` 的 am 包下都没有这个文件。
+  结论改为「Android 16+（API 36）在 `BroadcastController`，Android 10–15 在 AMS」，同一台设备只挂一处、不做新旧双写。
+- **只做新包与不做降级**（第十七版，已落地）：推送唤醒**只实现** Android 16 起的 `BroadcastController`，
+  删掉 Android 10–15 的 AMS 回退路径；`minSdk` 29 → 36，旧版本在安装时由系统明确拒绝，README 与 `module.prop`
+  写明「Android 16+」，不在文档里假装支持。ColorOS 解冻同理：只认当前 4 参 `unfreezeIfNeed` 签名，
+  不再做 3 参旧签名的逐档回退，签名对不上就打一条 `unfreeze 跳过：…`（功能不生效，不静默装作成功）。
+  最坏失败模式：类/方法不存在时 `install()` 打 `hook skip 推送唤醒`，整组不生效，不损坏系统。
+  与【Ponytail 与工程原则】「不擅自改变兼容范围」存在冲突，按权威顺序（主人当轮指示 = 规范高于一切）执行
+  更新的第十七版；若主人要保留 Android 10–15 兼容，回退点是本提交里删掉的那两段。
+- **滚动清理对象收窄**（主人批准）：保留名额只算发行对象（`Gself-<五段版本>` 与历史命名 `fcmself-*`），
+  PR 的非发行构建 `Gself-dev-<构建数>` 不占名额、按 `retention-days: 5` 过期。原因是实测发现连续的 PR 运行
+  会把最新发行产物挤出「最近 5 个」，下载入口会取不到包。
+- **继承说明**：滚动清理移植自已关闭、未合并的 PR #12（其分支已删除），保留数由 1 改为 5，并补 PR 隔离与并发延后。
+- **README 口径**：维持极简（主人选择），下载与安装命令按规范在每轮汇报里给出，不在 README 里重复。
+
+### 未验证
+
+- 真机：本轮没上设备，`docs/verify-on-device.md` 里的 26.10.1 全链路仍是「未验证」。
+- 滚动清理的实删：只在本机跑过 `--dry-run`；实删要等本分支合并进 main 后的下一次出包。
+
+## 26.10.1 —— Gself：三合一 + 换 GPL-3.0
 
 > 把三个项目合成一个 libxposed 模块：fcmself（推送/通知/ColorOS，system_server）、
 > GooglePasswordManagerUnlock（通行密钥解限，GMS 进程）、GboardHook（剪贴板，Gboard 进程）。
@@ -14,7 +156,7 @@
 - `onPackageLoaded` 按包名分发：`com.google.android.gms` → 通行密钥解限；Gboard → 剪贴板。
 - `Gms.kt` 移植通行密钥解限：DexKit 稳定字符串定位来源解析器，**唯一候选才 Hook**（保留其安全边界），
   来源构造函数记录 origin、解析器据其改写。加 `org.luckypray:dexkit:2.2.0` 依赖。
-- `Gboard.kt` 移植剪贴板：改写 `ClipboardContentProvider#query` 的时间下限与 `limit 5`（默认 10 条 / 3 天），
+- `Gboard.kt` 移植剪贴板：改写 `ClipboardContentProvider#query` 的时间下限与 `limit 5`（默认 10 条、过期时间放宽到实际不限），
   并写死 `enable_clipboard_entity_extraction` / `enable_clipboard_query_refactoring` 两个开关。
 - `scope.list` 加 GMS 与 Gboard 两个包；`module.prop` 注释同步。
 

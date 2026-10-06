@@ -2,10 +2,9 @@
 <!--
     fcmself 是纯 Hook 模块：没有设置界面、没有白名单，安装后在 LSPosed 里勾选作用域即可生效。
     这里不声明任何组件，也不申请任何权限：
-    - 模块代码运行在被 Hook 的宿主进程内（system_server / GMS / PowerKeeper），
-      发通知用的是宿主进程的 context 与权限，因此不需要 POST_NOTIFICATIONS；
-    - 模块自身不写任何数据（重连修复的状态存在 GMS 自己的 SharedPreferences 里），
-      所以 allowBackup=false。
+    - 模块代码运行在被 Hook 的宿主进程内（system_server / GMS / Gboard），
+      行为只走宿主进程自己的 context 与权限，模块自身不需要额外权限；
+    - 模块自身不写任何数据、不留配置，所以 allowBackup=false。
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
