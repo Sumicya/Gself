@@ -19,9 +19,9 @@
   直接用它会让 `versionCode` 从 1 起、覆盖安装被降级拦截。改成取「本仓库所有工作流最大 run 号 + 1」与
   「现存发行产物第五段 + 1」的较大者（只用查法，不写死现值），发行与非发行构建共用它当 `versionCode`。
 - **滚动清理按第二十一版口径**：默认启用、不需逐仓批准；范围按项目名前缀筛选（`Gself-`、遗留 `fcmself-` / `fcmfix-`），
-  保留**最近 5 个**（PR 的非发行包同样计入）。清理由 `cleanup_artifacts` job 执行：`needs: build`、`concurrency` 串行、
+  保留**最近 5 个**（当时 PR 的非发行包同样计入；本条后被「复查补正」按主人指示改为只算发行对象）。清理由 `cleanup_artifacts` job 执行：`needs: build`、`concurrency` 串行、
   PR 事件不执行、权限只有 `actions: write` + `contents: read`、删除前打印完整清单、本次产物不可见就整轮放弃。
-  已知代价：PR 包比发行包新时发行包会被清出窗口，用 `gh workflow run build.yml --ref main` 可在 main 上补一次出包。
+  已知代价：PR 包比发行包新时发行包会被清出窗口，用 `gh workflow run build.yml --ref main` 可在 main 上补一次出包（此代价随上面裁决一并作废）。
 
 ### 文档
 
@@ -50,6 +50,10 @@
 - 滚动清理的保留窗口按【权威与冲突】**回到主人指示**：只按发行对象计数保留 5 个，`Gself-dev-<构建数>` 不占名额。
   规范第二十一版字面为「Actions artifact 保留最近 5 个」，两者冲突；权威顺序是主人当轮指示 > 规范最新版，
   故按主人指示执行并在此记账。对象范围仍按规范的项目名前缀筛选（`Gself-` 与遗留 `fcmself-` / `fcmfix-`）。
+- **文档一致性补正（2026-10-06）**：三处说明与实现不符，按实现改写——
+  `docs/glossary.md` 的「非发行包同样计入」（实际不占名额）与「总序号 = `github.run_number`」
+  （实际是三者取大的查法）、`AGENTS.md` 的「PR 包比发行包新时发行包会被清出窗口」（只算发行对象后不存在此场景）；
+  `README.md` 同步为「最近 5 个发行包」。
 - `docs/verify-on-device.md` 新增「7.1 消息延迟 / 滞留：怎么抓日志」：LSPosed 日志的回溯起点查法、
   `logcat -f` 轮转长期抓取、按「缺哪一类行」判断卡在哪一段、按墙钟窗口截取；命令**未在真机跑过**，已标注。
 

@@ -45,13 +45,13 @@
 | 只做新包 | GLOBAL.md 第十七版的规则：涉及平台新机制的只实现新机制，不做旧机制双写与逐档回退；不支持的环境在构建或安装时明确拒绝 |
 | minSdk | 最低支持的 Android 版本；本模块 = 36（Android 16），旧版本由系统在安装时拒绝，文档不假装支持 |
 | 五段版本 | 全局发行版本格式 `yy.m.d.当日序号.总序号`，例：`26.10.5.4.24` 只是格式示例 |
-| 总序号 | 第五段，等于 `versionCode` 等于 `github.run_number`；本工作流第几次运行，单调递增 |
+| 总序号 | 第五段，等于 `versionCode`；取「全仓最大 run 号 + 1」「现存发行产物第五段 + 1」「本次 run 号」三者最大，单调递增、跨工作流改名不回退（查法写在 `build.yml`，不写死现值） |
 | 当日序号 | 第四段，当天 main 分支出包运行里 run 号不大于本次的个数，含本次、从 1 起 |
 | 出包运行 | 占用当日序号的运行：main 的 `push` 与从 main 触发的 `workflow_dispatch` |
 | 非发行版本 | 取不到发行序号时的版本名，形如 `dev-<构建数>`；PR 检查、其它分支与本地构建都用它 |
 | 单一版本来源 | 版本只在 Android CI 的「Compute release version」算一次，产物名、artifact 名与构建元数据都从它生成 |
 | artifact（Actions 产物） | GitHub Actions 的上传产物；本仓库只发 `Gself-<版本>.apk`，不发 Release |
 | Release / tag | GitHub 的发行与标签；本仓库不发 Release、不打 tag |
-| 滚动清理 | 出包成功后自动删除旧 artifact，只保留最近 5 个（`KEEP_ARTIFACT` 指定）；范围按项目名前缀 `Gself-`（含遗留 `fcmself-` / `fcmfix-`）筛选，非发行包同样计入 |
+| 滚动清理 | 出包成功后自动删除旧 artifact，**只按发行对象计数**保留最近 5 个（`KEEP_ARTIFACT` 指定）；范围按项目名前缀 `Gself-`（含遗留 `fcmself-` / `fcmfix-`）筛选；非发行包 `Gself-dev-<构建数>` 不占名额，按 `retention-days` 过期 |
 | `retention-days` | artifact 的时间兜底过期天数（本仓库 5 天），不代替按数量的滚动清理 |
 | 项目名前缀筛选 | 清理只按 artifact 名前缀（本项目名 + `-`，大小写不敏感）圈定对象，不按「最新 N 个」直接删无关对象 |

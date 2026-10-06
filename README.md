@@ -24,7 +24,7 @@ fcmself（推送修复）、GooglePasswordManagerUnlock（通行密钥解限）�
 ./gradlew test assembleDebug   # 产物：app/build/outputs/apk/debug/app-debug.apk
 ```
 
-CI（`Build`）跑单测 + 编译 debug + 校验 R8 入口类，产物 `Gself-<版本>.apk` 走 Actions artifact（保留最近 5 个，5 天过期）；不发 Release。真机验证见 [`docs/verify-on-device.md`](docs/verify-on-device.md)。
+CI（`Build`）跑单测 + 编译 debug + 校验 R8 入口类，产物 `Gself-<版本>.apk` 走 Actions artifact（滚动清理保留最近 5 个发行包，5 天过期）；不发 Release。真机验证见 [`docs/verify-on-device.md`](docs/verify-on-device.md)。
 
 ## 许可证
 

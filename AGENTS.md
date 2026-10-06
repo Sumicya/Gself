@@ -31,9 +31,8 @@
   这样下载入口永远能取到发行包，代价是非发行包最多多占几天、由 5 天过期兜底。
 - 实现位置：`.github/workflows/build.yml` 的 `cleanup_artifacts` job + `.github/scripts/cleanup_artifacts.py`；
   `needs: build` 且 `concurrency` 串行，PR 事件不执行；删除前打印完整清单，本次产物不可见就整轮放弃。
-- 已知代价（主人可一句话改回）：最近的 PR 包比发行包新时，发行包会被清出窗口；此时用
-  `gh workflow run build.yml --ref main` 在 main 上补一次出包即可拿到 `Gself-<五段版本>` 包。
-  要改成「发行包优先保留」只需把脚本里的保留窗口改回按 `Gself-<五段版本>` 计数。
+- 为什么不让非发行包占名额：PR / 分支包比发行包新时，若按「最近 5 个」一视同仁，发行包会被挤出窗口、下载入口取不到包；
+  只算发行对象后不存在这个场景，代价是非发行包最多多占几天（`retention-days: 5` 兜底）。
 - 版本连续性：`build.yml` 由 `android.yml` 改名而来，`GITHUB_RUN_NUMBER` 归零，
   所以总序号不直接用 run 号，而是取「本仓库所有工作流最大 run 号 + 1」与「现存发行产物第五段 + 1」的较大者
   （查法写在工作流里，不写死现值），保证 `versionCode` 不回退。
