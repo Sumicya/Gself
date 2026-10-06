@@ -5,8 +5,7 @@
 以及改名前的遗留前缀 `fcmself-` / `fcmfix-`。不碰其它项目、手工上传的对象、Release 与 tag。
 保留：按创建时间倒序完整分页后，保留最近 KEEP_ARTIFACT 个（默认 5，必须为正整数），其余删除。
 
-保留窗口只算**发行对象**（`Gself-<五段版本>` 与遗留名）：PR / 其它分支的非发行包 `Gself-dev-<构建数>`
-不占名额，交给 `upload-artifact` 的 `retention-days: 5` 过期。
+现行 CI 的所有 `Gself-<五段版本>` 都进入保留窗口；历史遗留的 `Gself-dev-<构建数>` 不占名额，交给 `upload-artifact` 的 `retention-days: 5` 过期。
 与规范字面的差异：规范第二十一版写「Actions artifact 保留最近 5 个」，主人当轮指示为「只按发行包计数」；
 按【权威与冲突】的权威顺序（主人当轮指示 > 规范最新版）执行主人指示，并在 CHANGELOG 记账。
 
@@ -39,7 +38,7 @@ PAGE_SIZE = 100
 DEFAULT_KEEP = 5
 # 本项目自己的 artifact 名前缀：对外名 Gself，改名前的遗留名一并纳入（首次启用时清理积压）
 PROJECT_PREFIXES = ("gself-", "fcmself-", "fcmfix-")
-# 非发行构建（PR / 其它分支）：不占保留名额，按 retention-days 过期
+# 历史遗留的非发行构建：不占保留名额，按 retention-days 过期
 NON_RELEASE_NAME = re.compile(r"^Gself-dev-\d+$")
 
 
