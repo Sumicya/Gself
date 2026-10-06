@@ -168,6 +168,28 @@ su -c 'grep -hE "FcmSelf|c2dm|firebase|MESSAGING_EVENT|NotificationManager|Broad
 su -c 'cp /data/local/tmp/gself.log* /sdcard/Download/'   # 整段带回来
 ```
 
+**把窗口缩到某个包**（`<包名>` 换成出问题的应用；nagramx 是 `fork.risin42.nagramx`）
+
+```bash
+su -c 'grep -hE "<包名>|FcmSelf|c2dm|firebase|MESSAGING_EVENT|Start proc|DeviceIdle|doze" /data/local/tmp/gself.log*' | tail -300
+```
+
+**复现时抓这些状态快照**（模块日志只能证明「广播从 AMS 发出去了」，不能证明当时应用是不是停止态——快照负责补这一块）
+
+```bash
+su -c "dumpsys package <包名> | grep -m1 -o 'stopped=[a-z]*'"       # 停止态（true = 只有带 flag 的广播能唤醒）
+su -c "ps -A | grep <包名>"                                          # 进程在不在、有没有 do_freezer_trap（冻结）
+su -c 'dumpsys deviceidle | head -20'                                # 设备是不是在 doze / 白名单状态
+su -c "dumpsys notification --noredact | grep -i -A3 <包名> | head -40"   # 通知有没有被 post（第三段）
+su -c 'dumpsys alarm | grep -iE "gms|com.google.android.c2dm" | head -20'  # GMS 心跳/重连闹钟有没有被推迟
+```
+
+**量化延迟**（判断「滞留」到底发生在哪一段，这是唯一能定性的量）
+
+1. 在另一台设备 / 桌面客户端看那条消息的**发送时间**（Telegram 等应用会显示）。
+2. 在本机日志里找它对应的 `wake: <包名>` 时间（同一秒可能有两条，取最近的）。
+3. 两者相减：秒级 = 正常；分钟级 = 设备侧排队（doze / 冻结 / 被停止）；小时级 = 服务器或 GMS 侧没推到设备，模块看不到那一段。
+
 **判读：消息卡在哪一段**（对着第 5 节的三段归因看）
 
 | 缺哪一类行 | 说明卡在 |
@@ -248,6 +270,27 @@ LSPosed 日志本身会在模块载入时自动记一行，两条路互相兜底
 - 没有任何 `hook skip`，也没有 `Gboard 剪贴板 Hook 已安装`：Gboard 那组只在 Gboard 被加载过之后才打日志，
   先确认当前输入法（见第 1 节）；若 Gboard 就是当前输入法却仍无日志，把
   `su -c 'logcat -d | grep -iE "gboard|clipboard"' | head -40` 的结果贴回来。
+
+### 2026-10-05 23:41–23:50 的「wake 洪水」（同一台机，`fork.risin42.nagramx`）
+
+设备重启（22:13）后约 1.5 小时，`wake:` 突然密集出现，随后归于安静：
+
+```
+统计：23:41:57.789 → 23:50:42.178 共 77 行 wake:，跨度 524 秒（8.7 分钟），平均 6.9 秒一条；
+      其中 12 组是同一秒内两条（多为间隔 10–20 毫秒）；之后到次日 08:12 只有两条 keep notification
+```
+
+判读：
+
+- 这是**积压倒灌**的典型形状：短时间、同一包、高密度，之后长时间安静。说明消息不是「一直推不进来」，
+  而是**集中在一个窗口被投递给应用**（设备刚脱离 doze / 冻结 / 应用刚变成可投递状态）。
+- 它**不能**证明「当时应用是停止态」：模块只看到广播经过 AMS 并补了 flag（`wake:` 只在我们补 flag 时打印），
+  应用是运行、冻结还是停止，要按第 7.1 节的状态快照在**当时**抓。
+- 它**也不能**证明「消息是服务端晚发的」：模块只覆盖「GMS → 应用」这一段；服务器/GMS 侧的排队要
+  用第 7.1 节的「量化延迟」法（拿发送时间减 `wake:` 时间）才能区分。
+- 同一窗内两条 `keep notification: fork.risin42.nagramx`（23:48:18 / 23:58:22）说明有整包取消被拦下；
+  是设计行为还是误拦，看 `reason=`（自含该改动的构建起打印，分支产物 `Gself-dev-11` 起）。
+- 副作用：77 次唤醒本身有电量代价（每次都要拉起或唤醒一次目标应用）。反复出现这种洪水时按第 6 节第 2 条做待机耗电验证。
 
 **空日志不等于失败，推送有延迟**：多个 30 秒窗口里 `grep -icE 'c2dm|firebase'` 全是 0，
 但应用最后还是被拉起来了（`stopped=` 自己从 true 变回 false）—— force-stop 之后第一条推送迟到，
