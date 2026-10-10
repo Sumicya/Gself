@@ -8,8 +8,9 @@ import org.luckypray.dexkit.query.matchers.MethodMatcher
 
 /** Gboard 剪贴板（自 [chenyue404/GboardHook] 移植，GPL-3.0）：改剪切板显示个数与过期时间。 */
 private const val CLIP_NUM = 10
-// 上游默认 3 天；这里按「实际不限时长」处理，给 100 年，等价于关掉过期过滤
-private const val CLIP_TIME = 100L * 365 * 24 * 60 * 60 * 1000
+// 上游默认 3 天；这里按「实际不限时长」处理：时间下限直接给 long 最小值，等价于关掉过期过滤。
+// 不用「100 年」魔数：当前毫秒数减 100 年已是负 epoch，哨兵值比魔数干净。
+private const val CLIP_TIME_FLOOR = Long.MIN_VALUE
 
 fun Hook.gboardFixes() {
     System.loadLibrary("dexkit")
@@ -31,7 +32,7 @@ fun Hook.gboardFixes() {
             if (idx != -1 && selection != null && selectionArgs != null) {
                 var placeholders = 0
                 for (i in 0 until idx) if (selection[i] == '?') placeholders++
-                selectionArgs[placeholders] = (System.currentTimeMillis() - CLIP_TIME).toString()
+                selectionArgs[placeholders] = CLIP_TIME_FLOOR.toString()
             }
             if (chain.args[4] == "timestamp DESC limit 5") chain.args[4] = "timestamp DESC limit $CLIP_NUM"
             chain.proceed()
