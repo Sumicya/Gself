@@ -1,13 +1,17 @@
 # Android CI —— 「零 secrets」配置：仓库不需要任何签名密钥 / 发布 token。
-# CI 只做三件事——跑单元测试、编译 debug 包、上传一个产物：
-#   - Gself-<版本>-debug.apk ：debug 签名，可直接安装测试
+# CI 做四件事——跑单元测试、编译 debug 包、上传产物、按数量清理旧产物：
+#   - Gself-<五段版本>.apk ：debug 签名，可直接安装测试
 # 本地签名步骤见 docs/build-and-sign-termux.md。
 #
-# 要点：
-#   1. 只出 debug 包（debug 也开 minify，入口类由 proguard-rules.pro 保住）
-#   2. 先跑 ./gradlew test，介入判据（PushTest）不过就不继续构建
-#   3. 校验 R8 没有裁掉入口类（裁掉了构建仍然成功，但模块会静默不加载）
-#   4. 构建失败时把日志尾部写进 job summary
+# 版本口径（见 AGENTS.md「版本计数口径」，遵 GLOBAL.md 第二十四版统一五段）：
+#   - 五段 = yy.m.d.当日序号.总序号，日界 UTC+8；来源为 android.yml 的真实运行记录，
+#     锚定本次运行的 created_at / run_id / run_attempt，不取查询时的最新运行冒充本次。
+#   - 当日序号 = 本次运行在当日全部已触发运行（含失败）中的位次（位次法，并发不抢号）。
+#   - 总序号只数历史成功出包构建（衔接常数 22，见 AGENTS.md）；失败运行不增加总序号。
+#   - run_attempt > 1 时复用首次 attempt 已定的版本，不重新加号。
+#   - 版本数据缺失、取数失败或校验不通过，立即停止出包与上传。
+# 清理：仅默认分支（main）构建运行在上传成功后保留最近 5 个 artifact；
+#   PR 运行不做清理（写权限只给默认分支），积压由 main 运行收。
 
 name: Android CI
 
@@ -19,7 +23,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -35,25 +39,48 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
-    - name: Compute release version
+    - name: Compute five-segment version
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
+        set -euo pipefail
+        # 输入 = 本次运行的 run_id / run_attempt / created_at（来自本 run 对象，不 list 取最新）。
         stamp="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq '.created_at')"
+        attempt="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq '.run_attempt')"
+        if [ -z "$stamp" ] || [ "$stamp" = "null" ]; then
+          echo "::error::无法取得本次运行创建时间，按规范停止出包与上传" >&2
+          exit 1
+        fi
+        # 重试：attempt > 1 直接复用首次 attempt 已定的版本（从本运行已有产物名取），不重新加号。
+        if [ "$attempt" -gt 1 ]; then
+          prev="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" \
+                    --jq '[.artifacts[].name] | map(select(startswith("Gself-"))) | .[0] // empty')"
+          if [ -n "$prev" ]; then
+            v="${prev#Gself-}"
+            if printf '%s' "$v" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
+              echo "VERSION_NAME=$v" >> "$GITHUB_ENV"
+              echo "VERSION_CODE=$(printf '%s' "$v" | cut -d. -f5)" >> "$GITHUB_ENV"
+              echo "重试运行：复用首次 attempt 版本 $v"
+              exit 0
+            fi
+          fi
+        fi
         day="$(TZ=Asia/Shanghai date -d "$stamp" +%y.%-m.%-d)"
         local_day="$(TZ=Asia/Shanghai date -d "$stamp" +%Y-%m-%d)"
         since="$(TZ=Asia/Shanghai date -u -d "$local_day 00:00:00" +%Y-%m-%dT%H:%M:%SZ)"
-        if [ "${{ github.event_name }}" = "push" ]; then
-          today="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/android.yml/runs?event=push&created=>=$since&per_page=1" --jq '.total_count')"
-          total="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/android.yml/runs?event=push&per_page=1" --jq '.total_count')"
-          name="$day.$today.$total"
-          code="$total"
-        else
-          name="$day.0.0"
-          code="1"
-        fi
-        echo "VERSION_NAME=$name" >> "$GITHUB_ENV"
-        echo "VERSION_CODE=$code" >> "$GITHUB_ENV"
+        # 当日序号 = 本次运行在当日全部已触发运行（含失败）中的位次；按 id 升序排位，并发不抢号。
+        today="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/android.yml/runs?created=>=$since&per_page=100" --jq '.workflow_runs[].id' \
+                  | sort -n | grep -n "^$GITHUB_RUN_ID$" | cut -d: -f1 || true)"
+        # 总序号 = 历史成功出包构建数 + 衔接常数 22（见 AGENTS.md，保证不回退）；失败运行不增加总序号。
+        succ="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/android.yml/runs?status=success&per_page=1" --jq '.total_count')"
+        for n in "$today" "$succ"; do
+          case "$n" in
+            ''|*[!0-9]*) echo "::error::序号取数失败（取值：'$n'），按规范停止出包与上传" >&2; exit 1 ;;
+          esac
+        done
+        total=$((succ + 22))
+        echo "VERSION_NAME=$day.$today.$total" >> "$GITHUB_ENV"
+        echo "VERSION_CODE=$total" >> "$GITHUB_ENV"
 
     - name: Build with Gradle
       shell: bash
@@ -92,6 +119,7 @@ jobs:
         name: Gself-${{ env.VERSION_NAME }}
         path: ${{ github.workspace }}/app/build/outputs/apk/debug/Gself-${{ env.VERSION_NAME }}.apk
         retention-days: 5
+        if-no-files-found: error
 
     - name: Dump build log tail on failure
       if: failure()
@@ -103,3 +131,68 @@ jobs:
           tail -n 150 build.log
           echo '```'
         } >> "$GITHUB_STEP_SUMMARY"
+
+  cleanup:
+    # build 失败时不会执行（needs 依赖）；「上传成功后清理」。
+    # 第二十四版：清理写权限只授予可信的默认分支构建运行；PR 运行不清理，积压由 main 运行收。
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: write
+    steps:
+    - name: Keep newest 5 artifacts
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        keep=5
+        # 完整分页取全量；本仓库内 artifact 均属本项目（含改名前遗留名），同一标准处理。
+        # 注意：--paginate 对对象响应按页拼接（不是单个 JSON 文档），解析时逐页拆开。
+        gh api --paginate "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" > artifacts.json
+        python3 - "$keep" <<'PY'
+        import json, os, subprocess, sys
+        keep = int(sys.argv[1])
+        repo = os.environ["GITHUB_REPOSITORY"]
+        # 逐页解析拼接的 JSON 对象；按 id 去重（分页窗口滑动时可能重复出现）
+        arts, seen = [], set()
+        raw = open("artifacts.json", encoding="utf-8").read()
+        dec = json.JSONDecoder()
+        idx, n = 0, len(raw)
+        while idx < n:
+            while idx < n and raw[idx] in " \r\n\t":
+                idx += 1
+            if idx >= n:
+                break
+            obj, idx = dec.raw_decode(raw, idx)
+            for a in obj.get("artifacts", []):
+                if a["id"] not in seen:
+                    seen.add(a["id"])
+                    arts.append(a)
+        arts.sort(key=lambda a: a["created_at"], reverse=True)  # 稳定排序：新的在前
+        keepers, victims = arts[:keep], arts[keep:]
+        print(f"保留 {len(keepers)} 个：")
+        for a in keepers:
+            print(f"  {a['id']}  {a['name']}  {a['created_at']}")
+        print(f"删除 {len(victims)} 个：")
+        for a in victims:
+            print(f"  {a['id']}  {a['name']}  {a['created_at']}")
+        with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
+            f.write(f"### Artifact 清理（保留最近 {keep} 个）\n\n")
+            f.write("| 动作 | id | 名称 | 创建时间 |\n| --- | --- | --- | --- |\n")
+            for a in keepers:
+                f.write(f"| 保留 | {a['id']} | {a['name']} | {a['created_at']} |\n")
+            for a in victims:
+                f.write(f"| 删除 | {a['id']} | {a['name']} | {a['created_at']} |\n")
+        for a in victims:
+            subprocess.run(["gh", "api", "-X", "DELETE",
+                            f"repos/{repo}/actions/artifacts/{a['id']}"], check=True)
+        left = int(subprocess.run(
+            ["gh", "api", f"repos/{repo}/actions/artifacts?per_page=100",
+             "--jq", ".artifacts | length"],
+            capture_output=True, text=True, check=True).stdout.strip())
+        if left > keep:
+            raise SystemExit(f"清理后仍有 {left} 个 artifact，超出上限 {keep}")
+        print(f"清理完成，剩余 {left} 个")
+        PY

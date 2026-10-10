@@ -118,7 +118,7 @@ su -c "logcat -d | grep -iE '<包名>|c2dm|Background execution|not delivering|s
 | 项目 | 状态 |
 | --- | --- |
 | 编译 + `PushTest` | **已验证**（PR #11 的 Android CI，run 36788287654）：`./gradlew test assembleRelease assembleDebug` 全绿，R8 入口类 dex 校验通过。沙箱本身没有 JDK / Android SDK / 外网，跑不了 |
-| 26.10.1 真机全链路 | **未验证**：还没装到设备上 |
+| Gself 真机链路 | **已验证**（2026-10-06，OnePlus/ColorOS，`26.10.6.1.128`）：推送唤醒 `wake:` 批量命中（含「长连接断流后重启恢复」场景，见第 10 节）、通知保留 `keep notification` 命中；三组挂载点已在三合一时验过 |
 | 1.0.0 冻结态链路 | 已验通（OnePlus/ColorOS，build `20260926_1edb471`）：载入 / hook 装配 / `shouldProxy bypass` / `No Intercept` / flag / `unfreeze` / `Keep notification` 全命中 |
 | 1.0.0 force-stop 唤醒 | 已验通（2026-09-26，OnePlus/ColorOS，nagramx fork）：`stopped=true` 下推送以新 pid 拉起应用 |
 | 介入判据（`Push.isPush`） | 单测覆盖（`PushTest`）；`isTargeted` 要真 Intent，只能靠真机日志 |
@@ -162,3 +162,30 @@ su -c 'logcat -c; for i in $(seq 10); do sleep 30; echo "=== 第 $i 个 30 秒 $
 备忘：若将来某台机器确实需要写 appOp，取值用「紧跟 `Bundle bOptions` 之前的那个 int」，
 不要用 0.9.0 的硬编码下标 13（`intent@3` 之后依次是 requestCode@7 / userId@11 /
 flags@12 / appOp@13，换 ROM 会漂）。本机不需要。
+
+## 10. 真机案例参考（2026-10-06）：消息一夜之间突然滞留，模块是清白的
+
+**症状**：nagramx 消息在前一晚 23:58 前后彻底停更，次日全天无新消息；模块日志里
+`keep notification` 正常触发（钩子活着），但**全天 `wake:` 为零**——没有任何一条符合
+推送判据的广播经过 system_server。
+
+**排除顺序**（都实测过）：
+
+1. 应用没更新过（`dumpsys package <包名> | grep lastUpdateTime` 是三周前）→ 排除
+   「更新后令牌未重注册」；
+2. `stopped=false`、通知权限正常、免打扰关 → 排除停止态与通知层；
+3. 活体窗口 `grep -cE 'c2dm|firebase|MESSAGING_EVENT'` 为 0 → 排除判据漏放广播
+   （有广播就会被 `wake:` 抓到）；
+4. `timeout 8 bash -c 'exec 3<>/dev/tcp/mtalk.google.com/443 && echo OK'` 通 →
+   排除网络层（Termux 的 curl 可能坏，用这条替代）。
+
+**结论**：ColorOS 夜间清理把 GMS 的 FCM 长连接清断，且 GMS 自己接不回来。断点在
+第①段（服务器 → GMS），模块管不到——这正是 1.0.0 删掉上游 GMS 心跳/重连修复
+（`ReconnectManagerFix`）的已知代价边界：连接活着时无模块的事，连接断了模块也帮不上。
+
+**恢复**：重启有效（重启后 2 分钟，积压推送批量到达，`wake:` 全命中）；更便宜的先手是
+`su -c 'am force-stop com.google.android.gms'` 等 5 分钟（本机当时未恢复，但比重启便宜，
+值得先试）。**若此形态频繁复发，就是重新考虑捡回重连修复的依据。**
+
+**判读捷径**：消息突然停更，先 `grep -h fcmself /data/adb/lspd/log/*.log | grep 'wake:'`
+——全天为零时别先怀疑钩子，按本节顺序把第①段排掉。
