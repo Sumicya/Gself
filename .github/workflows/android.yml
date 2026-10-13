@@ -3,15 +3,15 @@
 #   - Gself-<五段版本>.apk ：debug 签名，可直接安装测试
 # 本地签名步骤见 docs/build-and-sign-termux.md。
 #
-# 版本口径（见 AGENTS.md「版本计数口径」，遵 GLOBAL.md 第二十五版修订统一五段）：
+# 版本口径（见 AGENTS.md「版本计数口径」，遵 GLOBAL.md 第0版统一五段）：
 #   - 五段 = yy.m.d.当日序号.总序号，日界 UTC+8；来源为 android.yml 的真实运行记录，
 #     锚定本次运行的 created_at / run_id / run_attempt，不取查询时的最新运行冒充本次。
 #   - 当日序号 = 本次运行在当日全部已触发运行（含失败）中的位次（位次法，并发不抢号）。
-#   - 总序号只数历史成功出包构建（衔接常数 22，见 AGENTS.md）；失败运行不增加总序号。
+#   - 总序号 = 现存 artifact 最大总序 + 1（下限基数 136，见 AGENTS.md）；失败运行不上传、不占号。
 #   - run_attempt > 1 时复用首次 attempt 已定的版本，不重新加号。
 #   - 版本数据缺失、取数失败或校验不通过，立即停止出包与上传。
 # 清理：构建 job 在上传成功后立即保留最近 5 个 artifact（任意触发事件含 PR）。
-#   按第二十五版修订，清理只授予最小 actions: write 删除本项目 artifact，禁止
+#   按第0版，清理只授予最小 actions: write 删除本项目 artifact 与 run，禁止
 #   contents: write；脚本写死只删归属核验通过（workflow 路径 + 运行记录）的对象，
 #   删前打印保留 + 删除清单，失败只报错不回滚。已有积压当场清、不留待以后。
 
@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
-      # 清理专用（第二十五版修订）：只删本项目 artifact 的最小 actions: write；
+      # 清理专用（第0版）：只删本项目 artifact 与 run 的最小 actions: write；
       # 禁止 contents: write。脚本写死只删归属核验通过的对象。
       actions: write
     steps:
@@ -76,14 +76,17 @@ jobs:
         # 当日序号 = 本次运行在当日全部已触发运行（含失败）中的位次；按 id 升序排位，并发不抢号。
         today="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/android.yml/runs?created=>=$since&per_page=100" --jq '.workflow_runs[].id' \
                   | sort -n | grep -n "^$GITHUB_RUN_ID$" | cut -d: -f1 || true)"
-        # 总序号 = 历史成功出包构建数 + 衔接常数 22（见 AGENTS.md，保证不回退）；失败运行不增加总序号。
-        succ="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/android.yml/runs?status=success&per_page=1" --jq '.total_count')"
-        for n in "$today" "$succ"; do
+        # 总序号 = 现存 artifact 中最大总序 + 1；下限基数 136（见 AGENTS.md 衔接）。
+        # 第0版运行记录只留 5 条，历史成功数不可再作锚；失败运行不上传、不占号。
+        max_total="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" --jq '.artifacts[].name' | sed -n 's/^Gself-[0-9]*\.[0-9]*\.[0-9]*\.[0-9]*\.\([0-9]*\)$/\1/p' | sort -n | tail -1 || true)"
+        if [ -z "$max_total" ]; then max_total=0; fi
+        if [ "$max_total" -lt 136 ]; then max_total=136; fi
+        for n in "$today" "$max_total"; do
           case "$n" in
             ''|*[!0-9]*) echo "::error::序号取数失败（取值：'$n'），按规范停止出包与上传" >&2; exit 1 ;;
           esac
         done
-        total=$((succ + 22))
+        total=$((max_total + 1))
         echo "VERSION_NAME=$day.$today.$total" >> "$GITHUB_ENV"
         echo "VERSION_CODE=$total" >> "$GITHUB_ENV"
 
@@ -211,6 +214,57 @@ jobs:
         if left > keep:
             raise SystemExit(f"清理后仍有 {left} 个已核验 artifact，超出上限 {keep}")
         print(f"清理完成，已核验 artifact 剩余 {left} 个")
+        # 运行记录（第0版：有产物仓 5 条）。完整分页、创建时间降序；只删已完成、
+        # 非今日（UTC+8）的旧 run：今日 run 留到明日再收，保证当日序号位次不被
+        # 删坏；当前 run 与未完成 run 不删。删前打印保留 + 删除清单，失败只报错。
+        import datetime
+        tz8 = datetime.timezone(datetime.timedelta(hours=8))
+        today8 = datetime.datetime.now(tz8).date()
+        cur = int(os.environ["GITHUB_RUN_ID"])
+        subprocess.run(["gh", "api", "--paginate", f"repos/{repo}/actions/runs?per_page=100"],
+                       stdout=open("runs.json", "w"), check=True)
+        runs, rseen = [], set()
+        raw = open("runs.json", encoding="utf-8").read()
+        dec = json.JSONDecoder()
+        idx, n = 0, len(raw)
+        while idx < n:
+            while idx < n and raw[idx] in " \r\n\t":
+                idx += 1
+            if idx >= n:
+                break
+            obj, idx = dec.raw_decode(raw, idx)
+            for r0 in obj.get("workflow_runs", []):
+                if r0["id"] not in rseen:
+                    rseen.add(r0["id"])
+                    runs.append(r0)
+        runs.sort(key=lambda r0: r0["created_at"], reverse=True)
+        rkeepers = runs[:keep]
+        rvictims, rskipped = [], []
+        for r0 in runs[keep:]:
+            d8 = datetime.datetime.fromisoformat(
+                r0["created_at"].replace("Z", "+00:00")).astimezone(tz8).date()
+            if r0["id"] == cur or r0.get("status") != "completed" or d8 == today8:
+                rskipped.append(r0)
+            else:
+                rvictims.append(r0)
+        print(f"运行记录保留 {len(rkeepers)} 条：")
+        for r0 in rkeepers:
+            print(f"  {r0['id']}  {r0['name']}  {r0['created_at']}  {r0.get('conclusion')}")
+        print(f"运行记录删除 {len(rvictims)} 条：")
+        for r0 in rvictims:
+            print(f"  {r0['id']}  {r0['name']}  {r0['created_at']}  {r0.get('conclusion')}")
+        print(f"::notice::cleanup runs：保留 {len(rkeepers)} 删除 {len(rvictims)} 跳过(今日/未完/当前) {len(rskipped)}")
+        rerrors = []
+        for r0 in rvictims:
+            rr = subprocess.run(["gh", "api", "-X", "DELETE",
+                                 f"repos/{repo}/actions/runs/{r0['id']}"],
+                                capture_output=True, text=True)
+            if rr.returncode != 0:
+                print(f"::error::DELETE run {r0['id']} 失败: {rr.stderr.strip()}")
+                rerrors.append(str(r0["id"]))
+        if rerrors:
+            raise SystemExit(f"运行记录清理失败（不声称达标）：{','.join(rerrors)}")
+        print(f"运行记录清理完成，删除 {len(rvictims)} 条")
         PY
 
     - name: Dump build log tail on failure
