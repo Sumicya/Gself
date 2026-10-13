@@ -207,7 +207,7 @@ jobs:
         errors = []
         for a in victims:
             r = subprocess.run(["gh", "api", "-X", "DELETE",
-                                f"repos/{repo}/actions/artifacts/{a['id']}",
+                                f"repos/{repo}/actions/artifacts/{a['id']}"],
                                capture_output=True, text=True)
             if r.returncode != 0:
                 print(f"::error::DELETE artifact {a['id']} ({a['name']}) 失败: {r.stderr.strip()}")
