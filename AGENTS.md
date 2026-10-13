@@ -42,9 +42,9 @@ selfs 默认分支，按主人指示先行同步；selfs 默认分支仍为第0�
   记录核验），未核验对象不计入保留窗口、不删；删前打印保留 + 删除清单。失败只报错：
   不回滚新产物、不删除保留窗口内对象。
 - 清理默认启用，不逐仓询问；**已有积压属于落实范围，当场清，不写代码留待以后**——
-  2026-10-13 已当场清账（遗留 artifact 确认不在、#13 已关；spec-check / Build 工作流
-  禁用因沙箱 token 403 受阻，路径：网页端 Actions 页禁用，或随本分支合并删
-  spec-check.yml、#13 分支处置后 Build 消亡）。
+  2026-10-13 已当场清账（遗留 artifact 确认不在、#13 已关；两条冗余工作流注册已
+  消失：spec-check 注册状态 deleted、Build 注册不存在，现仅 Android CI 一条 active；
+  spec-check.yml 文件随本分支的 PR 删除，尚未合入前仍在 main）。
 - 运行记录（workflow runs）保留最近 **5 条**：清理在 artifact 之后执行；当前 run
   与未完成 run 不删。计数锚已换到 commit 位次与 run_number，删 run 不影响序号。
   删前打印保留 + 删除清单，失败只报错。
