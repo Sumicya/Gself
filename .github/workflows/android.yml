@@ -135,16 +135,9 @@ jobs:
       run: |
         set -euo pipefail
         keep=5
-        echo "::notice::cleanup stage A: fetch artifacts"
         gh api --paginate "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" > artifacts.json
-        echo "::notice::cleanup stage B: fetched $(wc -c < artifacts.json) bytes"
         python3 - "$keep" <<'PY'
-        import json, os, subprocess, sys, traceback
-        def _hook(t, v, tb):
-            for chunk in traceback.format_exception(t, v, tb):
-                for line in chunk.splitlines():
-                    print(f"::error::cleanup python: {line}")
-        sys.excepthook = _hook
+        import json, os, subprocess, sys
         keep = int(sys.argv[1])
         repo = os.environ["GITHUB_REPOSITORY"]
         arts, seen = [], set()
@@ -174,11 +167,9 @@ jobs:
                                     "--jq", ".path"], capture_output=True, text=True)
                 runpath[wr] = r.stdout.strip() if r.returncode == 0 else ""
             return runpath[wr] == ".github/workflows/android.yml"
-        print(f"::notice::cleanup stage C: parsed {len(arts)} artifacts")
         verified, unverified = [], []
         for a in arts:
             (verified if verify(a) else unverified).append(a)
-        print(f"::notice::cleanup stage D: verified {len(verified)} unverified {len(unverified)}")
         keepers, victims = verified[:keep], verified[keep:]
         def runid(a):
             return (a.get("workflow_run") or {}).get("id") or "-"
