@@ -117,7 +117,7 @@ su -c "logcat -d | grep -iE '<包名>|c2dm|Background execution|not delivering|s
 
 | 项目 | 状态 |
 | --- | --- |
-| 编译 + `PushTest` | **已验证**（PR #11 的 Android CI，run 36788287654）：`./gradlew test assembleRelease assembleDebug` 全绿，R8 入口类 dex 校验通过。沙箱本身没有 JDK / Android SDK / 外网，跑不了 |
+| 编译 + `PushTest` | **已验证**（PR #14 的 Android CI，run 38062758567）：`./gradlew test assembleDebug` 全绿，R8 入口类 dex 校验通过。沙箱没有 JDK / Android SDK，编译只能由 CI 完成 |
 | Gself 真机链路 | **已验证**（2026-10-06，OnePlus/ColorOS，`26.10.6.1.128`）：推送唤醒 `wake:` 批量命中（含「长连接断流后重启恢复」场景，见第 10 节）、通知保留 `keep notification` 命中；三组挂载点已在三合一时验过 |
 | 1.0.0 冻结态链路 | 已验通（OnePlus/ColorOS，build `20260926_1edb471`）：载入 / hook 装配 / `shouldProxy bypass` / `No Intercept` / flag / `unfreeze` / `Keep notification` 全命中 |
 | 1.0.0 force-stop 唤醒 | 已验通（2026-09-26，OnePlus/ColorOS，nagramx fork）：`stopped=true` 下推送以新 pid 拉起应用 |

@@ -120,6 +120,9 @@ jobs:
         path: ${{ github.workspace }}/app/build/outputs/apk/debug/Gself-${{ env.VERSION_NAME }}.apk
         retention-days: 5
         if-no-files-found: error
+        # 重试运行复用首次 attempt 的版本名，同名产物已存在时按规范覆盖为同版本同内容，
+        # 而不是报「已存在」把重跑卡死；正常运行版本名唯一，此项不生效。
+        overwrite: true
 
     - name: Dump build log tail on failure
       if: failure()
@@ -172,19 +175,22 @@ jobs:
                     arts.append(a)
         arts.sort(key=lambda a: a["created_at"], reverse=True)  # 稳定排序：新的在前
         keepers, victims = arts[:keep], arts[keep:]
+        def runid(a):  # 归属佐证：artifact 自带 workflow_run，名称前缀只作初筛
+            wr = a.get("workflow_run") or {}
+            return wr.get("id") or "-"
         print(f"保留 {len(keepers)} 个：")
         for a in keepers:
-            print(f"  {a['id']}  {a['name']}  {a['created_at']}")
+            print(f"  {a['id']}  {a['name']}  {a['created_at']}  run={runid(a)}")
         print(f"删除 {len(victims)} 个：")
         for a in victims:
-            print(f"  {a['id']}  {a['name']}  {a['created_at']}")
+            print(f"  {a['id']}  {a['name']}  {a['created_at']}  run={runid(a)}")
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
             f.write(f"### Artifact 清理（保留最近 {keep} 个）\n\n")
-            f.write("| 动作 | id | 名称 | 创建时间 |\n| --- | --- | --- | --- |\n")
+            f.write("| 动作 | id | 名称 | 创建时间 | 来源运行 |\n| --- | --- | --- | --- | --- |\n")
             for a in keepers:
-                f.write(f"| 保留 | {a['id']} | {a['name']} | {a['created_at']} |\n")
+                f.write(f"| 保留 | {a['id']} | {a['name']} | {a['created_at']} | {runid(a)} |\n")
             for a in victims:
-                f.write(f"| 删除 | {a['id']} | {a['name']} | {a['created_at']} |\n")
+                f.write(f"| 删除 | {a['id']} | {a['name']} | {a['created_at']} | {runid(a)} |\n")
         for a in victims:
             subprocess.run(["gh", "api", "-X", "DELETE",
                             f"repos/{repo}/actions/artifacts/{a['id']}"], check=True)
