@@ -3,16 +3,17 @@
 #   - Gself-<五段版本>.apk ：debug 签名，可直接安装测试
 # 本地签名步骤见 docs/build-and-sign-termux.md。
 #
-# 版本口径（见 AGENTS.md「版本计数口径」，遵 GLOBAL.md 第二十五版统一五段）：
+# 版本口径（见 AGENTS.md「版本计数口径」，遵 GLOBAL.md 第二十五版修订统一五段）：
 #   - 五段 = yy.m.d.当日序号.总序号，日界 UTC+8；来源为 android.yml 的真实运行记录，
 #     锚定本次运行的 created_at / run_id / run_attempt，不取查询时的最新运行冒充本次。
 #   - 当日序号 = 本次运行在当日全部已触发运行（含失败）中的位次（位次法，并发不抢号）。
 #   - 总序号只数历史成功出包构建（衔接常数 22，见 AGENTS.md）；失败运行不增加总序号。
 #   - run_attempt > 1 时复用首次 attempt 已定的版本，不重新加号。
 #   - 版本数据缺失、取数失败或校验不通过，立即停止出包与上传。
-# 清理：仅默认分支（main）构建运行在上传成功后保留最近 5 个 artifact；PR 运行不做
-#   清理（写权限只给默认分支；PR 出包不是放弃数量清理的理由）。已有积压属于落实
-#   范围，当场清、不留待以后（2026-10-13 已清账）；main 运行只做常态数量清理。
+# 清理：构建 job 在上传成功后立即保留最近 5 个 artifact（任意触发事件含 PR）。
+#   按第二十五版修订，清理只授予最小 actions: write 删除本项目 artifact，禁止
+#   contents: write；脚本写死只删归属核验通过（workflow 路径 + 运行记录）的对象，
+#   删前打印保留 + 删除清单，失败只报错不回滚。已有积压当场清、不留待以后。
 
 name: Android CI
 
@@ -27,6 +28,9 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+      # 清理专用（第二十五版修订）：只删本项目 artifact 的最小 actions: write；
+      # 禁止 contents: write。脚本写死只删归属核验通过的对象。
+      actions: write
     steps:
     - uses: actions/checkout@v7
 
@@ -125,42 +129,17 @@ jobs:
         # 而不是报「已存在」把重跑卡死；正常运行版本名唯一，此项不生效。
         overwrite: true
 
-    - name: Dump build log tail on failure
-      if: failure()
-      shell: bash
-      run: |
-        {
-          echo '### Gradle build log (tail)'
-          echo '```'
-          tail -n 150 build.log
-          echo '```'
-        } >> "$GITHUB_STEP_SUMMARY"
-
-  cleanup:
-    # build 失败时不会执行（needs 依赖）；「上传成功后清理」。
-    # 第二十五版：清理写权限只授予可信的默认分支构建运行；PR 运行不清理。已有积压
-    # 属于落实范围，已当场清账（2026-10-13），此处只做常态数量清理。
-    needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-      actions: write
-    steps:
-    - name: Keep newest 5 artifacts
+    - name: Cleanup old artifacts (keep newest 5)
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
         set -euo pipefail
         keep=5
-        # 完整分页取全量；本仓库内 artifact 均属本项目（含改名前遗留名），同一标准处理。
-        # 注意：--paginate 对对象响应按页拼接（不是单个 JSON 文档），解析时逐页拆开。
         gh api --paginate "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" > artifacts.json
         python3 - "$keep" <<'PY'
         import json, os, subprocess, sys
         keep = int(sys.argv[1])
         repo = os.environ["GITHUB_REPOSITORY"]
-        # 逐页解析拼接的 JSON 对象；按 id 去重（分页窗口滑动时可能重复出现）
         arts, seen = [], set()
         raw = open("artifacts.json", encoding="utf-8").read()
         dec = json.JSONDecoder()
@@ -175,17 +154,36 @@ jobs:
                 if a["id"] not in seen:
                     seen.add(a["id"])
                     arts.append(a)
-        arts.sort(key=lambda a: a["created_at"], reverse=True)  # 稳定排序：新的在前
-        keepers, victims = arts[:keep], arts[keep:]
-        def runid(a):  # 归属佐证：artifact 自带 workflow_run，名称前缀只作初筛
-            wr = a.get("workflow_run") or {}
-            return wr.get("id") or "-"
+        arts.sort(key=lambda a: a["created_at"], reverse=True)
+        # 归属核验写死：名称前缀仅作初筛；必须能追到本仓 android.yml 的运行记录才算
+        # 本项目对象。核验不过的对象不计入保留窗口、不删，只列出报告。
+        runpath = {}
+        def verify(a):
+            wr = (a.get("workflow_run") or {}).get("id")
+            if not wr:
+                return False
+            if wr not in runpath:
+                r = subprocess.run(["gh", "api", f"repos/{repo}/actions/runs/{wr}",
+                                    "--jq", ".path"], capture_output=True, text=True)
+                runpath[wr] = r.stdout.strip() if r.returncode == 0 else ""
+            return runpath[wr] == ".github/workflows/android.yml"
+        verified, unverified = [], []
+        for a in arts:
+            (verified if verify(a) else unverified).append(a)
+        keepers, victims = verified[:keep], verified[keep:]
+        def runid(a):
+            return (a.get("workflow_run") or {}).get("id") or "-"
+        # 删除前打印完整保留清单 + 删除清单
         print(f"保留 {len(keepers)} 个：")
         for a in keepers:
             print(f"  {a['id']}  {a['name']}  {a['created_at']}  run={runid(a)}")
         print(f"删除 {len(victims)} 个：")
         for a in victims:
             print(f"  {a['id']}  {a['name']}  {a['created_at']}  run={runid(a)}")
+        if unverified:
+            print(f"归属核验未通过（不删、不计窗口）{len(unverified)} 个：")
+            for a in unverified:
+                print(f"  {a['id']}  {a['name']}  {a['created_at']}  run={runid(a)}")
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
             f.write(f"### Artifact 清理（保留最近 {keep} 个）\n\n")
             f.write("| 动作 | id | 名称 | 创建时间 | 来源运行 |\n| --- | --- | --- | --- | --- |\n")
@@ -193,14 +191,34 @@ jobs:
                 f.write(f"| 保留 | {a['id']} | {a['name']} | {a['created_at']} | {runid(a)} |\n")
             for a in victims:
                 f.write(f"| 删除 | {a['id']} | {a['name']} | {a['created_at']} | {runid(a)} |\n")
+            for a in unverified:
+                f.write(f"| 跳过(归属未核验) | {a['id']} | {a['name']} | {a['created_at']} | {runid(a)} |\n")
+        # 失败只报错，不回滚新产物，不删保留窗口内对象
+        errors = []
         for a in victims:
-            subprocess.run(["gh", "api", "-X", "DELETE",
-                            f"repos/{repo}/actions/artifacts/{a['id']}"], check=True)
-        left = int(subprocess.run(
-            ["gh", "api", f"repos/{repo}/actions/artifacts?per_page=100",
-             "--jq", ".artifacts | length"],
-            capture_output=True, text=True, check=True).stdout.strip())
+            r = subprocess.run(["gh", "api", "-X", "DELETE",
+                                f"repos/{repo}/actions/artifacts/{a['id']}",
+                               capture_output=True, text=True)
+            if r.returncode != 0:
+                errors.append(f"{a['id']} {a['name']}: {r.stderr.strip()}")
+        if errors:
+            raise SystemExit("清理删除失败（不声称达标）：\n" + "\n".join(errors))
+        left = sum(1 for a in json.loads(subprocess.run(
+            ["gh", "api", f"repos/{repo}/actions/artifacts?per_page=100"],
+            capture_output=True, text=True, check=True).stdout)["artifacts"] if verify(a))
         if left > keep:
-            raise SystemExit(f"清理后仍有 {left} 个 artifact，超出上限 {keep}")
-        print(f"清理完成，剩余 {left} 个")
+            raise SystemExit(f"清理后仍有 {left} 个已核验 artifact，超出上限 {keep}")
+        print(f"清理完成，已核验 artifact 剩余 {left} 个")
         PY
+
+    - name: Dump build log tail on failure
+      if: failure()
+      shell: bash
+      run: |
+        {
+          echo '### Gradle build log (tail)'
+          echo '```'
+          tail -n 150 build.log
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"
+
