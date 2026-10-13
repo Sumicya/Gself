@@ -193,6 +193,7 @@ jobs:
                 f.write(f"| 删除 | {a['id']} | {a['name']} | {a['created_at']} | {runid(a)} |\n")
             for a in unverified:
                 f.write(f"| 跳过(归属未核验) | {a['id']} | {a['name']} | {a['created_at']} | {runid(a)} |\n")
+        print(f"::notice::cleanup 台账：保留 {len(keepers)} 删除 {len(victims)} 未核验 {len(unverified)}")
         # 失败只报错，不回滚新产物，不删保留窗口内对象
         errors = []
         for a in victims:
@@ -200,6 +201,7 @@ jobs:
                                 f"repos/{repo}/actions/artifacts/{a['id']}",
                                capture_output=True, text=True)
             if r.returncode != 0:
+                print(f"::error::DELETE artifact {a['id']} ({a['name']}) 失败: {r.stderr.strip()}")
                 errors.append(f"{a['id']} {a['name']}: {r.stderr.strip()}")
         if errors:
             raise SystemExit("清理删除失败（不声称达标）：\n" + "\n".join(errors))
