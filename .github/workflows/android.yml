@@ -21,6 +21,10 @@
 
 name: Android CI
 
+env:
+  # 命名口径声明：产物版本段数。清理的口径判据按此删段数不符的产物。
+  SEGMENTS: "5"
+
 on:
   push:
     branches: [ "main" ]
@@ -77,9 +81,9 @@ jobs:
         local_day="$(TZ=Asia/Shanghai date -d "$stamp" +%Y-%m-%d)"
         since="$(TZ=Asia/Shanghai date -u -d "$local_day 00:00:00" +%Y-%m-%dT%H:%M:%SZ)"
         # 当日序号 = 当日该仓出包运行的序号：数当日 android.yml 的运行（本文件
-        # 只接 push / workflow_dispatch，按 id 即开始时间升序），本次运行的位次
-        # 即序号。禁止按 head 提交位次取数（并发必然竞态）。
-        today="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/android.yml/runs?created=>=$since&per_page=100" --jq '.workflow_runs[] | select(.event == "push" or .event == "workflow_dispatch") | .id' | sort -n | grep -n "^$GITHUB_RUN_ID$" | cut -d: -f1 || true)"
+        # 只接 push / workflow_dispatch），按 run_started_at 升序取本次位次。
+        # 禁止按 head 提交位次取数（并发必然竞态）。
+        today="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/android.yml/runs?created=>=$since&per_page=100" --jq '.workflow_runs[] | select(.event == "push" or .event == "workflow_dispatch") | [(.run_started_at // .created_at), .id] | @tsv' | sort -k1,1 -k2,2n | awk -F '\t' -v id="$GITHUB_RUN_ID" '$2 == id {print NR; exit}')"
         # 总序号 = 本次 run 的 run_number（取自运行上下文，不查历史；本仓未记录
         # 基线，用原值）。旧锚（历史成功数、现存 artifact 最大号）停用。
         total=${GITHUB_RUN_NUMBER}
@@ -139,124 +143,133 @@ jobs:
         # 而不是报「已存在」把重跑卡死；正常运行版本名唯一，此项不生效。
         overwrite: true
 
-    - name: Cleanup old artifacts (keep newest 5)
+    - name: Cleanup (three criteria, keep newest 5 per sequence)
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
         set -euo pipefail
         keep=5
         gh api --paginate "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" > artifacts.json
+        gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?per_page=100" > runs.json
         python3 - "$keep" <<'PY'
-        import json, os, subprocess, sys
+        import json, os, subprocess, sys, datetime
+        from collections import defaultdict
         keep = int(sys.argv[1])
+        SEGMENTS = int(os.environ.get("SEGMENTS", "5"))
         repo = os.environ["GITHUB_REPOSITORY"]
-        arts, seen = [], set()
-        raw = open("artifacts.json", encoding="utf-8").read()
-        dec = json.JSONDecoder()
-        idx, n = 0, len(raw)
-        while idx < n:
-            while idx < n and raw[idx] in " \r\n\t":
-                idx += 1
-            if idx >= n:
-                break
-            obj, idx = dec.raw_decode(raw, idx)
-            for a in obj.get("artifacts", []):
-                if a["id"] not in seen:
-                    seen.add(a["id"])
-                    arts.append(a)
+        tz8 = datetime.timezone(datetime.timedelta(hours=8))
+        today8 = datetime.datetime.now(tz8).date()
+        def d8(iso):
+            return datetime.datetime.fromisoformat(iso.replace("Z", "+00:00")).astimezone(tz8).date()
+        def parse_pages(fname, key):
+            items, seen = [], set()
+            raw = open(fname, encoding="utf-8").read()
+            dec = json.JSONDecoder()
+            idx, n = 0, len(raw)
+            while idx < n:
+                while idx < n and raw[idx] in " \r\n\t":
+                    idx += 1
+                if idx >= n:
+                    break
+                obj, idx = dec.raw_decode(raw, idx)
+                for it in obj.get(key, []):
+                    if it["id"] not in seen:
+                        seen.add(it["id"])
+                        items.append(it)
+            return items
+        # ---------- artifact：三判据 ----------
+        # 判据一口径：段数 != 工作流顶部 SEGMENTS 声明值 → 删（不豁免当日）。
+        # 判据二来源：workflow_run 事件为 pull_request → 删（不豁免当日）。
+        # 判据三数量：当日之外、每条工作流序列保留最近 keep 个；当日不删。
+        arts = parse_pages("artifacts.json", "artifacts")
         arts.sort(key=lambda a: a["created_at"], reverse=True)
-        # 归属核验写死：名称前缀仅作初筛；必须能追到本仓构建工作流（android.yml
-        # 或遗留 build.yml）的运行记录才算
-        # 本项目对象。核验不过的对象不计入保留窗口、不删，只列出报告。
-        runpath = {}
-        def verify(a):
+        _ri = {}
+        def runinfo(a):
             wr = (a.get("workflow_run") or {}).get("id")
             if not wr:
-                return False
-            if wr not in runpath:
+                return ("", "")
+            if wr not in _ri:
                 r = subprocess.run(["gh", "api", f"repos/{repo}/actions/runs/{wr}",
-                                    "--jq", ".path"], capture_output=True, text=True)
-                runpath[wr] = r.stdout.strip() if r.returncode == 0 else ""
-            return runpath[wr] in (".github/workflows/android.yml",
-                                   ".github/workflows/build.yml")
+                                    "--jq", "[.path, .event] | @tsv"],
+                                   capture_output=True, text=True)
+                parts = r.stdout.strip().split("\t") if r.returncode == 0 else []
+                _ri[wr] = (parts[0], parts[1]) if len(parts) == 2 else ("", "")
+            return _ri[wr]
+        ALLOWED = (".github/workflows/android.yml", ".github/workflows/build.yml")
         verified, unverified = [], []
         for a in arts:
-            (verified if verify(a) else unverified).append(a)
-        keepers, victims = verified[:keep], verified[keep:]
+            (verified if runinfo(a)[0] in ALLOWED else unverified).append(a)
+        victims, candidates = [], []
+        for a in verified:
+            path, event = runinfo(a)
+            ver = a["name"][len("Gself-"):] if a["name"].startswith("Gself-") else ""
+            seg = ver.count(".") + 1 if ver else 0
+            if seg != SEGMENTS:
+                victims.append((a, f"口径 {seg} 段 != SEGMENTS {SEGMENTS}"))
+            elif event == "pull_request":
+                victims.append((a, "来源 pull_request 运行"))
+            else:
+                candidates.append(a)
+        groups = defaultdict(list)
+        for a in candidates:
+            groups[runinfo(a)[0]].append(a)
+        keepers = []
+        for path, lst in groups.items():
+            for i, a in enumerate(lst):
+                if i >= keep and d8(a["created_at"]) != today8:
+                    victims.append((a, f"数量 超出 {path} 序列 {keep}"))
+                else:
+                    keepers.append(a)
         def runid(a):
             return (a.get("workflow_run") or {}).get("id") or "-"
-        # 删除前打印完整保留清单 + 删除清单
         print(f"保留 {len(keepers)} 个：")
         for a in keepers:
             print(f"  {a['id']}  {a['name']}  {a['created_at']}  run={runid(a)}")
         print(f"删除 {len(victims)} 个：")
-        for a in victims:
-            print(f"  {a['id']}  {a['name']}  {a['created_at']}  run={runid(a)}")
+        for a, why in victims:
+            print(f"  {a['id']}  {a['name']}  {a['created_at']}  run={runid(a)}  [{why}]")
         if unverified:
             print(f"归属核验未通过（不删、不计窗口）{len(unverified)} 个：")
             for a in unverified:
                 print(f"  {a['id']}  {a['name']}  {a['created_at']}  run={runid(a)}")
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
-            f.write(f"### Artifact 清理（保留最近 {keep} 个）\n\n")
-            f.write("| 动作 | id | 名称 | 创建时间 | 来源运行 |\n| --- | --- | --- | --- | --- |\n")
+            f.write("### Artifact 清理（三判据）\n\n")
+            f.write("| 动作 | id | 名称 | 创建时间 | 来源运行 | 判据 |\n| --- | --- | --- | --- | --- | --- |\n")
             for a in keepers:
-                f.write(f"| 保留 | {a['id']} | {a['name']} | {a['created_at']} | {runid(a)} |\n")
-            for a in victims:
-                f.write(f"| 删除 | {a['id']} | {a['name']} | {a['created_at']} | {runid(a)} |\n")
+                f.write(f"| 保留 | {a['id']} | {a['name']} | {a['created_at']} | {runid(a)} | - |\n")
+            for a, why in victims:
+                f.write(f"| 删除 | {a['id']} | {a['name']} | {a['created_at']} | {runid(a)} | {why} |\n")
             for a in unverified:
-                f.write(f"| 跳过(归属未核验) | {a['id']} | {a['name']} | {a['created_at']} | {runid(a)} |\n")
-        print(f"::notice::cleanup 台账：保留 {len(keepers)} 删除 {len(victims)} 未核验 {len(unverified)}")
-        # 失败只报错，不回滚新产物，不删保留窗口内对象
+                f.write(f"| 跳过(归属未核验) | {a['id']} | {a['name']} | {a['created_at']} | {runid(a)} | - |\n")
+        print(f"::notice::cleanup artifacts：保留 {len(keepers)} 删除 {len(victims)} 未核验 {len(unverified)}")
         errors = []
-        for a in victims:
+        for a, why in victims:
             r = subprocess.run(["gh", "api", "-X", "DELETE",
                                 f"repos/{repo}/actions/artifacts/{a['id']}"],
                                capture_output=True, text=True)
             if r.returncode != 0:
                 print(f"::error::DELETE artifact {a['id']} ({a['name']}) 失败: {r.stderr.strip()}")
-                errors.append(f"{a['id']} {a['name']}: {r.stderr.strip()}")
+                errors.append(str(a["id"]))
         if errors:
-            raise SystemExit("清理删除失败（不声称达标）：\n" + "\n".join(errors))
-        left = sum(1 for a in json.loads(subprocess.run(
-            ["gh", "api", f"repos/{repo}/actions/artifacts?per_page=100"],
-            capture_output=True, text=True, check=True).stdout)["artifacts"] if verify(a))
-        if left > keep:
-            raise SystemExit(f"清理后仍有 {left} 个已核验 artifact，超出上限 {keep}")
-        print(f"清理完成，已核验 artifact 剩余 {left} 个")
-        # 运行记录保留最近 5 条。完整分页、创建时间降序；当前 run、未完成 run
-        # 与今日（UTC+8）run 不删——当日序号靠数当日出包运行，删今日 run 会让
-        # 后续运行少计一位（实测 26.10.14.2.147 与 .2.148 当日序号重复的教训）；
-        # 今日 run 留到明日再收。删前打印保留 + 删除清单，失败只报错。
-        import datetime
-        tz8 = datetime.timezone(datetime.timedelta(hours=8))
-        today8 = datetime.datetime.now(tz8).date()
+            raise SystemExit(f"artifact 清理失败（不声称达标）：{','.join(errors)}")
+        print("artifact 清理完成")
+        # ---------- runs：数量判据（按工作流序列，当日不删） ----------
+        # 清理只挂出包工作流：PR 校验等其它工作流的超量 run 在这里一并删。
+        runs = parse_pages("runs.json", "workflow_runs")
         cur = int(os.environ["GITHUB_RUN_ID"])
-        subprocess.run(["gh", "api", "--paginate", f"repos/{repo}/actions/runs?per_page=100"],
-                       stdout=open("runs.json", "w"), check=True)
-        runs, rseen = [], set()
-        raw = open("runs.json", encoding="utf-8").read()
-        dec = json.JSONDecoder()
-        idx, n = 0, len(raw)
-        while idx < n:
-            while idx < n and raw[idx] in " \r\n\t":
-                idx += 1
-            if idx >= n:
-                break
-            obj, idx = dec.raw_decode(raw, idx)
-            for r0 in obj.get("workflow_runs", []):
-                if r0["id"] not in rseen:
-                    rseen.add(r0["id"])
-                    runs.append(r0)
-        runs.sort(key=lambda r0: r0["created_at"], reverse=True)
-        rkeepers = runs[:keep]
-        rvictims, rskipped = [], []
-        for r0 in runs[keep:]:
-            d8 = datetime.datetime.fromisoformat(
-                r0["created_at"].replace("Z", "+00:00")).astimezone(tz8).date()
-            if r0["id"] == cur or r0.get("status") != "completed" or d8 == today8:
-                rskipped.append(r0)
-            else:
-                rvictims.append(r0)
+        rgroups = defaultdict(list)
+        for r0 in runs:
+            rgroups[r0["name"]].append(r0)
+        rkeepers, rvictims, rskipped = [], [], []
+        for name, lst in rgroups.items():
+            lst.sort(key=lambda r0: r0["created_at"], reverse=True)
+            for i, r0 in enumerate(lst):
+                if i < keep:
+                    rkeepers.append(r0)
+                elif r0["id"] == cur or r0.get("status") != "completed" or d8(r0["created_at"]) == today8:
+                    rskipped.append(r0)
+                else:
+                    rvictims.append(r0)
         print(f"运行记录保留 {len(rkeepers)} 条：")
         for r0 in rkeepers:
             print(f"  {r0['id']}  {r0['name']}  {r0['created_at']}  {r0.get('conclusion')}")

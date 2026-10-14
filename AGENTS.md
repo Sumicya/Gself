@@ -45,16 +45,21 @@
 
 ## 清理（本仓实现）
 
-- 位置：构建 job 内，出包运行上传成功后立即执行（PR 运行不清理）；权限
-  `contents: read` + 最小 `actions: write`（只删本项目 artifact 与 run），不给
-  `contents: write`。
+- 位置：只挂出包工作流（android.yml）的构建 job，上传成功后立即执行；PR 校验
+  工作流不挂清理。权限 `contents: read` + 最小 `actions: write`（只删本项目
+  artifact 与 run），不给 `contents: write`。
 - 归属核验写死：artifact 逐个追 `workflow_run` 的 workflow 路径（须为本仓构建
   工作流 `.github/workflows/android.yml` 或遗留 `.github/workflows/build.yml` 的
-  运行记录）确认属本项目，未核验对象不删、不计入保留窗口；
-  删前打印保留 + 删除清单，失败只报错、不回滚。`retention-days: 5` 只作时间兜底。
-- 运行记录清理保护：runs 保留最近 5 条，但当日（UTC+8）创建的 run 不删，
-  留到明日再收——当日序号靠数当日出包运行，删当日 run 会让后续运行少计一位。
-  当日 run 数多时记录数盘中可超 5，次日出包运行压回 5。
+  运行记录）确认属本项目，未核验对象不删、不计入保留窗口。
+- 清理三判据（删前打印保留 + 删除清单，失败只报错、不回滚）：
+  ① 口径：版本段数 ≠ android.yml 顶部 `SEGMENTS` 声明值（现 5）的删，不豁免当日；
+  ② 来源：`workflow_run` 事件为 `pull_request` 的 artifact 一律删，不豁免当日
+  （存量 `Gself-26.10.14.4.145` 属此列，下个出包运行由清理 job 删除）；
+  ③ 数量：当日之外，每条工作流序列的 artifact 与 run 各保留最近 5 个（序列按
+  工作流计，PR 校验的 run 由本清理一并处理）；当日创建的 artifact 与 run 当天
+  不删，次日纳入滚动——当日序号靠当日运行列表计数，删当日 run 会制造重复
+  序号（`.2.147` 与 `.2.148` 的教训）。当日条数不设上限，盘中可超 5。
+- `retention-days: 5` 只作时间兜底，不代替滚动清理。
 - 分支删除唯一判据：compare `ahead_by=0`（工作已继承进默认分支）。处置记录
   （2026-10-13）：`arena/01a10a49-gself` 上轮按旧规则在 PR #13 关闭后被本会话
   删除，本轮按新判据以 PR #13 头提交 `958ed97` 恢复，compare 为 diverged、
