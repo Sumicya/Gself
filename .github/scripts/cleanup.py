@@ -78,6 +78,19 @@ def version_of(name):
         return None
 
 
+def delete(kind, obj_id, label, why):
+    """真删一个对象。失败（fork PR 只读令牌 403 等）打 warning 降级，不红 job。"""
+    p = subprocess.run(["gh", "api", "-X", "DELETE",
+                        f"repos/{REPO}/actions/{kind}/{obj_id}"],
+                       capture_output=True, text=True)
+    if p.returncode != 0:
+        print(f"::warning::{label} 删除失败：{p.stderr.strip()[:180]}"
+              "（fork PR 或权限不足，本次降级为预演）")
+        return False
+    print(f"  已删 {label}（{why}）")
+    return True
+
+
 def main():
     mode = "真删" if APPLY else "预演（CLEANUP_APPLY=false，不删）"
     print(f"清理模式：{mode}；SEGMENTS={SEGMENTS}；每序列保留 {KEEP}；今日(UTC+8)={TODAY8}；PREFIX=Gself-")
