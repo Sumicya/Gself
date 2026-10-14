@@ -1,64 +1,53 @@
 # Gself 项目规则
 
-本文件只记项目事实、计数口径与必要限制。全局工程规范以 Sumicya/selfs 默认分支的
-GLOBAL.md 为准，**上次同步 = 第0版修订（2026-10-13）**。与全局规范冲突时以 GLOBAL.md 为准。
-（第0版修订取自 Sumicya/selfs 会话分支 `arena/7a7f3552-selfs`@1984b03a，尚未合入
-selfs 默认分支，按主人指示先行同步；selfs 默认分支仍为第0版。）
+本文件只记项目事实、必要限制与规范指针，不复制全局规则、不带版本号。全局工程
+规范以 Sumicya/selfs 的 GLOBAL.md 现文为准；本轮规范按主人指示取自其会话分支
+`arena/2d001a47-selfs`（PR #6，head a9fc529，尚未合入默认分支，合并后回默认分支）。
+冲突按权威顺序处理：主人当轮指示 > GLOBAL.md 现文 > 本文件。
 
 ## 项目事实
 
 - Gself：LSPosed 纯 Hook 模块，applicationId `sumicya.gself`；内部包名与入口类
   `sumicya.fcmself.XposedMain` 不变，CI 的 R8 入口校验查这个类名。
 - 构建：`./gradlew test assembleDebug`，产物 `app/build/outputs/apk/debug/app-debug.apk`。
-- CI（`.github/workflows/android.yml`）：零 secrets，push 与 PR 都出包；跑单测 → 编译 debug →
-  校验 R8 入口类 → 上传 `Gself-<五段版本>.apk`。CI 只出包不发版：不创建 Release、正式 tag
-  或 Release asset；正式发版须主人事先对项目、版本和触发条件明确授权，获准人工发版后
-  按数量规则清理。
-- 本沙箱无 JDK / Android SDK：编译验证只能由 CI 完成，汇报须如实区分本地与远端状态。
+- CI（`.github/workflows/android.yml`）：零 secrets，push 与 PR 都出包；跑单测 → 编译
+  debug → 校验 R8 入口类 → 上传 artifact。CI 只出包不发版，Release 只在主人明确
+  授权后人工创建。
+- 本仓现无 Release、无 tag。
 
-## 版本计数口径（五段：yy.m.d.当日序号.总序号，日界 UTC+8）
+## 版本计数口径（本仓实现）
 
-- 来源：android.yml 的真实运行记录（GitHub API 可查、可追溯），锚定本次运行的
-  created_at、run_id、run_attempt，不取查询时的最新运行冒充本次。
-- 当日序号：本次 run 的 head 提交在当日（UTC+8）提交序列中的位次；本仓实现为数
-  head 祖先链中的当日提交数（含 head 自身，head 即末位）。
-- 总序号：本次 run 的 `run_number` − 基线 **3**。基线定死（第0版修订切换时确定）：
-  run 38407093039 的 run_number 140 对应总序 137，基线 = 140 − 137 = 3。
-  旧锚（历史成功数、现存 artifact 最大号）停用；run_number 在 run 记录删除后不
-  复用，失败运行同样消耗总序（run_number 机制决定）。
-- 重试：run_attempt > 1 时直接复用首次 attempt 已确定的版本（从本运行已有产物名取得），
+- 当日序号：本次 run 的 head 提交在当日（UTC+8）该仓提交序列中的位次；实现为数
+  head 祖先链中的当日提交数（含 head 自身，head 即末位）。取不到当日序号时退化
+  四段 `yy.m.d.总序号`，CI 日志以 `::warning` 写明退化原因。
+- 总序号：本次 run 的 `run_number`（取自运行上下文，不查历史）。本仓 workflow 未
+  重建、未记录基线，用原值；旧口径「run_number − 3」自本轮停用，总序由 139 跳至
+  下一 run 的 run_number 原值，仍递增。旧锚（历史成功数、现存 artifact 最大号）停用。
+- 重试：`run_attempt > 1` 复用首次 attempt 已定的号（从本运行已有产物名取得），
   不重新加号；首次 attempt 未产出产物时按正常流程计算。
-- 本地构建：非发行开发版，版本回落 `0.0.0.0.<fcmself.buildNumber>`，不参与发行序号；
-  正式产物只认 CI 出包（主人已裁定）。
-- 映射：versionCode = 总序号；产物文件名与 artifact 名统一 `Gself-<五段版本>`。
-- 任一必要输入缺失、取数失败或校验不通过，立即停止出包与上传。
+- `created_at`、`run_number` 缺失或校验不通过，立即停止出包与上传（当日序号按
+  上条退化处理，不停包）。
+- 本地构建：非发行开发版，版本回落 `0.0.0.0.<fcmself.buildNumber>`，不参与发行
+  序号；正式产物只认 CI 出包（主人已裁定）。
+- 映射：versionCode = 总序号；文件名与 artifact 名统一 `Gself-<版本>`。
 
-## 数量清理
+## 清理（本仓实现）
 
-- Actions artifact 全项目合计保留最近 **5 个**（跨分支、跨触发事件，含改名前遗留名）：
-  清理在构建 job 内、本 run 上传成功后立即执行（任意触发事件，含 PR）；权限只给最小
-  `actions: write`（仅删本项目 artifact 与 run），禁止 `contents: write`。完整分页、按创建时间
-  降序稳定排序；脚本写死只删归属核验通过的对象（名称前缀初筛 + workflow 路径与运行
-  记录核验），未核验对象不计入保留窗口、不删；删前打印保留 + 删除清单。失败只报错：
-  不回滚新产物、不删除保留窗口内对象。
-- 清理默认启用，不逐仓询问；**已有积压属于落实范围，当场清，不写代码留待以后**——
-  2026-10-13 已当场清账（遗留 artifact 确认不在、#13 已关；两条冗余工作流注册已
-  消失：spec-check 注册状态 deleted、Build 注册不存在，现仅 Android CI 一条 active；
-  spec-check.yml 文件随本分支的 PR 删除，尚未合入前仍在 main）。
-- 运行记录（workflow runs）保留最近 **5 条**：清理在 artifact 之后执行；当前 run
-  与未完成 run 不删。计数锚已换到 commit 位次与 run_number，删 run 不影响序号。
-  删前打印保留 + 删除清单，失败只报错。
-- 分支保留 **0 个**：PR 合并或关闭后删除对应会话分支；主人手动合并的，由下一个
-  会话收尾时删除。删 ref 需 `contents: write`，分支清理只由会话执行、不进 CI。
-  2026-10-13 已删 `arena/01a10a49-gself`（PR #13 关闭后的收尾）。
-- 另设 `retention-days: 5` 作时间兜底，不代替数量清理。
-- Release 只保留最近 **1 个**（含关联 tag，仍被保留对象引用的 tag 不删）：本仓库当前
-  没有 Release，无清理对象；日后获准人工发版后的清理按 GLOBAL.md 执行。
+- 位置：构建 job 内，本 run 上传成功后立即执行（任意触发事件，含 PR）；权限
+  `contents: read` + 最小 `actions: write`（只删本项目 artifact 与 run），不给
+  `contents: write`。
+- 归属核验写死：artifact 逐个追 `workflow_run` 的 workflow 路径（须为
+  `.github/workflows/android.yml`）确认属本项目，未核验对象不删、不计入保留窗口；
+  删前打印保留 + 删除清单，失败只报错、不回滚。`retention-days: 5` 只作时间兜底。
+- 分支删除唯一判据：compare `ahead_by=0`（工作已继承进默认分支）。处置记录
+  （2026-10-13）：`arena/01a10a49-gself` 上轮按旧规则在 PR #13 关闭后被本会话
+  删除，本轮按新判据以 PR #13 头提交 `958ed97` 恢复，compare 为 diverged、
+  ahead_by=25，保留并报主人；本会话分支 `arena/43c5efbf-gself` 挂开放 PR #14，不删。
 
 ## 必要限制
 
-- 任何本轮本地改动必须提交并推送到当前远端分支；任务结束不留未提交、不留已提交未推送。
-- CI 权限原则：构建与检查只给 `contents: read`；清理只加最小 `actions: write`
-  （仅删归属核验通过的本项目 artifact 与 run），不给 `contents: write`；不执行未信任的
+- 本轮改动提交并推送到当前会话分支（默认授权）；收尾工作树干净、无未推送提交。
+- 交付走会话分支加 PR，不直推默认分支（清理类删除不在此限）；不执行未信任的
   fork PR 代码。
-- 对外动作（正式发版、删除远程分支、删除标签等）不得由普通 CI 触发器隐式执行。
+- 本沙箱无 JDK / Android SDK：编译验证只能由 CI 完成，汇报须如实区分本地实现、
+  远端分支与实际运行状态。跨仓只读；动其它仓碰到 403 当轮报阻塞并附可粘贴命令。

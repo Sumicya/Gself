@@ -2,6 +2,26 @@
 
 > 本仓库由 fcmfix 迁移而来。0.9.0 及以前压缩为要点，完整历史见 `git log`。
 
+## 规范同步 —— selfs 规范更新（取消版本号与同步戳）
+
+> 规范按主人指示取自 Sumicya/selfs 会话分支 `arena/2d001a47-selfs`（PR #6，
+> head a9fc529，尚未合入默认分支）。规范本体取消版本号，本仓文档同步去掉
+> 版本号与同步戳。模块代码零改动。
+
+### 改的
+
+- 总序号改为本次 run 的 `run_number` 原值：本仓 workflow 未重建、未记录基线，
+  旧口径「run_number − 3」停用；总序由 139 跳至下一 run 的 run_number 原值，仍递增。
+- 当日序号取不到时退化四段 `yy.m.d.总序号`，CI 日志以 `::warning` 写明原因；
+  `created_at`、`run_number` 缺失仍立即停包。
+- `AGENTS.md` 整份精简：只记项目事实、必要限制与规范指针，不复制全局规则、
+  不带版本号或同步戳；计数与清理两节只留本仓实现口径。
+- 分支删除唯一判据改为 compare `ahead_by=0`：上轮按旧规则删掉的
+  `arena/01a10a49-gself`（PR #13 已关闭未合并）已以其头提交 `958ed97` 恢复，
+  compare diverged、ahead_by=25，按新规保留并报主人。
+- 核对无误、无需改动：action 钉主版本（`@v7`/`@v6`）、具体镜像
+  `ubuntu-24.04`、无 `@main`/`@latest` 浮动标签；本仓无孤立 tag、无 Release。
+
 ## 规范同步 —— GLOBAL.md 第0版修订
 
 > 对齐 Sumicya/selfs 会话分支 `arena/7a7f3552-selfs`@1984b03a 的第0版修订

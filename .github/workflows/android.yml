@@ -3,15 +3,15 @@
 #   - Gself-<五段版本>.apk ：debug 签名，可直接安装测试
 # 本地签名步骤见 docs/build-and-sign-termux.md。
 #
-# 版本口径（见 AGENTS.md「版本计数口径」，遵 GLOBAL.md 第0版修订统一五段）：
+# 版本口径（见 AGENTS.md「版本计数口径」，遵 GLOBAL.md 统一五段（规范不带版本号））：
 #   - 五段 = yy.m.d.当日序号.总序号，日界 UTC+8；来源为 android.yml 的真实运行记录，
 #     锚定本次运行的 created_at / run_id / run_attempt，不取查询时的最新运行冒充本次。
 #   - 当日序号 = 本次 run 的 head 提交在当日（UTC+8）提交序列中的位次。
-#   - 总序号 = 本次 run 的 run_number − 基线 3（基线定死，见 AGENTS.md）。
+#   - 总序号 = 本次 run 的 run_number（原值，不查历史）；当日序号取不到退化四段。
 #   - run_attempt > 1 时复用首次 attempt 已定的版本，不重新加号。
 #   - 版本数据缺失、取数失败或校验不通过，立即停止出包与上传。
 # 清理：构建 job 在上传成功后立即保留最近 5 个 artifact（任意触发事件含 PR）。
-#   按第0版，清理只授予最小 actions: write 删除本项目 artifact 与 run，禁止
+#   清理只授予最小 actions: write 删除本项目 artifact 与 run，禁止
 #   contents: write；脚本写死只删归属核验通过（workflow 路径 + 运行记录）的对象，
 #   删前打印保留 + 删除清单，失败只报错不回滚。已有积压当场清、不留待以后。
 
@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
-      # 清理专用（第0版）：只删本项目 artifact 与 run 的最小 actions: write；
+      # 清理专用：只删本项目 artifact 与 run 的最小 actions: write；
       # 禁止 contents: write。脚本写死只删归属核验通过的对象。
       actions: write
     steps:
@@ -73,17 +73,23 @@ jobs:
         day="$(TZ=Asia/Shanghai date -d "$stamp" +%y.%-m.%-d)"
         local_day="$(TZ=Asia/Shanghai date -d "$stamp" +%Y-%m-%d)"
         since="$(TZ=Asia/Shanghai date -u -d "$local_day 00:00:00" +%Y-%m-%dT%H:%M:%SZ)"
-        # 当日序号（第0版修订）= head 提交在当日（UTC+8）提交序列中的位次：
+        # 当日序号 = head 提交在当日（UTC+8）提交序列中的位次：
         # 数 head 祖先链中当日提交数（含 head 自身），head 即序列末位。
         today="$(gh api --paginate "repos/$GITHUB_REPOSITORY/commits?sha=$GITHUB_SHA&since=$since&per_page=100" --jq '.[].sha' | wc -l | tr -d ' ')"
-        # 总序号（第0版修订）= 本次 run 的 run_number − 基线 3（基线定死，见 AGENTS.md）。
-        # 旧锚（历史成功数、现存 artifact 最大号）停用；run_number 删除 run 记录后不复用。
-        total=$((${GITHUB_RUN_NUMBER} - 3))
-        for n in "$today" "$total"; do
-          case "$n" in
-            ''|*[!0-9]*|0) echo "::error::序号取数失败（取值：'$n'），按规范停止出包与上传" >&2; exit 1 ;;
-          esac
-        done
+        # 总序号 = 本次 run 的 run_number（取自运行上下文，不查历史；本仓未记录
+        # 基线，用原值）。旧锚（历史成功数、现存 artifact 最大号）停用。
+        total=${GITHUB_RUN_NUMBER}
+        case "$total" in
+          ''|*[!0-9]*|0) echo "::error::总序号取数失败（run_number：'$total'），按规范停止出包与上传" >&2; exit 1 ;;
+        esac
+        # 当日序号取不到 → 按规范退化四段 yy.m.d.总序号，并写明退化原因。
+        case "$today" in
+          ''|*[!0-9]*|0)
+            echo "::warning::当日序号取不到（commits 查询结果：'$today'），退化四段版本 $day.$total"
+            echo "VERSION_NAME=$day.$total" >> "$GITHUB_ENV"
+            echo "VERSION_CODE=$total" >> "$GITHUB_ENV"
+            exit 0 ;;
+        esac
         echo "VERSION_NAME=$day.$today.$total" >> "$GITHUB_ENV"
         echo "VERSION_CODE=$total" >> "$GITHUB_ENV"
 
@@ -211,9 +217,9 @@ jobs:
         if left > keep:
             raise SystemExit(f"清理后仍有 {left} 个已核验 artifact，超出上限 {keep}")
         print(f"清理完成，已核验 artifact 剩余 {left} 个")
-        # 运行记录（第0版：有产物仓 5 条）。完整分页、创建时间降序，保留最近 5 条；
-        # 当前 run 与未完成 run 不删。计数已改锚 commit 位次与 run_number（第0版
-        # 修订），删 run 不影响序号。删前打印保留 + 删除清单，失败只报错。
+        # 运行记录保留最近 5 条。完整分页、创建时间降序；当前 run 与未完成
+        # run 不删。计数锚在 commit 位次与 run_number，删 run 不影响序号。
+        # 删前打印保留 + 删除清单，失败只报错。
         cur = int(os.environ["GITHUB_RUN_ID"])
         subprocess.run(["gh", "api", "--paginate", f"repos/{repo}/actions/runs?per_page=100"],
                        stdout=open("runs.json", "w"), check=True)
