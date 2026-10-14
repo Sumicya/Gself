@@ -1,3 +1,13 @@
+## 真删首次落地 —— PR 校验 cleanup job 删除两件存量（2026-10-14）
+
+- [PR check run 38564494224](https://github.com/Sumicya/Gself/actions/runs/38564494224)
+  的 cleanup job（`actions: write` + `CLEANUP_APPLY: 'true'`）删除
+  `Gself-26.10.14.4.145`（来源 pull_request）与 `Gself-26.10.14.2.147`
+  （重复当日序号）；验收命令实测 artifact 只剩 `Gself-26.10.14.2.148`。
+- 首次真删前一跑（run 38563957488）cleanup 红：`delete()` 定义被同文件
+  并行编辑丢掉，NameError。修复提交 b8b3a57 补回定义并本地复现降级路径
+  （沙箱 403 → `::warning::` 降级、退出码 0）后推送，次跑即删成。
+
 ## 规范同步 —— 真删改挂 PR 校验工作流（selfs b0594d3：清理不再永久挂起）
 
 > 根因：真删原先只挂出包工作流，而出包只在默认分支 push 与 workflow_dispatch

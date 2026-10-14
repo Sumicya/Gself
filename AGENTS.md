@@ -42,7 +42,7 @@
 - 版本分界点：2026-10-14 当日序号 2 曾重复（`Gself-26.10.14.2.147` 与
   `Gself-26.10.14.2.148`，后者计数时当日首个出包运行 run 143 的记录已被
   runs 清理删除、少计一位），该分界点之前的当日序号不可信；`.2.147` 按
-  重复判据删（待出包工作流首次运行删除，预演已证名单）。
+  重复判据删（已由 PR 校验 cleanup job 删除，run 38564494224，2026-10-14）。
 - 号源分界点补证：删除前名单（取值 2026-10-14T03:17Z，`gh api
   repos/Sumicya/Gself/actions/artifacts`）为 `Gself-26.10.14.1.144`
   （run 38488343468）、`Gself-26.10.14.3.144`（run 38488429439）、
@@ -57,11 +57,13 @@
 
 ## 清理（本仓实现）
 
-- 实现只有一份：`.github/scripts/cleanup.py`，靠 `CLEANUP_APPLY` 开关分两种
-  调用。出包工作流（android.yml）上传成功后以 `actions: write` + `'true'`
-  真删；PR 校验工作流的 `cleanup-preview` job 以 `actions: read` + `'false'`
-  只打印将删名单与判据理由——会话侧的真机证据就是预演日志，真删仍只发生在
-  出包工作流。权限 `contents: read` + 最小 `actions: write`，不给
+- 实现只有一份：`.github/scripts/cleanup.py`，靠 `CLEANUP_APPLY` 开关分调用。
+  真删挂两处：出包工作流（android.yml）上传成功后、PR 校验工作流的
+  `cleanup` job，均以 `actions: write` + `'true'` 执行，会话推送即触发；
+  两处挂同一 `concurrency` group `gself-cleanup` 串行，不并发删。只打印
+  不删的预演（`'false'`）是备用形态：fork PR 的令牌只读时 DELETE 返回
+  403，脚本打 `::warning::` 降级为预演并继续，不让 job 红；预演名单不作
+  清理已做的证据。权限 `contents: read` + 最小 `actions: write`，不给
   `contents: write`。
 - 归属核验写死：artifact 逐个追 `workflow_run` 的 workflow 路径（须为本仓构建
   工作流 `.github/workflows/android.yml` 或遗留 `.github/workflows/build.yml` 的
@@ -70,9 +72,11 @@
   ——承载→数量；逐对象打印判据结论与豁免原因，失败只报错、不回滚）：
   ① 口径：版本段数 ≠ android.yml 顶部 `SEGMENTS` 声明值（现 5）的删，不豁免当日；
   ② 来源：`workflow_run` 事件为 `pull_request` 的 artifact 一律删，不豁免当日
-  （存量 `Gself-26.10.14.4.145` 属此列，待出包工作流首次运行删除）；
+  （存量 `Gself-26.10.14.4.145` 已按此判据由 PR 校验 cleanup job 删除，
+  run 38564494224）；
   ③ 重复当日序号：同日同序列出现相同当日序号，只留总序号最大的一个，其余删
-  （存量 `.2.147` 属此列，待下一次 PR 校验运行删除；分界点见版本节）；
+  （存量 `.2.147` 已按此判据由 PR 校验 cleanup job 删除，run 38564494224；
+  分界点见版本节）；
   ④ 数量：当日之外，每条工作流序列的 artifact 与 run 各保留最近 5 个（序列按
   工作流计，PR 校验的 run 由本清理一并处理）；当日创建的对象当天不删，
   次日纳入滚动；承载保留产物的 run 不删、不计入 run 上限，上限按不承载
