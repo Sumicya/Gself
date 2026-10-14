@@ -223,9 +223,13 @@ jobs:
         if left > keep:
             raise SystemExit(f"清理后仍有 {left} 个已核验 artifact，超出上限 {keep}")
         print(f"清理完成，已核验 artifact 剩余 {left} 个")
-        # 运行记录保留最近 5 条。完整分页、创建时间降序；当前 run 与未完成
-        # run 不删。计数锚在 commit 位次与 run_number，删 run 不影响序号。
-        # 删前打印保留 + 删除清单，失败只报错。
+        # 运行记录保留最近 5 条。完整分页、创建时间降序；当前 run、未完成 run
+        # 与今日（UTC+8）run 不删——当日序号靠数当日出包运行，删今日 run 会让
+        # 后续运行少计一位（实测 26.10.14.2.147 与 .2.148 当日序号重复的教训）；
+        # 今日 run 留到明日再收。删前打印保留 + 删除清单，失败只报错。
+        import datetime
+        tz8 = datetime.timezone(datetime.timedelta(hours=8))
+        today8 = datetime.datetime.now(tz8).date()
         cur = int(os.environ["GITHUB_RUN_ID"])
         subprocess.run(["gh", "api", "--paginate", f"repos/{repo}/actions/runs?per_page=100"],
                        stdout=open("runs.json", "w"), check=True)
@@ -247,7 +251,9 @@ jobs:
         rkeepers = runs[:keep]
         rvictims, rskipped = [], []
         for r0 in runs[keep:]:
-            if r0["id"] == cur or r0.get("status") != "completed":
+            d8 = datetime.datetime.fromisoformat(
+                r0["created_at"].replace("Z", "+00:00")).astimezone(tz8).date()
+            if r0["id"] == cur or r0.get("status") != "completed" or d8 == today8:
                 rskipped.append(r0)
             else:
                 rvictims.append(r0)
@@ -257,7 +263,7 @@ jobs:
         print(f"运行记录删除 {len(rvictims)} 条：")
         for r0 in rvictims:
             print(f"  {r0['id']}  {r0['name']}  {r0['created_at']}  {r0.get('conclusion')}")
-        print(f"::notice::cleanup runs：保留 {len(rkeepers)} 删除 {len(rvictims)} 跳过(未完/当前) {len(rskipped)}")
+        print(f"::notice::cleanup runs：保留 {len(rkeepers)} 删除 {len(rvictims)} 跳过(未完/当前/今日) {len(rskipped)}")
         rerrors = []
         for r0 in rvictims:
             rr = subprocess.run(["gh", "api", "-X", "DELETE",
