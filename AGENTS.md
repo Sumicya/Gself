@@ -17,9 +17,11 @@
 
 ## 版本计数口径（本仓实现）
 
-- 出包触发：只认 push（main）与 `workflow_dispatch`；`pull_request` 运行只跑校验
-  （测试、编译、R8 入口校验），不取号、不上传、不清理，构建用占位版本
-  `0.0.0.0.pr`。
+- 工作流固定两个：出包 `android.yml`（只接 push(main) 与 `workflow_dispatch`，
+  全仓唯一号源）与 PR 校验 `pr-check.yml`（只接 `pull_request`，独立 run_number
+  序列，永不参与版本号）。禁止一个工作流同时接 push 与 pull_request：
+  run_number 在运行创建时按工作流分配，步骤级 `if` 挡不住 PR 运行吃号。
+  PR 校验不取号、不上传、不清理，构建用 gradle 回落版本。
 - 当日序号：当日该仓出包运行的序号（android.yml 的 push / workflow_dispatch 运行
   按开始时间从 1 递增，本次运行的位次）；PR 运行不计入。取不到当日序号时退化
   四段 `yy.m.d.总序号`，CI 日志以 `::warning` 写明退化原因。禁止按 head 提交
@@ -34,6 +36,11 @@
 - 本地构建：非发行开发版，版本回落 `0.0.0.0.<fcmself.buildNumber>`，不参与发行
   序号；正式产物只认 CI 出包（主人已裁定）。
 - 映射：versionCode = 总序号；文件名与 artifact 名统一 `Gself-<版本>`。
+- 号源分界点（2026-10-14）：总序 144 出现过两个——`Gself-26.10.14.3.144` 是
+  Android CI（run 38488429439）的正规出包；`Gself-26.10.14.1.144` 是遗留 Build
+  工作流（run 38488343468）的旧口径产物。本仓版本号只认 Android CI 序列；
+  Build 产物 `.1.144` 待主人删除（沙箱令牌删产物返回 403，命令已在当轮汇报
+  交接），删除后本条只留历史意义。
 
 ## 清理（本仓实现）
 
