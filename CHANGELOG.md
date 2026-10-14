@@ -1,3 +1,19 @@
+## 规范同步 —— 真删改挂 PR 校验工作流（selfs b0594d3：清理不再永久挂起）
+
+> 根因：真删原先只挂出包工作流，而出包只在默认分支 push 与 workflow_dispatch
+> 触发，会话两侧都够不着——「待出包工作流首次运行」在会话侧永远不会来。
+
+- `pr-check.yml` 的清理 job 由只读预演改为真删：`cleanup-preview`→`cleanup`，
+  `actions: read`→`actions: write`，`CLEANUP_APPLY: 'false'`→`'true'`，步骤名
+  改「按四条判据清理（真删）」；与 android.yml 的 build job 同挂
+  `concurrency` group `gself-cleanup` 串行。PR 校验工作流文件头注释同步
+  （原写「不清理」已与实现矛盾）。
+- `cleanup.py` 的 DELETE 改降级式：失败（fork PR 只读令牌 403 等）打
+  `::warning::` 本次降级为预演并继续，不红 job、不再 SystemExit；只读预演
+  降为备用形态，预演名单不作清理已做的证据。
+- 存量待删状态改记「待下一次 PR 校验运行」：`.4.145`（来源）、`.2.147`
+  （重复当日序号）。本提交的 PR 校验运行即首次真删，验收看 artifact 名单。
+
 ## 规范同步 —— 启动参数打印与号源已知风险（selfs 4e9effb 复查清单）
 
 - `cleanup.py` 启动行补 `PREFIX=Gself-`：预演日志可独立核对脚本读到的参数

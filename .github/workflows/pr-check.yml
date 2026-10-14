@@ -63,17 +63,20 @@ jobs:
           echo '```'
         } >> "$GITHUB_STEP_SUMMARY"
 
-  cleanup-preview:
+  cleanup:
     runs-on: ubuntu-24.04
+    concurrency:
+      group: gself-cleanup
+      cancel-in-progress: false
     permissions:
-      actions: read
+      actions: write
     steps:
       - uses: actions/checkout@v7
-      - name: 清理判据预演（只打印，不删）
+      - name: 按四条判据清理（真删）
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           SELF: ${{ github.run_id }}
           SEGMENTS: '5'
-          CLEANUP_APPLY: 'false'
+          CLEANUP_APPLY: 'true'
         run: python3 .github/scripts/cleanup.py

@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """Gself artifact / run 清理：四判据，单脚本双模式。
 
-CLEANUP_APPLY=true  → 真删（出包工作流 android.yml，actions: write）
-CLEANUP_APPLY=false → 只打印将删名单与判据理由（PR 校验预演，actions: read）
-真删只有这一处实现，预演与真删共用同一份判定逻辑。
+CLEANUP_APPLY=true  → 真删。出包工作流 android.yml 与 PR 校验工作流
+  pr-check.yml 的 cleanup job 都以此模式调用同一份脚本（同 concurrency
+  group 串行），会话推送即触发。
+CLEANUP_APPLY=false → 只打印将删名单与判据理由（备用预演形态）。
+fork PR 的令牌只读时 DELETE 返回 403 → 打 ::warning:: 降级为预演并继续，
+不让 job 红；预演名单不作清理已做的证据。
 
 判定顺序固定：先算 artifact（口径→来源→重复当日序号→数量），再算 run
 （承载→数量）。排序一律按来源 run 的 run_started_at（UTC+8 日界），id 只作
@@ -209,24 +212,17 @@ def main():
         print("预演结束：未执行任何删除（CLEANUP_APPLY=false）。")
         return
 
-    errors = []
-    for a, _why in victims:
-        r = subprocess.run(["gh", "api", "-X", "DELETE",
-                            f"repos/{REPO}/actions/artifacts/{a['id']}"],
-                           capture_output=True, text=True)
-        if r.returncode != 0:
-            print(f"::error::DELETE artifact {a['id']} ({a['name']}) 失败：{r.stderr.strip()}")
-            errors.append(str(a["id"]))
+    failed = 0
+    for a, why in victims:
+        if not delete("artifacts", a["id"], f"artifact {a['name']}", why):
+            failed += 1
     for r0 in rvictims:
-        r = subprocess.run(["gh", "api", "-X", "DELETE",
-                            f"repos/{REPO}/actions/runs/{r0['id']}"],
-                           capture_output=True, text=True)
-        if r.returncode != 0:
-            print(f"::error::DELETE run {r0['id']} 失败：{r.stderr.strip()}")
-            errors.append(str(r0["id"]))
-    if errors:
-        raise SystemExit(f"清理失败（不声称达标）：{','.join(errors)}")
-    print("清理完成。")
+        if not delete("runs", r0["id"], f"run {r0['id']} {r0['name']}", "数量"):
+            failed += 1
+    if failed:
+        print(f"::warning::本次 {failed} 个对象删除失败，已降级为预演（未声称清理完成）")
+    else:
+        print("清理完成。")
 
 
 if __name__ == "__main__":
