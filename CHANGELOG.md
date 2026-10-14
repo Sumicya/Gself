@@ -41,7 +41,7 @@
 - runs 清理改按工作流分组计数（Android CI 与 PR check 各一条序列）；清理仍
   只挂出包工作流，PR 校验的超量 run 由它一并删。
 - 当日序号排序改按 `run_started_at` 升序取位次（原按 run id 近似）。
-- 文档按禁句式核对：AGENTS.md、CHANGELOG、本文件、工作流注释中「谁来做」类
+- 文档按禁句式核对：AGENTS.md、CHANGELOG、本文件、工作流注释中责任外推类
   责任外推句式 grep 为 0 处；阻塞改按三件报（端点与返回码、完整命令、验证
   命令与预期输出）。
 
