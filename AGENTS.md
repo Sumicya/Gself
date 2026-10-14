@@ -36,8 +36,9 @@
 - 位置：构建 job 内，本 run 上传成功后立即执行（任意触发事件，含 PR）；权限
   `contents: read` + 最小 `actions: write`（只删本项目 artifact 与 run），不给
   `contents: write`。
-- 归属核验写死：artifact 逐个追 `workflow_run` 的 workflow 路径（须为
-  `.github/workflows/android.yml`）确认属本项目，未核验对象不删、不计入保留窗口；
+- 归属核验写死：artifact 逐个追 `workflow_run` 的 workflow 路径（须为本仓构建
+  工作流 `.github/workflows/android.yml` 或遗留 `.github/workflows/build.yml` 的
+  运行记录）确认属本项目，未核验对象不删、不计入保留窗口；
   删前打印保留 + 删除清单，失败只报错、不回滚。`retention-days: 5` 只作时间兜底。
 - 分支删除唯一判据：compare `ahead_by=0`（工作已继承进默认分支）。处置记录
   （2026-10-13）：`arena/01a10a49-gself` 上轮按旧规则在 PR #13 关闭后被本会话

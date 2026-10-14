@@ -161,7 +161,8 @@ jobs:
                     seen.add(a["id"])
                     arts.append(a)
         arts.sort(key=lambda a: a["created_at"], reverse=True)
-        # 归属核验写死：名称前缀仅作初筛；必须能追到本仓 android.yml 的运行记录才算
+        # 归属核验写死：名称前缀仅作初筛；必须能追到本仓构建工作流（android.yml
+        # 或遗留 build.yml）的运行记录才算
         # 本项目对象。核验不过的对象不计入保留窗口、不删，只列出报告。
         runpath = {}
         def verify(a):
@@ -172,7 +173,8 @@ jobs:
                 r = subprocess.run(["gh", "api", f"repos/{repo}/actions/runs/{wr}",
                                     "--jq", ".path"], capture_output=True, text=True)
                 runpath[wr] = r.stdout.strip() if r.returncode == 0 else ""
-            return runpath[wr] == ".github/workflows/android.yml"
+            return runpath[wr] in (".github/workflows/android.yml",
+                                   ".github/workflows/build.yml")
         verified, unverified = [], []
         for a in arts:
             (verified if verify(a) else unverified).append(a)
