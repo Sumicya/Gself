@@ -62,3 +62,18 @@ jobs:
           tail -n 150 build.log
           echo '```'
         } >> "$GITHUB_STEP_SUMMARY"
+
+  cleanup-preview:
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+      - name: 清理判据预演（只打印，不删）
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SELF: ${{ github.run_id }}
+          SEGMENTS: '5'
+          CLEANUP_APPLY: 'false'
+        run: python3 .github/scripts/cleanup.py
