@@ -77,7 +77,7 @@ def version_of(name):
 
 def main():
     mode = "真删" if APPLY else "预演（CLEANUP_APPLY=false，不删）"
-    print(f"清理模式：{mode}；SEGMENTS={SEGMENTS}；每序列保留 {KEEP}；今日(UTC+8)={TODAY8}")
+    print(f"清理模式：{mode}；SEGMENTS={SEGMENTS}；每序列保留 {KEEP}；今日(UTC+8)={TODAY8}；PREFIX=Gself-")
 
     runs = api_list("actions/runs", "workflow_runs")
     run_by_id = {r["id"]: r for r in runs}

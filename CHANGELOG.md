@@ -1,3 +1,12 @@
+## 规范同步 —— 启动参数打印与号源已知风险（selfs 4e9effb 复查清单）
+
+- `cleanup.py` 启动行补 `PREFIX=Gself-`：预演日志可独立核对脚本读到的参数
+  （SEGMENTS、CLEANUP_APPLY、KEEP、日期、前缀）。
+- AGENTS.md 号源分界点后加「已知风险（号源）」一行：默认分支 android.yml
+  仍含 pull_request 触发，旧分支 arena/01a10a49-gself 若新开 PR 会吃一个
+  总序号；风险存续到本次交付进入默认分支为止，期间不向非本会话的开放
+  PR 分支推送、不做关闭 PR 的动作。
+
 ## 存量补证 —— 分界点删除前名单（selfs 补洞：分界点只引可核对象）
 
 - AGENTS.md 号源分界点补一行：删除前名单原文（取值 2026-10-14T03:17Z）四条

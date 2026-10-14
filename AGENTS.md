@@ -49,6 +49,11 @@
   `Gself-26.10.14.4.145`（run 38488671063）、`Gself-26.10.14.2.147`
   （run 38497274451）；总序号 144 的两条来自两个不同 run id，现注册表
   只剩 `Android CI(android.yml)` 与 `PR check(pr-check.yml)` 两条序列。
+- 已知风险（号源）：默认分支 `.github/workflows/android.yml` 仍含
+  `pull_request` 触发，旧分支 `arena/01a10a49-gself`（ahead 25、PR #13
+  已关闭未合并）若新开 PR，会按旧触发跑一次出包工作流、吃掉一个总序号；
+  风险存续到本次交付进入默认分支为止。本会话不向非本会话的开放 PR 分支
+  推送，也不做关闭 PR 的动作。
 
 ## 清理（本仓实现）
 
