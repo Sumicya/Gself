@@ -1,8 +1,10 @@
 # Gself 项目规则
 
 本文件只记项目事实、必要限制与规范指针，不复制全局规则、不带版本号。全局工程
-规范以 Sumicya/selfs 的 GLOBAL.md 现文为准；本轮规范按主人指示取自其会话分支
-`arena/2d001a47-selfs`（PR #6，head a9fc529，尚未合入默认分支，合并后回默认分支）。
+规范以 Sumicya/selfs 的 GLOBAL.md 现文为准，依据 selfs 提交
+`a8787a8b4b6becf2be142732593a105a0a2672c2`
+（https://github.com/Sumicya/selfs/commit/a8787a8b4b6becf2be142732593a105a0a2672c2，
+其会话分支 `arena/2d001a47-selfs`、PR #6，合并后回默认分支）。
 冲突按权威顺序处理：主人当轮指示 > GLOBAL.md 现文 > 本文件。
 
 ## 项目事实
@@ -17,13 +19,18 @@
 
 ## 版本计数口径（本仓实现）
 
-- 工作流固定两个：出包 `android.yml`（只接 push(main) 与 `workflow_dispatch`，
-  全仓唯一号源）与 PR 校验 `pr-check.yml`（只接 `pull_request`，独立 run_number
-  序列，永不参与版本号）。禁止一个工作流同时接 push 与 pull_request：
-  run_number 在运行创建时按工作流分配，步骤级 `if` 挡不住 PR 运行吃号。
-  PR 校验不取号、不上传、不清理，构建用 gradle 回落版本。
-- 当日序号：当日该仓出包运行的序号（android.yml 的 push / workflow_dispatch 运行
-  按开始时间从 1 递增，本次运行的位次）；PR 运行不计入。取不到当日序号时退化
+- 工作流固定两个：出包 `android.yml`（`push` 不限定分支——会话分支推送同样
+  触发出包用于验证——与 `workflow_dispatch`，全仓唯一号源；不接
+  `pull_request`，不加 `branches` 限定、不加 `github.ref` 守卫）与 PR 校验
+  `pr-check.yml`（只接 `pull_request`，独立 run_number 序列，永不参与
+  版本号）。禁止一个工作流同时接 push 与 pull_request：同一提交被 push 与
+  pull_request 各触发一次就吃两个号，步骤级 `if` 挡不住。会话分支出包与
+  默认分支出包共用同一命名口径、同一条 `run_number` 序列，不另立号段，
+  不给会话分支产物开豁免。PR 校验不取号、不上传，构建用 gradle 回落
+  版本；其 cleanup job 按四判据真删（见清理节）。
+- 当日序号：当日该仓出包运行的序号（android.yml 的 push / workflow_dispatch
+  运行，会话分支运行一并计入，按开始时间从 1 递增，本次运行的位次）；
+  PR 运行不计入。取不到当日序号时退化
   四段 `yy.m.d.总序号`，CI 日志以 `::warning` 写明退化原因。禁止按 head 提交
   位次取数（并发必然竞态，实测出现重复与乱序）。
 - 总序号：本次 run 的 `run_number`（取自运行上下文，不查历史）。本仓 workflow 未
@@ -69,7 +76,9 @@
   工作流 `.github/workflows/android.yml` 或遗留 `.github/workflows/build.yml` 的
   运行记录）确认属本项目，未核验对象不删、不计入保留窗口。
 - 清理四判据（判定顺序：artifact 先算——口径→来源→重复序号→数量，run 后算
-  ——承载→数量；逐对象打印判据结论与豁免原因，失败只报错、不回滚）：
+  ——承载→数量；逐对象打印判据结论与豁免原因；删除失败按原因分：403 权限类
+  打 `::warning::` 降级不红 job，403 以外当轮 `::error::` 点名（对象与
+  返回码）并让 job 红，不回滚已删对象）：
   ① 口径：版本段数 ≠ android.yml 顶部 `SEGMENTS` 声明值（现 5）的删，不豁免当日；
   ② 来源：`workflow_run` 事件为 `pull_request` 的 artifact 一律删，不豁免当日
   （存量 `Gself-26.10.14.4.145` 已按此判据由 PR 校验 cleanup job 删除，

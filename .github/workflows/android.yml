@@ -10,14 +10,13 @@
 #   - 总序号 = 本次 run 的 run_number（原值，不查历史）；当日序号取不到退化四段。
 #   - run_attempt > 1 时复用首次 attempt 已定的版本，不重新加号。
 #   - 版本数据缺失、取数失败或校验不通过，立即停止出包与上传。
-# 本文件是出包工作流，全仓唯一号源：只接 push（main）与 workflow_dispatch。
-#   PR 校验在 pr-check.yml（独立 run_number 序列，永不参与版本号）；禁止一个
-#   工作流同时接 push 与 pull_request——run_number 在运行创建时就分配，
-#   步骤级 if 挡不住 PR 运行吃号（实测教训，见 CHANGELOG）。
-# 清理：构建 job 在出包运行上传成功后立即保留最近 5 个 artifact。
-#   清理只授予最小 actions: write 删除本项目 artifact 与 run，禁止
-#   contents: write；脚本写死只删归属核验通过（workflow 路径 + 运行记录）的对象，
-#   删前打印保留 + 删除清单，失败只报错不回滚。已有积压当场清、不留待以后。
+# 本文件是出包工作流，全仓唯一号源：push 不限定分支（会话分支推送同样
+#   出包用于验证）与 workflow_dispatch；不接 pull_request，不加 branches
+#   限定或 github.ref 守卫。PR 校验在 pr-check.yml（独立 run_number 序列，
+#   永不参与版本号）；禁止一个工作流同时接 push 与 pull_request——同一
+#   提交被各触发一次就吃两个号，步骤级 if 挡不住（实测教训，见 CHANGELOG）。
+# 清理：构建 job 在出包运行上传成功后按四判据清理（同一份 cleanup.py，
+#   pr-check.yml 的 cleanup job 同样真删、同 concurrency group 串行）。
 
 name: Android CI
 
@@ -27,7 +26,6 @@ env:
 
 on:
   push:
-    branches: [ "main" ]
   workflow_dispatch:
 
 jobs:

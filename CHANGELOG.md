@@ -1,3 +1,18 @@
+## 规范同步 —— 出包不限分支、清理失败分级（selfs a8787a8 / 358120a）
+
+> 撤回口径：会话分支不出包、默认分支 ref 守卫一类禁令砍掉了唯一的验证
+> 手段（PR 校验不上传产物，拿不出可装可跑的包），本轮按新口径改。
+
+- `android.yml` 去掉 `push` 的 `branches: [ "main" ]` 限定：会话分支推送
+  同样触发出包用于验证，与默认分支共用同一命名口径、同一条 `run_number`
+  序列；仍不接 `pull_request`，不加 `github.ref` 守卫。当日序号计数把
+  会话分支运行一并计入（脚本原已按事件过滤、不分分支，无需改）。
+- `cleanup.py` 删除失败分级：403 权限类 `::warning::` 降级不红 job；403
+  以外 `::error::` 点名（对象与返回码）并让 job 当轮红。AGENTS 清理节与
+  工作流口径同步（PR 校验原写「不清理」一并修正）。
+- AGENTS 头部去掉 head 短哈希戳，改为依据 selfs 提交
+  `a8787a8b4b6becf2be142732593a105a0a2672c2`（附链接）。
+
 ## 真删首次落地 —— PR 校验 cleanup job 删除两件存量（2026-10-14）
 
 - [PR check run 38564494224](https://github.com/Sumicya/Gself/actions/runs/38564494224)

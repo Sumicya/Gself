@@ -1,8 +1,8 @@
-# PR 校验工作流：只跑测试、编译与 R8 入口校验。
-# 不取号、不出包、不清理——本文件的 run_number 是独立序列，永不参与版本号
-# （版本号只取出包工作流 android.yml 的 run_number）。出包与校验拆成两个
-# 工作流文件，是因为 run_number 在运行创建时就按工作流分配，同一文件同时
-# 接 push 与 pull_request 时 PR 运行照样吃号，步骤级 if 挡不住。
+# PR 校验工作流：跑测试、编译与 R8 入口校验，外加一个按四判据真删的清理
+# job（会话推送即生效）。不取号、不出包——本文件的 run_number 是独立序列，
+# 永不参与版本号（版本号只取出包工作流 android.yml 的 run_number）。出包与
+# 校验拆成两个工作流文件，是因为 run_number 在运行创建时就按工作流分配，
+# 同一文件同时接 push 与 pull_request 时 PR 运行照样吃号，步骤级 if 挡不住。
 
 name: PR check
 

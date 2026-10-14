@@ -5,8 +5,9 @@ CLEANUP_APPLY=true  → 真删。出包工作流 android.yml 与 PR 校验工作
   pr-check.yml 的 cleanup job 都以此模式调用同一份脚本（同 concurrency
   group 串行），会话推送即触发。
 CLEANUP_APPLY=false → 只打印将删名单与判据理由（备用预演形态）。
-fork PR 的令牌只读时 DELETE 返回 403 → 打 ::warning:: 降级为预演并继续，
-不让 job 红；预演名单不作清理已做的证据。
+DELETE 失败按原因分：403 权限类（fork PR 只读令牌等）打 ::warning:: 降级
+为预演并继续，不让 job 红；403 以外当轮 ::error:: 点名（对象与返回码）并
+让 job 红。预演名单不作清理已做的证据。
 
 判定顺序固定：先算 artifact（口径→来源→重复当日序号→数量），再算 run
 （承载→数量）。排序一律按来源 run 的 run_started_at（UTC+8 日界），id 只作
@@ -79,16 +80,23 @@ def version_of(name):
 
 
 def delete(kind, obj_id, label, why):
-    """真删一个对象。失败（fork PR 只读令牌 403 等）打 warning 降级，不红 job。"""
+    """真删一个对象，失败按原因分级：
+    403 权限类 → ::warning:: 降级，不红 job，返回 "perm"；
+    其余失败   → ::error:: 点名（对象与返回码），返回 "fail"，调用方让 job 红。
+    """
     p = subprocess.run(["gh", "api", "-X", "DELETE",
                         f"repos/{REPO}/actions/{kind}/{obj_id}"],
                        capture_output=True, text=True)
-    if p.returncode != 0:
-        print(f"::warning::{label} 删除失败：{p.stderr.strip()[:180]}"
+    if p.returncode == 0:
+        print(f"  已删 {label}（{why}）")
+        return "ok"
+    err = p.stderr.strip()
+    if p.returncode == 403 or "403" in err or "Resource not accessible" in err:
+        print(f"::warning::{label} 删除失败（403 权限类）：{err[:180]}"
               "（fork PR 或权限不足，本次降级为预演）")
-        return False
-    print(f"  已删 {label}（{why}）")
-    return True
+        return "perm"
+    print(f"::error::{label} 删除失败（返回码 {p.returncode}）：{err[:300]}")
+    return "fail"
 
 
 def main():
@@ -225,16 +233,22 @@ def main():
         print("预演结束：未执行任何删除（CLEANUP_APPLY=false）。")
         return
 
-    failed = 0
+    perm, fail = 0, 0
     for a, why in victims:
-        if not delete("artifacts", a["id"], f"artifact {a['name']}", why):
-            failed += 1
+        r = delete("artifacts", a["id"], f"artifact {a['name']}", why)
+        perm += r == "perm"
+        fail += r == "fail"
     for r0 in rvictims:
-        if not delete("runs", r0["id"], f"run {r0['id']} {r0['name']}", "数量"):
-            failed += 1
-    if failed:
-        print(f"::warning::本次 {failed} 个对象删除失败，已降级为预演（未声称清理完成）")
-    else:
+        r = delete("runs", r0["id"], f"run {r0['id']} {r0['name']}", "数量")
+        perm += r == "perm"
+        fail += r == "fail"
+    if perm:
+        print(f"::warning::本次 {perm} 个对象因 403 权限类删除失败，已降级为预演"
+              "（未声称清理完成）")
+    if fail:
+        raise SystemExit(f"{fail} 个对象删除失败（非 403），对象与返回码见上 "
+                         "::error:: 行")
+    if not perm and not fail:
         print("清理完成。")
 
 
