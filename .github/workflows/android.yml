@@ -6,11 +6,13 @@
 # 版本口径（见 AGENTS.md「版本计数口径」，遵 GLOBAL.md 统一五段（规范不带版本号））：
 #   - 五段 = yy.m.d.当日序号.总序号，日界 UTC+8；来源为 android.yml 的真实运行记录，
 #     锚定本次运行的 created_at / run_id / run_attempt，不取查询时的最新运行冒充本次。
-#   - 当日序号 = 本次 run 的 head 提交在当日（UTC+8）提交序列中的位次。
+#   - 当日序号 = 当日该仓出包运行（push / workflow_dispatch）的序号，按开始时间递增。
 #   - 总序号 = 本次 run 的 run_number（原值，不查历史）；当日序号取不到退化四段。
 #   - run_attempt > 1 时复用首次 attempt 已定的版本，不重新加号。
 #   - 版本数据缺失、取数失败或校验不通过，立即停止出包与上传。
-# 清理：构建 job 在上传成功后立即保留最近 5 个 artifact（任意触发事件含 PR）。
+# 出包只认 push 与 workflow_dispatch；pull_request 运行只跑校验（测试 + 编译 +
+#   R8 入口校验），不取号、不上传、不清理，版本步内以占位版本回落。
+# 清理：构建 job 在出包运行上传成功后立即保留最近 5 个 artifact。
 #   清理只授予最小 actions: write 删除本项目 artifact 与 run，禁止
 #   contents: write；脚本写死只删归属核验通过（workflow 路径 + 运行记录）的对象，
 #   删前打印保留 + 删除清单，失败只报错不回滚。已有积压当场清、不留待以后。
@@ -22,6 +24,7 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -49,6 +52,13 @@ jobs:
         GH_TOKEN: ${{ github.token }}
       run: |
         set -euo pipefail
+        # PR 运行只校验：不取号、不上传；给构建一个占位版本，不占用任何序号。
+        if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+          echo "VERSION_NAME=0.0.0.0.pr" >> "$GITHUB_ENV"
+          echo "VERSION_CODE=1" >> "$GITHUB_ENV"
+          echo "pull_request 运行：只校验，不取号不上传"
+          exit 0
+        fi
         # 输入 = 本次运行的 run_id / run_attempt / created_at（来自本 run 对象，不 list 取最新）。
         stamp="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq '.created_at')"
         attempt="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq '.run_attempt')"
@@ -73,9 +83,10 @@ jobs:
         day="$(TZ=Asia/Shanghai date -d "$stamp" +%y.%-m.%-d)"
         local_day="$(TZ=Asia/Shanghai date -d "$stamp" +%Y-%m-%d)"
         since="$(TZ=Asia/Shanghai date -u -d "$local_day 00:00:00" +%Y-%m-%dT%H:%M:%SZ)"
-        # 当日序号 = head 提交在当日（UTC+8）提交序列中的位次：
-        # 数 head 祖先链中当日提交数（含 head 自身），head 即序列末位。
-        today="$(gh api --paginate "repos/$GITHUB_REPOSITORY/commits?sha=$GITHUB_SHA&since=$since&per_page=100" --jq '.[].sha' | wc -l | tr -d ' ')"
+        # 当日序号 = 当日该仓出包运行的序号：数当日 android.yml 的 push /
+        # workflow_dispatch 运行（按 id 即开始时间升序），本次运行的位次即序号；
+        # PR 运行不计入。禁止再按 head 提交位次取数（并发必然竞态）。
+        today="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/android.yml/runs?created=>=$since&per_page=100" --jq '.workflow_runs[] | select(.event == "push" or .event == "workflow_dispatch") | .id' | sort -n | grep -n "^$GITHUB_RUN_ID$" | cut -d: -f1 || true)"
         # 总序号 = 本次 run 的 run_number（取自运行上下文，不查历史；本仓未记录
         # 基线，用原值）。旧锚（历史成功数、现存 artifact 最大号）停用。
         total=${GITHUB_RUN_NUMBER}
@@ -101,6 +112,7 @@ jobs:
         ./gradlew -Pfcmself.buildNumber="${{ github.run_number }}" -PversionName="${{ env.VERSION_NAME }}" -PversionCode="${{ env.VERSION_CODE }}" test assembleDebug 2>&1 | tee build.log
 
     - name: Rename artifact
+      if: github.event_name != 'pull_request'
       shell: bash
       run: |
         cd ${{ github.workspace }}/app/build/outputs/apk
@@ -125,6 +137,7 @@ jobs:
         PY
 
     - name: Upload apk
+      if: github.event_name != 'pull_request'
       uses: actions/upload-artifact@v7
       with:
         name: Gself-${{ env.VERSION_NAME }}
@@ -136,6 +149,7 @@ jobs:
         overwrite: true
 
     - name: Cleanup old artifacts (keep newest 5)
+      if: github.event_name != 'pull_request'
       env:
         GH_TOKEN: ${{ github.token }}
       run: |

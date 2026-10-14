@@ -2,6 +2,24 @@
 
 > 本仓库由 fcmfix 迁移而来。0.9.0 及以前压缩为要点，完整历史见 `git log`。
 
+## 规范同步 —— selfs 规范更新（堵版本号刷号漏洞）
+
+> 背景实测：双触发（push + pull_request）让同一提交吃两个总序号，Gself 同仓
+> 并存总序 1 与 144/145 两套号。本轮按新规堵漏，模块代码零改动。
+
+### 改的
+
+- 出包运行只认 push（main）与 `workflow_dispatch`：`pull_request` 运行只跑校验
+  （测试、编译、R8 入口校验），版本步内回落占位版本 `0.0.0.0.pr`，不取号；
+  Rename、Upload、Cleanup 三步加 `if: github.event_name != 'pull_request'`。
+- 当日序号改为当日该仓出包运行的序号（android.yml 的 push / workflow_dispatch
+  按开始时间递增取位次，PR 不计入）；禁止按 head 提交位次取数（并发竞态，
+  实测当日序号重复、乱序）。取不到仍退化四段并 `::warning` 写明。
+- 号源单一化：本仓出包只走 android.yml；遗留 Build 工作流（仅存在于
+  `arena/01a10a49-gself` 分支）的注册禁用被接口 403 挡（沙箱令牌无 Actions
+  管理权），处置命令已在当轮汇报交接。
+- 总序号维持 run_number 原值（上一轮已改，本轮核对无残留减基线表述）。
+
 ## 规范同步 —— selfs 规范更新（取消版本号与同步戳）
 
 > 规范按主人指示取自 Sumicya/selfs 会话分支 `arena/2d001a47-selfs`（PR #6，

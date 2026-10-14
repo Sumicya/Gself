@@ -17,9 +17,13 @@
 
 ## 版本计数口径（本仓实现）
 
-- 当日序号：本次 run 的 head 提交在当日（UTC+8）该仓提交序列中的位次；实现为数
-  head 祖先链中的当日提交数（含 head 自身，head 即末位）。取不到当日序号时退化
-  四段 `yy.m.d.总序号`，CI 日志以 `::warning` 写明退化原因。
+- 出包触发：只认 push（main）与 `workflow_dispatch`；`pull_request` 运行只跑校验
+  （测试、编译、R8 入口校验），不取号、不上传、不清理，构建用占位版本
+  `0.0.0.0.pr`。
+- 当日序号：当日该仓出包运行的序号（android.yml 的 push / workflow_dispatch 运行
+  按开始时间从 1 递增，本次运行的位次）；PR 运行不计入。取不到当日序号时退化
+  四段 `yy.m.d.总序号`，CI 日志以 `::warning` 写明退化原因。禁止按 head 提交
+  位次取数（并发必然竞态，实测出现重复与乱序）。
 - 总序号：本次 run 的 `run_number`（取自运行上下文，不查历史）。本仓 workflow 未
   重建、未记录基线，用原值；旧口径「run_number − 3」自本轮停用，总序由 139 跳至
   下一 run 的 run_number 原值，仍递增。旧锚（历史成功数、现存 artifact 最大号）停用。
@@ -33,7 +37,7 @@
 
 ## 清理（本仓实现）
 
-- 位置：构建 job 内，本 run 上传成功后立即执行（任意触发事件，含 PR）；权限
+- 位置：构建 job 内，出包运行上传成功后立即执行（PR 运行不清理）；权限
   `contents: read` + 最小 `actions: write`（只删本项目 artifact 与 run），不给
   `contents: write`。
 - 归属核验写死：artifact 逐个追 `workflow_run` 的 workflow 路径（须为本仓构建
