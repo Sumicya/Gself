@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Gself artifact / run 清理：四判据，单脚本双模式。
 
-CLEANUP_APPLY=true  → 真删。出包工作流 android.yml 与 PR 校验工作流
+CLEANUP_APPLY=true  → 真删。出包工作流 build.yml 与 PR 校验工作流
   pr-check.yml 的 cleanup job 都以此模式调用同一份脚本（同 concurrency
   group 串行），会话推送即触发。
 CLEANUP_APPLY=false → 只打印将删名单与判据理由（备用预演形态）。

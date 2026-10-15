@@ -41,6 +41,13 @@
 - 本地构建：非发行开发版，版本回落 `0.0.0.0.<fcmself.buildNumber>`，不参与发行
   序号；正式产物只认 CI 出包（主人已裁定）。
 - 映射：versionCode = 总序号；文件名与 artifact 名统一 `Gself-<版本>`。
+- 换号源记录（2026-10-15）：旧口径（run_number）末号 `Gself-26.10.14.3.149`
+  （id 11899194005），同批旧口径 `Gself-26.10.14.2.148`（id 11867460858）
+  已由清理按号源核验删除；新口径（git 提交数）首号 `Gself-26.10.15.1.325`
+  （id 11937379087），head sha `ab9670682943d59170eb8fe1347b9df5b6e61a01`，
+  `git rev-list --count HEAD` 输出 325、`git rev-list --count
+  --since=2026-10-15T00:00:00+08:00 HEAD` 输出 1（取值 2026-10-15T00:16Z，
+  Build run 38658709163）。
 - 号源分界点（2026-10-14）：总序 144 出现过两个——`Gself-26.10.14.3.144` 是
   Android CI（run 38488429439）的正规出包；`Gself-26.10.14.1.144` 是遗留 Build
   工作流（run 38488343468）的旧口径产物，已由主人删除（2026-10-14）。当日序号 2 见下行。
@@ -53,7 +60,7 @@
   （run 38488343468）、`Gself-26.10.14.3.144`（run 38488429439）、
   `Gself-26.10.14.4.145`（run 38488671063）、`Gself-26.10.14.2.147`
   （run 38497274451）；总序号 144 的两条来自两个不同 run id，现注册表
-  只剩 `Android CI(android.yml)` 与 `PR check(pr-check.yml)` 两条序列。
+  只剩 `Build(build.yml)` 与 `PR check(pr-check.yml)` 两条序列。
 - 已知风险（号源）：默认分支 `.github/workflows/android.yml` 仍含
   `pull_request` 触发，旧分支 `arena/01a10a49-gself`（ahead 25、PR #13
   已关闭未合并）若新开 PR，会按旧触发跑一次出包工作流、吃掉一个总序号；
