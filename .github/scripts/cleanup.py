@@ -9,8 +9,8 @@ DELETE 失败按原因分：403 权限类（fork PR 只读令牌等）打 ::warn
 为预演并继续，不让 job 红；403 以外当轮 ::error:: 点名（对象与返回码）并
 让 job 红。预演名单不作清理已做的证据。
 
-判定顺序固定：先算 artifact（口径→来源→重复当日序号→数量），再算 run
-（承载→数量）。口径判据含号源核验：五段产物的名义序号须与来源 run 的
+判定顺序固定：先算 artifact（命名口径与号源口径→来源→重复当日序号→
+数量），再算 run（承载→数量）。号源核验：五段产物的名义序号须与来源 run 的
 head sha 按取号同式算出的提交数一致，不符按旧口径删；一个合规产物都
 没有时暂留最新一个旧口径产物，等新口径产物出成再删。排序一律按来源
 run 的 run_started_at（UTC+8 日界），id 只作同刻 tiebreak。逐对象打印
@@ -39,10 +39,6 @@ except ValueError:
 TZ8 = datetime.timezone(datetime.timedelta(hours=8))
 TODAY8 = datetime.datetime.now(TZ8).date()
 ALLOWED = (".github/workflows/android.yml", ".github/workflows/build.yml")
-
-
-def d8(iso):
-    return datetime.datetime.fromisoformat(iso.replace("Z", "+00:00")).astimezone(TZ8).date()
 
 
 def api_list(path, key):
@@ -139,7 +135,7 @@ def main():
         except ValueError:
             return None
 
-    # ---------- artifact：口径 → 来源 → 重复当日序号 → 数量 ----------
+    # ---------- artifact：命名/号源口径 → 来源 → 重复当日序号 → 数量 ----------
     arts = api_list("actions/artifacts", "artifacts")
     verified, unverified = [], []
     for a in arts:
@@ -185,7 +181,7 @@ def main():
               "[号源切换过渡：暂留最新旧口径，待新口径产物出成]")
     victims.extend(source_victims)
 
-    # 判据四：同日同序列出现相同当日序号 → 按来源 run 的 run_started_at
+    # 重复当日序号：同日同序列出现相同当日序号 → 按来源 run 的 run_started_at
     # 删旧留新（不按总序号大小判：换号源后总序号口径会变，按大小判会误删）
     groups = defaultdict(list)
     for a in survivors:
@@ -203,7 +199,8 @@ def main():
                 dup_ids.add(a["id"])
     survivors = [a for a in survivors if a["id"] not in dup_ids]
 
-    # 判据三（数量）：当日之外、每条工作流序列保留最近 KEEP 个；当日豁免
+    # 判据五（数量）：每条工作流序列保留最近 KEEP 个，不分当日与否（五条
+    # 判据均不豁免，selfs 790bf82 起当日豁免已撤）
     byseq = defaultdict(list)
     for a in survivors:
         byseq[runinfo(a)[0]].append(a)
@@ -211,12 +208,11 @@ def main():
     for path, lst in byseq.items():
         lst.sort(key=lambda a: (runinfo(a)[2] or a["created_at"], a["id"]), reverse=True)
         for i, a in enumerate(lst):
-            if i >= KEEP and d8(a["created_at"]) != TODAY8:
+            if i >= KEEP:
                 victims.append((a, f"数量 超出 {path} 序列 {KEEP}"))
             else:
-                why = "当日豁免（数量）" if i >= KEEP else "-"
                 keepers.append(a)
-                print(f"  保留 artifact {a['id']} {a['name']} [{why}]")
+                print(f"  保留 artifact {a['id']} {a['name']} [-]")
 
     for a, why in victims:
         print(f"  {'删除' if APPLY else '将删'} artifact {a['id']} {a['name']} [{why}]")
@@ -250,9 +246,6 @@ def main():
             elif r0.get("status") != "completed":
                 rexempt.append((r0, "未完成"))
                 print(f"  豁免 run {r0['id']} {r0['name']} [未完成]")
-            elif d8(r0.get("run_started_at") or r0["created_at"]) == TODAY8:
-                rexempt.append((r0, "当日豁免"))
-                print(f"  豁免 run {r0['id']} {r0['name']} [当日豁免]")
             else:
                 rvictims.append(r0)
                 print(f"  {'删除' if APPLY else '将删'} run {r0['id']} {r0['name']} "
