@@ -23,17 +23,16 @@ jobs:
           cache: gradle
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
-      - name: Compute version (git rev-list)
+      - name: Compute version (git rev-list, UTC+8)
         id: ver
         run: |
           total=$(git rev-list --count HEAD)
-          since=$(TZ=Asia/Shanghai date -d "$(TZ=Asia/Shanghai date +%Y-%m-%d) 00:00:00" -u +%Y-%m-%dT%H:%M:%SZ)
+          today=$(TZ=UTC-8 date +%Y-%m-%d)
+          since=$(TZ=UTC-8 date -d "$today 00:00:00" -u +%Y-%m-%dT%H:%M:%SZ)
           day=$(git rev-list --count --since="$since" HEAD)
-          # head 不在当日则 day=0
-          if [ "$day" -eq 0 ]; then day=0; fi
-          day_str=$(TZ=Asia/Shanghai date +%y.%-m.%-d)
+          day_str=$(TZ=UTC-8 date +%y.%-m.%-d)
           echo "VERSION=${day_str}.${day}.${total}" >> $GITHUB_OUTPUT
-          echo "head=$(git rev-parse HEAD) total=$total day=$day" 
+          echo "head=$(git rev-parse HEAD) total=$total day=$day since=$since"
       - name: Build
         run: |
           ./gradlew -PversionName="${{ steps.ver.outputs.VERSION }}" -PversionCode="${{ steps.ver.outputs.VERSION }}" test assembleDebug
