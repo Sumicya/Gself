@@ -1,4 +1,4 @@
-# PR 校验工作流：跑测试、编译与 R8 入口校验，外加一个按四判据真删的清理
+# PR 校验工作流：跑测试、编译与 R8 入口校验，外加一个按五判据真删的清理
 # job（会话推送即生效）。不取号、不出包——版本号只取 git 提交数，与本文件
 # 的 run_number 无关。出包与校验拆成两个工作流文件，是因为同一文件同时接
 # push 与 pull_request 时，同一提交会被各出一次包、同名产物互相覆盖。
@@ -74,7 +74,7 @@ jobs:
         with:
           # 清理的号源核验要按 head sha 数提交，必须全量克隆。
           fetch-depth: 0
-      - name: 按四条判据清理（真删）
+      - name: 按五条判据清理（真删）
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}

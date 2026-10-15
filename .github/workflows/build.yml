@@ -1,5 +1,5 @@
 # Build —— 「零 secrets」配置：仓库不需要任何签名密钥 / 发布 token。
-# CI 做四件事——跑单元测试、编译 debug 包、上传产物、按四判据清理旧产物：
+# CI 做四件事——跑单元测试、编译 debug 包、上传产物、按五判据清理旧产物：
 #   - Gself-<五段版本>.apk ：debug 签名，可直接安装测试
 # 本地签名步骤见 docs/build-and-sign-termux.md。
 #
@@ -13,7 +13,7 @@
 #   branches 限定或 github.ref 守卫。PR 校验在 pr-check.yml（独立序列，
 #   永不参与版本号）；禁止一个工作流同时接 push 与 pull_request——同一
 #   提交被各触发一次就出两个同名包（实测教训，见 CHANGELOG）。
-# 清理：构建 job 在出包运行上传成功后按四判据清理（同一份 cleanup.py，
+# 清理：构建 job 在出包运行上传成功后按五判据清理（同一份 cleanup.py，
 #   pr-check.yml 的 cleanup job 同样真删、同 concurrency group 串行）。
 
 name: Build
@@ -123,7 +123,7 @@ jobs:
         # 而不是报「已存在」把重跑卡死；正常运行版本名唯一，此项不生效。
         overwrite: true
 
-    - name: Cleanup (four criteria, keep newest 5 per sequence)
+    - name: Cleanup (five criteria, keep newest 5 per sequence)
       env:
         GH_TOKEN: ${{ github.token }}
       run: python3 .github/scripts/cleanup.py

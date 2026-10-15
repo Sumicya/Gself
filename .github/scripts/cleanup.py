@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Gself artifact / run 清理：四判据，单脚本双模式。
+"""Gself artifact / run 清理：五判据，单脚本双模式。
 
 CLEANUP_APPLY=true  → 真删。出包工作流 build.yml 与 PR 校验工作流
   pr-check.yml 的 cleanup job 都以此模式调用同一份脚本（同 concurrency
@@ -104,7 +104,7 @@ def delete(kind, obj_id, label, why):
 
 def main():
     mode = "真删" if APPLY else "预演（CLEANUP_APPLY=false，不删）"
-    print(f"清理模式：{mode}；SEGMENTS={SEGMENTS}；CLEANUP_APPLY={'true' if APPLY else 'false'}；每序列保留 {KEEP}；今日(UTC+8)={TODAY8}；PREFIX=Gself-")
+    print(f"清理模式：{mode}；SEGMENTS={SEGMENTS}；CLEANUP_APPLY={'true' if APPLY else 'false'}；每序列保留 {KEEP}；今日(UTC+8)={TODAY8}；PREFIX=Gself-；号源核验命令：git rev-list --count <head sha> 与 git rev-list --count --since=<当日0点 UTC+8> <head sha>")
 
     runs = api_list("actions/runs", "workflow_runs")
     run_by_id = {r["id"]: r for r in runs}
@@ -276,7 +276,7 @@ def main():
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
         with open(summary, "a", encoding="utf-8") as f:
-            f.write(f"### Artifact/run 清理（{'真删' if APPLY else '预演'}，四判据）\n\n")
+            f.write(f"### Artifact/run 清理（{'真删' if APPLY else '预演'}，五判据）\n\n")
             f.write("| 动作 | 对象 | 名称/工作流 | 判据结论 |\n| --- | --- | --- | --- |\n")
             for a in keepers:
                 f.write(f"| 保留 | artifact {a['id']} | {a['name']} | - |\n")
