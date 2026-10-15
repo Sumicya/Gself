@@ -1,6 +1,6 @@
 # Gself
 
-[![Android CI](https://github.com/Sumicya/fcmself/workflows/Android%20CI/badge.svg)](https://github.com/Sumicya/fcmself/actions)
+[![Build](https://github.com/Sumicya/Gself/actions/workflows/build.yml/badge.svg)](https://github.com/Sumicya/Gself/actions/workflows/build.yml)
 
 基于 LSPosed 的纯 Hook 模块，把 Google 在国产 ROM 上被砍掉的语义补回来。合并自三个项目：
 fcmself（推送修复）、GooglePasswordManagerUnlock（通行密钥解限）、GboardHook（剪贴板）。
