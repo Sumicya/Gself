@@ -336,3 +336,59 @@ flags@12 / appOp@13，换 ROM 会漂）。本机不需要。
 
 **判读捷径**：消息突然停更，先 `grep -h fcmself /data/adb/lspd/log/*.log | grep 'wake:'`
 ——全天为零时别先怀疑钩子，按本节顺序把第①段排掉。
+
+## 11. Monocles Chat 重启后不恢复：候选已定位（2026-10-15，源码侧）
+
+对象版本：monocles chat `Experimental14-v2.3.1`（tag f7803c2，包名
+de.monocles.chat，targetSdk 37、compileSdk 37，见该 tag 的 build.gradle）。
+结论先行：**最可能卡在应用自己的前台服务类型选择上，与本模块的钩子无
+关**；ColorOS 自启动闸门是第二候选。两者用重启后的 logcat 就能分辨。
+
+### 机制（已读 tag 源码核实的部分）
+
+- 清单声明 `.receiver.SystemEventReceiver`（exported=false）收
+  BOOT_COMPLETED 与 MY_PACKAGE_REPLACED；`onReceive` 在有启用账户时调
+  `Compatibility.startService`，targetSdk≥26 一律走
+  `startForegroundService` 并带 `EXTRA_NEEDS_FOREGROUND_SERVICE=true`。
+- 服务 `onStartCommand` 见此 extra 即升前台：`startForegroundOrCatch`
+  按序选类型——通话中 MICROPHONE（可叠 LOCATION）→ 实时位置 LOCATION
+  → 电池白名单内 SYSTEM_EXEMPTED → **授过录音权限 MICROPHONE → 授过
+  相机权限 CAMERA** → 兜底 SPECIAL_USE，然后
+  `startForeground(id, notification, type)`。
+- 平台规则（Android 开发者文档《Changes to foreground service types
+  for Android 15》）：targetSdk≥15 的应用不得从 BOOT_COMPLETED 接收器
+  拉起 dataSync/camera/mediaPlayback/phoneCall/mediaProjection 类型
+  （microphone 自 targetSdk 14 起），违者系统抛
+  ForegroundServiceStartNotAllowedException。
+- 该异常是 IllegalStateException 子类，正好被 `startForegroundOrCatch`
+  的 `catch (IllegalStateException | SecurityException)` 吞掉，只记一行
+  `Could not start foreground service`，**没有换 SPECIAL_USE 重试**。
+  结果：服务以 startForegroundService 方式启动却没升上前台，随后被
+  系统收掉，XMPP 不重连，直到手动打开应用。
+- 触发条件很常见：给过录音权限（发语音消息基本都给）+ 不在电池优化
+  白名单 + 开机当时无通话无实时位置。反之，在白名单里走
+  SYSTEM_EXEMPTED（不受限），没给录音/相机权限走 SPECIAL_USE（不受
+  限），都能正常恢复——这解释了「有的机器好、有的机器坏」。
+
+引用精度：清单、SystemEventReceiver、Compatibility、build.gradle 均按
+tag 原文核读；`startForegroundOrCatch` 函数段引自 Codeberg 代码索引
+（master 4656db0c，tag 之后 3 个提交），tag 逐行一致未核，列未验证。
+
+### 设备上一次分清（重启后先不要打开 Monocles）
+
+```
+adb shell dumpsys deviceidle whitelist | grep de.monocles.chat
+adb shell dumpsys package de.monocles.chat | grep -E "RECORD_AUDIO|CAMERA" -A1
+adb logcat -d | grep -E "Could not start foreground service|ForegroundServiceStartNotAllowed|SystemEventReceiver"
+adb shell dumpsys activity services de.monocles.chat
+```
+
+- 出现 `Could not start foreground service` 且堆栈含
+  ForegroundServiceStartNotAllowedException / microphone ⇒ 上面的应用
+  侧机制坐实。临时绕法：把 de.monocles.chat 加入电池优化白名单
+  （开机改走 SYSTEM_EXEMPTED），或重启后手动开一次。根治在上游：
+  开机来源启动时先用 SPECIAL_USE 升前台，通话开始再换 MICROPHONE。
+- logcat 里连 SystemEventReceiver 的动静都没有 ⇒ 广播没送达，查
+  ColorOS 自启动闸门（本模块 system 侧的 OplusAppStartup 挂点管这一
+  层，按第 9 节日志核对挂点是否命中）。
+- 服务在跑但不连 ⇒ 与开机启动无关，转查网络与 XMPP 层。

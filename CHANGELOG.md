@@ -1,3 +1,13 @@
+## Monocles Chat 重启不恢复：源码侧定位（2026-10-15）
+
+- docs/verify-on-device.md 新增第 11 节：按 Experimental14-v2.3.1
+  （f7803c2）源码核到候选机制——开机广播经 Compatibility.startService
+  以 startForegroundService 拉起 XmppConnectionService，升前台时按
+  权限选 MICROPHONE/CAMERA 类型，命中 Android 15「BOOT_COMPLETED 不
+  得拉起受限前台服务类型」，异常被 startForegroundOrCatch 吞掉只记
+  日志，服务随后被系统收掉。附设备判定命令与白名单绕法；设备日志
+  签名未取，坐实程度标未验证。
+
 ## 继承 arena/01a10a49-gself 全部 26 个提交后删除该分支（2026-10-15）
 
 - 按主人指示整体合并该分支（2026-10-05～10-06 的 26 个提交全部进入本
