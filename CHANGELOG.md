@@ -1,3 +1,16 @@
+## 并入 main 并行线并给图标加 Monet 单色层（2026-10-15）
+
+- 按主人指示将 main 的 8 个提交（所有者并行落地：删 AGENTS/spec-
+  check/android.yml、自建 build/pr-check）整体并入本分支（合并提交
+  9596c51，共同祖先 d2bf70a）。冲突只在 build.yml、pr-check.yml 两
+  文件，按现行规范（selfs 12b0bff）取本侧：单脚本 cleanup.py、全仓
+  artifact 最新 5、每工作流 run 硬上限 5；main 侧的每序列 KEEP 口径
+  与内联清理被取代，其取号 TZ=UTC-8 与本侧 +08:00 等价。其余文件自
+  动合并，无内容丢失。
+- 图标加 Monet：ic_launcher 与 ic_launcher_round 的 adaptive-icon 各
+  加一层 monochrome（复用现有 foreground 矢量），Android 13+ 主题图
+  标随壁纸取色；原图标仍是模板机器人图，本次只加单色层不换图。
+
 ## Monocles Chat 重启不恢复：源码侧定位（2026-10-15）
 
 - docs/verify-on-device.md 新增第 11 节：按 Experimental14-v2.3.1
