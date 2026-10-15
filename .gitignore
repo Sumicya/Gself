@@ -9,3 +9,7 @@ local.properties
 *.apk
 *.ap_
 *.aab
+
+# Python（.github/scripts 下的清理脚本）
+__pycache__/
+*.pyc

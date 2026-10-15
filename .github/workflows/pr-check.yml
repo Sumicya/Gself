@@ -1,103 +1,84 @@
+# PR 校验工作流：跑测试、编译与 R8 入口校验，外加一个按五判据真删的清理
+# job（会话推送即生效）。不取号、不出包——版本号只取 git 提交数，与本文件
+# 的 run_number 无关。出包与校验拆成两个工作流文件，是因为同一文件同时接
+# push 与 pull_request 时，同一提交会被各出一次包、同名产物互相覆盖。
+
 name: PR check
+
 on:
   pull_request:
+
 permissions:
   contents: read
-  actions: write
-concurrency:
-  group: pr-check-${{ github.ref }}
-  cancel-in-progress: true
-env:
-  SEGMENTS: "5"
-  KEEP: "5"
-  PREFIX: "Gself-"
+
 jobs:
   check:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: set up JDK 21
-        uses: actions/setup-java@v4
-        with:
-          java-version: '21'
-          distribution: 'temurin'
-          cache: gradle
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
-      - name: Test only
-        run: ./gradlew test
+    - uses: actions/checkout@v7
+
+    - name: set up JDK 21
+      uses: actions/setup-java@v6
+      with:
+        java-version: '21'
+        distribution: 'temurin'
+        cache: gradle
+
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+
+    - name: Test and build (check only)
+      shell: bash
+      run: |
+        set -o pipefail
+        # 不传版本参数：gradle 回落 0.0.0.0.<buildNumber>，校验包不取发行号
+        ./gradlew test assembleDebug 2>&1 | tee build.log
+
+    - name: Verify R8 kept the Xposed entry class
+      shell: bash
+      run: |
+        python3 - <<'PY'
+        import glob, sys, zipfile
+        apk = sorted(glob.glob('app/build/outputs/apk/debug/*.apk'))[0]
+        with zipfile.ZipFile(apk) as z:
+            dex = b''.join(z.read(n) for n in z.namelist()
+                           if n.startswith('classes') and n.endswith('.dex'))
+        ok = b'Lsumicya/fcmself/XposedMain;' in dex
+        print(f'{apk}: 入口类 sumicya.fcmself.XposedMain '
+              + ('已保留' if ok else '被 R8 改名或裁剪'))
+        print(f'dex 合计 {len(dex)} 字节')
+        sys.exit(0 if ok else 1)
+        PY
+
+    - name: Dump build log tail on failure
+      if: failure()
+      shell: bash
+      run: |
+        {
+          echo '### Gradle build log (tail)'
+          echo '```'
+          tail -n 150 build.log
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"
+
   cleanup:
-    needs: check
     runs-on: ubuntu-24.04
-    permissions:
-      actions: write
-      contents: read
     concurrency:
       group: gself-cleanup
       cancel-in-progress: false
+    permissions:
+      actions: write
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
+          # 清理的号源核验要按 head sha 数提交，必须全量克隆。
           fetch-depth: 0
-      - name: Cleanup artifacts and runs (five criteria)
+      - name: 按五条判据清理（真删）
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          KEEP: ${{ env.KEEP }}
-          SEGMENTS: ${{ env.SEGMENTS }}
-          PREFIX: ${{ env.PREFIX }}
-        run: |
-          python3 << 'PY'
-          import json, os, subprocess, sys
-          from collections import defaultdict
-
-          keep = int(os.environ["KEEP"])
-          prefix = os.environ["PREFIX"].lower()
-          repo = os.environ["REPO"]
-
-          def api(path, method=None):
-              cmd = ["gh", "api"] + (["-X", method] if method else []) + [path]
-              r = subprocess.run(cmd, capture_output=True, text=True)
-              if r.returncode != 0:
-                  print(f"::warning::gh api {path} failed: {r.stderr.strip()}")
-                  return None
-              return r.stdout
-
-          arts, page = [], 1
-          while True:
-              out = api(f"repos/{repo}/actions/artifacts?per_page=100&page={page}")
-              if not out: break
-              batch = json.loads(out).get("artifacts", [])
-              if not batch: break
-              arts += [a for a in batch if a["name"].lower().startswith(prefix)]
-              page += 1
-          arts.sort(key=lambda a: a["created_at"], reverse=True)
-          print(f"artifacts matched {len(arts)}, keep {keep}")
-          for a in arts[keep:]:
-              print(f"DELETE artifact {a['name']} id={a['id']}")
-              api(f"repos/{repo}/actions/artifacts/{a['id']}", method="DELETE")
-
-          runs, page = [], 1
-          while True:
-              out = api(f"repos/{repo}/actions/runs?per_page=100&page={page}")
-              if not out: break
-              batch = json.loads(out).get("workflow_runs", [])
-              if not batch: break
-              runs += batch
-              page += 1
-
-          by_name = defaultdict(list)
-          for r in runs:
-              by_name[r["name"]].append(r)
-          for name, lst in by_name.items():
-              lst.sort(key=lambda r: r["created_at"], reverse=True)
-              to_del = lst if name == "Android CI" else lst[keep:]
-              print(f"runs [{name}] total={len(lst)} delete={len(to_del)}")
-              for r in to_del:
-                  print(f"DELETE run {r['id']} {r['name']} {r['created_at']}")
-                  api(f"repos/{repo}/actions/runs/{r['id']}", method="DELETE")
-          print("cleanup done")
-          PY
+          SELF: ${{ github.run_id }}
+          SEGMENTS: '5'
+          CLEANUP_APPLY: 'true'
+        run: python3 .github/scripts/cleanup.py
