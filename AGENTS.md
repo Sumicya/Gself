@@ -4,7 +4,8 @@
 规范以 Sumicya/selfs 的 GLOBAL.md 现文为准，依据 selfs 提交
 `2f8c419f63ca6d2e540184b4f29161ff7e8c293b`
 （https://github.com/Sumicya/selfs/commit/2f8c419f63ca6d2e540184b4f29161ff7e8c293b，
-其会话分支 `arena/2d001a47-selfs`、PR #6，合并后回默认分支）。
+已随 PR #6 合入 selfs 默认分支 main；main 现行 GLOBAL.md 与该提交逐字
+一致，会话分支 `arena/2d001a47-selfs` 已删）。
 冲突按权威顺序处理：主人当轮指示 > GLOBAL.md 现文 > 本文件。
 
 ## 项目事实

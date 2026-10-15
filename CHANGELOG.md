@@ -1,3 +1,19 @@
+## 规范载体变更 —— selfs PR #6 已合，指针回默认分支（2026-10-15）
+
+- 取证：selfs PR #6 已合入 main（merge `aedf88d`），会话分支
+  `arena/2d001a47-selfs` 已删；main 的 GLOBAL.md（11654B）与提交
+  `2f8c419` 版逐字一致——条文无新增，本仓实现无需改。
+- AGENTS 依据行同步：原指向已删会话分支，改为记「已随 PR #6 合入
+  selfs 默认分支 main」。selfs 同轮删了它自己的 AGENTS.md，那是无产物
+  仓的本地决定；本仓 AGENTS.md 记项目事实与依据行，按规范保留。
+- 同期事实（GitHub 侧，取值 2026-10-15T01:24Z 起）：默认分支 main 被
+  直接推入 6 个提交（head `00f685c`），文件树已含 build.yml 与
+  pr-check.yml，并在 main 上出包 `Gself-26.10.15.4.299`（run 38664400309）、
+  `Gself-26.10.15.5.300`（run 38665267835）；另有旧 Android CI 口径产物
+  `Gself-26.10.15.1.2`（run 38664141929，main，sha 5d515e1）。本会话分支
+  与 main 为 diverged（ahead 33、behind 6），未被继承，按判据保留；
+  PR #14 仍 OPEN。
+
 ## 规范同步 —— 五判据定名、依据改引 2f8c419（selfs 129a292 / 2f8c419）
 
 - 判据正式定为五条：命名口径、来源、重复当日序号、号源口径、数量。
