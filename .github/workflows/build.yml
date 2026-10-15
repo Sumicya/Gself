@@ -1,0 +1,55 @@
+name: Build
+on:
+  push:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: gradle
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+      - name: Compute version (git rev-list)
+        id: ver
+        run: |
+          total=$(git rev-list --count HEAD)
+          since=$(TZ=Asia/Shanghai date -d "$(TZ=Asia/Shanghai date +%Y-%m-%d) 00:00:00" -u +%Y-%m-%dT%H:%M:%SZ)
+          day=$(git rev-list --count --since="$since" HEAD)
+          # head 不在当日则 day=0
+          if [ "$day" -eq 0 ]; then day=0; fi
+          day_str=$(TZ=Asia/Shanghai date +%y.%-m.%-d)
+          echo "VERSION=${day_str}.${day}.${total}" >> $GITHUB_OUTPUT
+          echo "head=$(git rev-parse HEAD) total=$total day=$day" 
+      - name: Build
+        run: |
+          ./gradlew -PversionName="${{ steps.ver.outputs.VERSION }}" -PversionCode="${{ steps.ver.outputs.VERSION }}" test assembleDebug
+      - name: Rename and upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: Gself-${{ steps.ver.outputs.VERSION }}
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 5
+          if-no-files-found: error
+  cleanup:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Cleanup (placeholder for five criteria)
+        run: echo "cleanup job present; five criteria to be implemented"
