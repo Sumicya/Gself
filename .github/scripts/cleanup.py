@@ -10,7 +10,8 @@ DELETE 失败按原因分：403 权限类（fork PR 只读令牌等）打 ::warn
 让 job 红。预演名单不作清理已做的证据。
 
 判定顺序固定：先算 artifact（命名口径与号源口径→来源→重复当日序号→
-数量），再算 run（承载→数量）。号源核验：五段产物的名义序号须与来源 run 的
+数量，全仓保留最新 5 个），再算 run（每工作流保留最新 5 条；承载保留
+产物的不删，未完成且超限的先取消较旧者）。号源核验：五段产物的名义序号须与来源 run 的
 head sha 按取号同式算出的提交数一致，不符按旧口径删；一个合规产物都
 没有时暂留最新一个旧口径产物，等新口径产物出成再删。排序一律按来源
 run 的 run_started_at（UTC+8 日界），id 只作同刻 tiebreak。逐对象打印
@@ -98,9 +99,26 @@ def delete(kind, obj_id, label, why):
     return "fail"
 
 
+def cancel(r0):
+    """取消一个未完成且超限的 run，失败按 403 / 非 403 分级（同 delete）。"""
+    label = f"run {r0['id']} {r0['name']}"
+    p = subprocess.run(["gh", "api", "-X", "POST",
+                        f"repos/{REPO}/actions/runs/{r0['id']}/cancel"],
+                       capture_output=True, text=True)
+    if p.returncode == 0:
+        print(f"  已取消 {label}")
+        return "ok"
+    err = p.stderr.strip()
+    if p.returncode == 403 or "403" in err or "Resource not accessible" in err:
+        print(f"::warning::{label} 取消失败（403 权限类）：{err[:180]}")
+        return "perm"
+    print(f"::error::{label} 取消失败（返回码 {p.returncode}）：{err[:300]}")
+    return "fail"
+
+
 def main():
     mode = "真删" if APPLY else "预演（CLEANUP_APPLY=false，不删）"
-    print(f"清理模式：{mode}；SEGMENTS={SEGMENTS}；CLEANUP_APPLY={'true' if APPLY else 'false'}；每序列保留 {KEEP}；今日(UTC+8)={TODAY8}；PREFIX=Gself-；号源核验命令：git rev-list --count <head sha> 与 git rev-list --count --since=<当日0点 UTC+8> <head sha>")
+    print(f"清理模式：{mode}；SEGMENTS={SEGMENTS}；CLEANUP_APPLY={'true' if APPLY else 'false'}；保留上限 {KEEP}（artifact 全仓、run 每工作流）；今日(UTC+8)={TODAY8}；PREFIX=Gself-；号源核验命令：git rev-list --count <head sha> 与 git rev-list --count --since=<当日0点 UTC+8> <head sha>")
 
     runs = api_list("actions/runs", "workflow_runs")
     run_by_id = {r["id"]: r for r in runs}
@@ -199,20 +217,15 @@ def main():
                 dup_ids.add(a["id"])
     survivors = [a for a in survivors if a["id"] not in dup_ids]
 
-    # 判据五（数量）：每条工作流序列保留最近 KEEP 个，不分当日与否（五条
-    # 判据均不豁免，selfs 790bf82 起当日豁免已撤）
-    byseq = defaultdict(list)
-    for a in survivors:
-        byseq[runinfo(a)[0]].append(a)
+    # 判据五（数量）：全仓 artifact 按 created_at 从新到旧保留最新 KEEP 个
+    survivors.sort(key=lambda a: (a["created_at"], a["id"]), reverse=True)
     keepers = []
-    for path, lst in byseq.items():
-        lst.sort(key=lambda a: (runinfo(a)[2] or a["created_at"], a["id"]), reverse=True)
-        for i, a in enumerate(lst):
-            if i >= KEEP:
-                victims.append((a, f"数量 超出 {path} 序列 {KEEP}"))
-            else:
-                keepers.append(a)
-                print(f"  保留 artifact {a['id']} {a['name']} [-]")
+    for i, a in enumerate(survivors):
+        if i >= KEEP:
+            victims.append((a, f"数量 超出全仓上限 {KEEP}"))
+        else:
+            keepers.append(a)
+            print(f"  保留 artifact {a['id']} {a['name']} [-]")
 
     for a, why in victims:
         print(f"  {'删除' if APPLY else '将删'} artifact {a['id']} {a['name']} [{why}]")
@@ -220,51 +233,61 @@ def main():
             print(f"::notice::预演将删 artifact {a['name']} [{why}]")
     print(f"artifact：保留 {len(keepers)}，{'删除' if APPLY else '将删'} {len(victims)}，未核验 {len(unverified)}")
 
-    # ---------- run：承载 → 数量 ----------
+    # ---------- run：每个工作流保留最新 KEEP 条 ----------
+    # 承载保留产物的 run 不删（删 run 连带删其产物）；超限且已完成的删，
+    # 其不在保留范围内的产物已在 artifact 段先删；超限且未完成的先取消
+    # 较旧的；本次运行不取消、不删除。删前逐个列出对象及其产物。
     carrier = {(a.get("workflow_run") or {}).get("id") for a in keepers}
     carrier.discard(None)
+    run_arts = defaultdict(list)
+    for a in arts:
+        wr = (a.get("workflow_run") or {}).get("id")
+        if wr:
+            run_arts[wr].append(a["name"])
     rgroups = defaultdict(list)
     for r0 in runs:
         rgroups[r0.get("path", "")].append(r0)
-    rkeepers, rvictims, rexempt = [], [], []
+    rkeepers, rvictims, rexempt, rcancel = [], [], [], []
     for path, lst in rgroups.items():
         lst.sort(key=lambda r0: (r0.get("run_started_at") or r0["created_at"], r0["id"]),
                  reverse=True)
-        counted = 0
+        kept = 0
         for r0 in lst:
-            if r0["id"] in carrier:
+            label = f"run {r0['id']} {r0['name']}"
+            if kept < KEEP:
+                kept += 1
                 rkeepers.append(r0)
-                print(f"  保留 run {r0['id']} {r0['name']} [承载保留产物，不计入上限]")
-                continue
-            counted += 1
-            if counted <= KEEP:
+                tag = "承载保留产物" if r0["id"] in carrier else f"数量 {kept}/{KEEP}"
+                print(f"  保留 {label} [{tag}]")
+            elif r0["id"] in carrier:
                 rkeepers.append(r0)
-                print(f"  保留 run {r0['id']} {r0['name']} [数量 {counted}/{KEEP}]")
+                print(f"  保留 {label} [承载保留产物，不占上限]")
             elif r0["id"] == SELF:
                 rexempt.append((r0, "当前运行"))
-                print(f"  豁免 run {r0['id']} {r0['name']} [当前运行]")
+                print(f"  豁免 {label} [当前运行]")
             elif r0.get("status") != "completed":
-                rexempt.append((r0, "未完成"))
-                print(f"  豁免 run {r0['id']} {r0['name']} [未完成]")
+                rcancel.append(r0)
+                print(f"  {'取消' if APPLY else '将取消'} {label} "
+                      f"[未完成且超限，先取消较旧者；产物："
+                      f"{', '.join(run_arts.get(r0['id'], [])) or '无'}]")
             else:
                 rvictims.append(r0)
-                print(f"  {'删除' if APPLY else '将删'} run {r0['id']} {r0['name']} "
-                      f"[数量 超出 {path} 序列 {KEEP}（不承载保留产物）]")
+                print(f"  {'删除' if APPLY else '将删'} {label} "
+                      f"[数量 超出 {path} 上限 {KEEP}；产物："
+                      f"{', '.join(run_arts.get(r0['id'], [])) or '无'}"
+                      "（不在保留范围，已先删产物）]")
                 if not APPLY:
                     print(f"::notice::预演将删 run {r0['id']} {r0['name']} [数量]")
-    print(f"run：保留 {len(rkeepers)}，豁免 {len(rexempt)}，{'删除' if APPLY else '将删'} {len(rvictims)}")
-    seq_left = defaultdict(int)
-    for a in keepers:
-        seq_left[runinfo(a)[0]] += 1
+    print(f"run：保留 {len(rkeepers)}，豁免 {len(rexempt)}，取消 {len(rcancel)}，"
+          f"{'删除' if APPLY else '将删'} {len(rvictims)}")
+    print(f"artifact 剩余（全仓）：{len(keepers)}")
     rseq_left = defaultdict(int)
     for r0 in rkeepers:
         rseq_left[r0.get("path", "")] += 1
-    print("各序列剩余 artifact："
-          + "，".join(f"{k or '?'}={n}" for k, n in sorted(seq_left.items())))
-    print("各序列剩余 run："
+    print("各工作流剩余 run："
           + "，".join(f"{k or '?'}={n}" for k, n in sorted(rseq_left.items())))
     print(f"::notice::cleanup {'真删' if APPLY else '预演'}：artifact 将删/已删 {len(victims)}，"
-          f"run 将删/已删 {len(rvictims)}（保留 artifact {len(keepers)}）")
+          f"run 将删/已删 {len(rvictims)}、取消 {len(rcancel)}（保留 artifact {len(keepers)}）")
 
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
@@ -281,6 +304,8 @@ def main():
                 f.write(f"| 保留 | run {r0['id']} | {r0['name']} | - |\n")
             for r0, why in rexempt:
                 f.write(f"| 豁免 | run {r0['id']} | {r0['name']} | {why} |\n")
+            for r0 in rcancel:
+                f.write(f"| {'取消' if APPLY else '将取消'} | run {r0['id']} | {r0['name']} | 未完成且超限 |\n")
             for r0 in rvictims:
                 f.write(f"| {'删除' if APPLY else '将删'} | run {r0['id']} | {r0['name']} | 数量 |\n")
 
@@ -289,6 +314,10 @@ def main():
         return
 
     perm, fail = 0, 0
+    for r0 in rcancel:
+        r = cancel(r0)
+        perm += r == "perm"
+        fail += r == "fail"
     for a, why in victims:
         r = delete("artifacts", a["id"], f"artifact {a['name']}", why)
         perm += r == "perm"
