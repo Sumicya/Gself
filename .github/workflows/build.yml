@@ -1,0 +1,141 @@
+# Build —— 「零 secrets」配置：仓库不需要任何签名密钥 / 发布 token。
+# CI 做四件事——跑单元测试、编译 debug 包、上传产物、按四判据清理旧产物：
+#   - Gself-<五段版本>.apk ：debug 签名，可直接安装测试
+# 本地签名步骤见 docs/build-and-sign-termux.md。
+#
+# 版本口径（见 AGENTS.md「版本计数口径」，遵 GLOBAL.md，规范不带版本号）：
+#   - 五段 = yy.m.d.当日序号.总序号，日界 UTC+8；号源只有 git 提交数一处：
+#     总序号 = git rev-list --count HEAD，当日序号 = 当日（UTC+8）提交位次。
+#   - checkout 必须 fetch-depth: 0；取号启动行打印 head sha、两个数与命令
+#     原文，取不到数就失败退出，不退化四段。同一提交重跑号不变（幂等）。
+# 本文件是出包工作流 build.yml，全仓唯一号源：push 不限定分支（会话分支
+#   推送同样出包用于验证）与 workflow_dispatch；不接 pull_request，不加
+#   branches 限定或 github.ref 守卫。PR 校验在 pr-check.yml（独立序列，
+#   永不参与版本号）；禁止一个工作流同时接 push 与 pull_request——同一
+#   提交被各触发一次就出两个同名包（实测教训，见 CHANGELOG）。
+# 清理：构建 job 在出包运行上传成功后按四判据清理（同一份 cleanup.py，
+#   pr-check.yml 的 cleanup job 同样真删、同 concurrency group 串行）。
+
+name: Build
+
+env:
+  # 命名口径声明：产物版本段数。清理的口径判据按此删段数不符的产物。
+  SEGMENTS: "5"
+  CLEANUP_APPLY: 'true'
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: gself-cleanup
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      # 清理专用：只删本项目 artifact 与 run 的最小 actions: write；
+      # 禁止 contents: write。脚本写死只删归属核验通过的对象。
+      actions: write
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        # 号源是 git 提交数，必须全量克隆；浅克隆下 rev-list --count 恒为 1。
+        fetch-depth: 0
+
+    - name: set up JDK 21
+      uses: actions/setup-java@v6
+      with:
+        java-version: '21'
+        distribution: 'temurin'
+        cache: gradle
+
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+
+    - name: Compute five-segment version
+      run: |
+        set -euo pipefail
+        # 号源只有 git 提交数一处（checkout 已 fetch-depth: 0）：
+        #   总序号   = git rev-list --count HEAD
+        #   当日序号 = git rev-list --count --since=<当日0点 UTC+8> HEAD
+        # 启动行打印 head sha、两个数与命令原文；取不到数就失败退出，
+        # 不留降级、不退化四段。同一提交重跑得到同一个号，天然幂等，
+        # 不需要重试复用逻辑。
+        head_sha="$(git rev-parse HEAD)"
+        total_cmd="git rev-list --count HEAD"
+        daily_since="$(TZ=Asia/Shanghai date +%F)T00:00:00+08:00"
+        daily_cmd="git rev-list --count --since=$daily_since HEAD"
+        total="$($total_cmd)"
+        daily="$($daily_cmd)"
+        echo "取号启动行：head=$head_sha 总序号=$total（$total_cmd）当日序号=$daily（$daily_cmd）"
+        case "$total" in
+          ''|*[!0-9]*|0) echo "::error::总序号取数失败（$total_cmd 输出：'$total'），停止出包" >&2; exit 1 ;;
+        esac
+        case "$daily" in
+          ''|*[!0-9]*) echo "::error::当日序号取数失败（$daily_cmd 输出：'$daily'），停止出包" >&2; exit 1 ;;
+        esac
+        day="$(TZ=Asia/Shanghai date +%y.%-m.%-d)"
+        echo "VERSION_NAME=$day.$daily.$total" >> "$GITHUB_ENV"
+        echo "VERSION_CODE=$total" >> "$GITHUB_ENV"
+        echo "版本：Gself-$day.$daily.$total（versionCode=$total）"
+
+    - name: Build with Gradle
+      shell: bash
+      run: |
+        set -o pipefail
+        # test 放在最前：介入判据（PushTest）不通过就不必继续构建
+        ./gradlew -Pfcmself.buildNumber="${{ env.VERSION_CODE }}" -PversionName="${{ env.VERSION_NAME }}" -PversionCode="${{ env.VERSION_CODE }}" test assembleDebug 2>&1 | tee build.log
+
+    - name: Rename artifact
+      shell: bash
+      run: |
+        cd ${{ github.workspace }}/app/build/outputs/apk
+        mv debug/app-debug.apk debug/Gself-${{ env.VERSION_NAME }}.apk
+
+    - name: Verify R8 kept the Xposed entry class
+      shell: bash
+      run: |
+        # LSPosed 按 META-INF/xposed/java_init.list 里的类名字符串加载入口类。
+        # R8 若把它改名或裁剪，构建仍会成功，但模块会静默不加载——所以在 CI 里直接查 dex。
+        python3 - <<'PY'
+        import glob, sys, zipfile
+        apk = sorted(glob.glob('app/build/outputs/apk/debug/*.apk'))[0]
+        with zipfile.ZipFile(apk) as z:
+            dex = b''.join(z.read(n) for n in z.namelist()
+                           if n.startswith('classes') and n.endswith('.dex'))
+        ok = b'Lsumicya/fcmself/XposedMain;' in dex
+        print(f'{apk}: 入口类 sumicya.fcmself.XposedMain '
+              + ('已保留' if ok else '被 R8 改名或裁剪'))
+        print(f'dex 合计 {len(dex)} 字节')
+        sys.exit(0 if ok else 1)
+        PY
+
+    - name: Upload apk
+      uses: actions/upload-artifact@v7
+      with:
+        name: Gself-${{ env.VERSION_NAME }}
+        path: ${{ github.workspace }}/app/build/outputs/apk/debug/Gself-${{ env.VERSION_NAME }}.apk
+        retention-days: 5
+        if-no-files-found: error
+        # 重试运行复用首次 attempt 的版本名，同名产物已存在时按规范覆盖为同版本同内容，
+        # 而不是报「已存在」把重跑卡死；正常运行版本名唯一，此项不生效。
+        overwrite: true
+
+    - name: Cleanup (four criteria, keep newest 5 per sequence)
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: python3 .github/scripts/cleanup.py
+
+    - name: Dump build log tail on failure
+      if: failure()
+      shell: bash
+      run: |
+        {
+          echo '### Gradle build log (tail)'
+          echo '```'
+          tail -n 150 build.log
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"
+

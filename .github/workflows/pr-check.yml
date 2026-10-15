@@ -8,7 +8,6 @@ name: PR check
 
 on:
   pull_request:
-    branches: [ "main" ]
 
 permissions:
   contents: read
@@ -70,8 +69,12 @@ jobs:
       cancel-in-progress: false
     permissions:
       actions: write
+      contents: read
     steps:
       - uses: actions/checkout@v7
+        with:
+          # 清理的号源核验要按 head sha 数提交，必须全量克隆。
+          fetch-depth: 0
       - name: 按四条判据清理（真删）
         env:
           GH_TOKEN: ${{ github.token }}

@@ -1,3 +1,24 @@
+## 规范同步 —— 号源改 git 提交数、工作流统一改名（selfs 240a214 / c5ac12d）
+
+> 号源挂在 run 上时 PR 运行吃号、改文件名号从 1 回头、双触发与重试靠
+> 条文层层堵；号源挂到提交上一起消失，同一提交重跑同号（天然幂等）。
+
+- 取号改 git 提交数：总序号 `git rev-list --count HEAD`、当日序号
+  `git rev-list --count --since=<当日0点 UTC+8> HEAD`；`build.yml` 的
+  checkout 加 `fetch-depth: 0`，取号启动行打印 head sha、两个数与命令
+  原文，取不到即失败退出，不再退化四段；重试复用逻辑删除（同提交同号）。
+  `-Pfcmself.buildNumber` 改传 VERSION_CODE，全仓不再用 run_number。
+- 工作流统一改名：`android.yml` → `build.yml`、`name: Android CI` → `Build`
+  （属基线跳变，AGENTS 记一行事实）；`pr-check.yml` 的 `pull_request`
+  去掉 branches 过滤；其 cleanup job 补 `contents: read` 与
+  `fetch-depth: 0`；build.yml 顶部补 `env: CLEANUP_APPLY: 'true'`。
+- `cleanup.py` 口径判据加号源核验：名义序号与来源 run 的 head sha 提交数
+  不符的按旧口径删；无一合规时暂留最新一个旧口径产物，等新口径包出成
+  再删（不许出现无包可装的状态）。重复当日序号改按 `run_started_at`
+  删旧留新（不按总序号大小）；启动行补打印 `CLEANUP_APPLY`；跑完打印
+  各序列剩余数。本次推送先出新口径包，旧口径 `.3.149`、`.2.148` 在
+  新包出成后由清理删，真数字记入 AGENTS。
+
 ## 规范同步 —— 出包不限分支、清理失败分级（selfs a8787a8 / 358120a）
 
 > 撤回口径：会话分支不出包、默认分支 ref 守卫一类禁令砍掉了唯一的验证

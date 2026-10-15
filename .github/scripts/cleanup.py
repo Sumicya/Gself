@@ -10,8 +10,11 @@ DELETE 失败按原因分：403 权限类（fork PR 只读令牌等）打 ::warn
 让 job 红。预演名单不作清理已做的证据。
 
 判定顺序固定：先算 artifact（口径→来源→重复当日序号→数量），再算 run
-（承载→数量）。排序一律按来源 run 的 run_started_at（UTC+8 日界），id 只作
-同刻 tiebreak。逐对象打印判据结论与豁免原因。
+（承载→数量）。口径判据含号源核验：五段产物的名义序号须与来源 run 的
+head sha 按取号同式算出的提交数一致，不符按旧口径删；一个合规产物都
+没有时暂留最新一个旧口径产物，等新口径产物出成再删。排序一律按来源
+run 的 run_started_at（UTC+8 日界），id 只作同刻 tiebreak。逐对象打印
+判据结论与豁免原因。
 """
 import json
 import os
@@ -101,7 +104,7 @@ def delete(kind, obj_id, label, why):
 
 def main():
     mode = "真删" if APPLY else "预演（CLEANUP_APPLY=false，不删）"
-    print(f"清理模式：{mode}；SEGMENTS={SEGMENTS}；每序列保留 {KEEP}；今日(UTC+8)={TODAY8}；PREFIX=Gself-")
+    print(f"清理模式：{mode}；SEGMENTS={SEGMENTS}；CLEANUP_APPLY={'true' if APPLY else 'false'}；每序列保留 {KEEP}；今日(UTC+8)={TODAY8}；PREFIX=Gself-")
 
     runs = api_list("actions/runs", "workflow_runs")
     run_by_id = {r["id"]: r for r in runs}
@@ -114,6 +117,28 @@ def main():
         return (r0.get("path", ""), r0.get("event", ""),
                 r0.get("run_started_at") or r0.get("created_at", ""))
 
+    def commit_counts(sha, daystr):
+        """号源核验：按 artifact 名里的日期与来源 run 的 head sha，用与取号
+        相同的两条 git 命令算应得的 (总序号, 当日序号)。sha 不在本地历史
+        （需 fetch-depth: 0）或命令失败返回 None，按未核验处理、不删。"""
+        try:
+            y, m, d = daystr.split(".")
+            since = f"20{int(y):02d}-{int(m):02d}-{int(d):02d}T00:00:00+08:00"
+        except (ValueError, IndexError):
+            return None
+        t = subprocess.run(["git", "rev-list", "--count", sha],
+                           capture_output=True, text=True)
+        if t.returncode != 0:
+            return None
+        dd = subprocess.run(["git", "rev-list", "--count", f"--since={since}", sha],
+                            capture_output=True, text=True)
+        if dd.returncode != 0:
+            return None
+        try:
+            return int(t.stdout.strip()), int(dd.stdout.strip())
+        except ValueError:
+            return None
+
     # ---------- artifact：口径 → 来源 → 重复当日序号 → 数量 ----------
     arts = api_list("actions/artifacts", "artifacts")
     verified, unverified = [], []
@@ -124,30 +149,57 @@ def main():
             unverified.append(a)
             print(f"  跳过(归属未核验) {a['id']} {a['name']} run={(a.get('workflow_run') or {}).get('id')}")
 
-    victims, survivors = [], []
+    victims, survivors, source_victims = [], [], []
     for a in verified:
         _p, event, _s = runinfo(a)
         ver = a["name"][len("Gself-"):] if a["name"].startswith("Gself-") else ""
         seg = ver.count(".") + 1 if ver else 0
+        v = version_of(a["name"])
         if seg != SEGMENTS:
             victims.append((a, f"口径 {seg} 段 != SEGMENTS {SEGMENTS}"))
+        elif v is not None:
+            wr = (a.get("workflow_run") or {}).get("id")
+            sha = (run_by_id.get(wr) or {}).get("head_sha", "") if wr else ""
+            cc = commit_counts(sha, v[0]) if sha else None
+            if cc is not None and cc != (v[2], v[1]):
+                source_victims.append(
+                    (a, f"号源口径 名义总序号 {v[2]} != 提交数 {cc[0]}"
+                        f"（当日序号 {v[1]} vs {cc[1]}）"))
+            elif event == "pull_request":
+                victims.append((a, "来源 pull_request 运行"))
+            else:
+                if cc is None:
+                    print(f"  号源未核验（保留） {a['id']} {a['name']} head_sha={sha or '无'}")
+                survivors.append(a)
         elif event == "pull_request":
             victims.append((a, "来源 pull_request 运行"))
         else:
             survivors.append(a)
+    # 换号源过渡：一个号源合规的产物都没有时，最新一个旧口径产物保留，
+    # 等新口径产物出成再删——不许出现「一个可装的包都没有」的状态。
+    if not survivors and source_victims:
+        newest = max(source_victims, key=lambda x: x[0]["created_at"])
+        source_victims.remove(newest)
+        survivors.append(newest[0])
+        print(f"  过渡保留 {newest[0]['id']} {newest[0]['name']} "
+              "[号源切换过渡：暂留最新旧口径，待新口径产物出成]")
+    victims.extend(source_victims)
 
-    # 判据四：同日同序列出现相同当日序号 → 只留总序号最大的那个
+    # 判据四：同日同序列出现相同当日序号 → 按来源 run 的 run_started_at
+    # 删旧留新（不按总序号大小判：换号源后总序号口径会变，按大小判会误删）
     groups = defaultdict(list)
     for a in survivors:
         v = version_of(a["name"])
         if v:
-            groups[(v[0], v[1])].append((v[2], a))
+            groups[(v[0], v[1])].append(a)
     dup_ids = set()
     for (day, daily), g in groups.items():
         if len(g) > 1:
-            g.sort(key=lambda x: x[0], reverse=True)
-            for total, a in g[1:]:
-                victims.append((a, f"重复当日序号 {day}.{daily}，保留总序号最大者 {g[0][0]}"))
+            g.sort(key=lambda a: (runinfo(a)[2] or a["created_at"], a["id"]),
+                   reverse=True)
+            for a in g[1:]:
+                victims.append((a, f"重复当日序号 {day}.{daily}，"
+                                   "保留 run_started_at 最新者"))
                 dup_ids.add(a["id"])
     survivors = [a for a in survivors if a["id"] not in dup_ids]
 
@@ -208,6 +260,16 @@ def main():
                 if not APPLY:
                     print(f"::notice::预演将删 run {r0['id']} {r0['name']} [数量]")
     print(f"run：保留 {len(rkeepers)}，豁免 {len(rexempt)}，{'删除' if APPLY else '将删'} {len(rvictims)}")
+    seq_left = defaultdict(int)
+    for a in keepers:
+        seq_left[runinfo(a)[0]] += 1
+    rseq_left = defaultdict(int)
+    for r0 in rkeepers:
+        rseq_left[r0.get("path", "")] += 1
+    print("各序列剩余 artifact："
+          + "，".join(f"{k or '?'}={n}" for k, n in sorted(seq_left.items())))
+    print("各序列剩余 run："
+          + "，".join(f"{k or '?'}={n}" for k, n in sorted(rseq_left.items())))
     print(f"::notice::cleanup {'真删' if APPLY else '预演'}：artifact 将删/已删 {len(victims)}，"
           f"run 将删/已删 {len(rvictims)}（保留 artifact {len(keepers)}）")
 
