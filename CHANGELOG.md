@@ -1,3 +1,15 @@
+## 全文逐条核对 —— 清理失败文案补端点（2026-10-15）
+
+- 按现行全文（selfs main `12b0bff972ec08dd42d534a9c21a8c7c1ec5e3c4`，
+  https://github.com/Sumicya/selfs/commit/12b0bff972ec08dd42d534a9c21a8c7c1ec5e3c4）
+  逐条核本仓实现，唯一不符：清理失败的 403 warning 只写了对象与返回码，
+  没写端点。`cleanup.py` 的 delete 与 cancel 两处文案补齐「端点
+  `DELETE|POST repos/<repo>/actions/...`、返回码、对象」三项；非 403 的
+  error 行同样带端点。build.yml 清理步名去掉已过时的 per-sequence 措辞。
+- 其余各条核对通过（两工作流与触发、SEGMENTS/CLEANUP_APPLY 同值、
+  fetch-depth: 0、提交数取号、五判据与硬上限、分支判据），证据见当轮
+  汇报。
+
 ## 规范同步 —— 运行记录改硬上限、上限优先（selfs 4f748b5 / 12b0bff）
 
 - selfs main 定版：每个工作流最多保留最新 5 条运行记录，含当天、不设

@@ -123,7 +123,7 @@ jobs:
         # 而不是报「已存在」把重跑卡死；正常运行版本名唯一，此项不生效。
         overwrite: true
 
-    - name: Cleanup (five criteria, keep newest 5 per sequence)
+    - name: Cleanup (five criteria)
       env:
         GH_TOKEN: ${{ github.token }}
       run: python3 .github/scripts/cleanup.py

@@ -86,6 +86,7 @@ def delete(kind, obj_id, label, why):
     403 权限类 → ::warning:: 降级，不红 job，返回 "perm"；
     其余失败   → ::error:: 点名（对象与返回码），返回 "fail"，调用方让 job 红。
     """
+    endpoint = f"DELETE repos/{REPO}/actions/{kind}/{obj_id}"
     p = subprocess.run(["gh", "api", "-X", "DELETE",
                         f"repos/{REPO}/actions/{kind}/{obj_id}"],
                        capture_output=True, text=True)
@@ -94,16 +95,18 @@ def delete(kind, obj_id, label, why):
         return "ok"
     err = p.stderr.strip()
     if p.returncode == 403 or "403" in err or "Resource not accessible" in err:
-        print(f"::warning::{label} 删除失败（403 权限类）：{err[:180]}"
-              "（fork PR 或权限不足，本次降级为预演）")
+        print(f"::warning::{label} 删除失败：端点 {endpoint}，返回码 "
+              f"{p.returncode}（403 权限类）：{err[:160]}（本次降级为预演）")
         return "perm"
-    print(f"::error::{label} 删除失败（返回码 {p.returncode}）：{err[:300]}")
+    print(f"::error::{label} 删除失败：端点 {endpoint}，返回码 "
+          f"{p.returncode}：{err[:260]}")
     return "fail"
 
 
 def cancel(r0):
     """取消一个未完成且超限的 run，失败按 403 / 非 403 分级（同 delete）。"""
     label = f"run {r0['id']} {r0['name']}"
+    endpoint = f"POST repos/{REPO}/actions/runs/{r0['id']}/cancel"
     p = subprocess.run(["gh", "api", "-X", "POST",
                         f"repos/{REPO}/actions/runs/{r0['id']}/cancel"],
                        capture_output=True, text=True)
@@ -112,9 +115,11 @@ def cancel(r0):
         return "ok"
     err = p.stderr.strip()
     if p.returncode == 403 or "403" in err or "Resource not accessible" in err:
-        print(f"::warning::{label} 取消失败（403 权限类）：{err[:180]}")
+        print(f"::warning::{label} 取消失败：端点 {endpoint}，返回码 "
+              f"{p.returncode}（403 权限类）：{err[:160]}")
         return "perm"
-    print(f"::error::{label} 取消失败（返回码 {p.returncode}）：{err[:300]}")
+    print(f"::error::{label} 取消失败：端点 {endpoint}，返回码 "
+          f"{p.returncode}：{err[:260]}")
     return "fail"
 
 
