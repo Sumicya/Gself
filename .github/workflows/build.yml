@@ -7,6 +7,10 @@ permissions:
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
+env:
+  SEGMENTS: "5"
+  KEEP: "5"
+  PREFIX: "Gself-"
 jobs:
   build:
     runs-on: ubuntu-24.04
@@ -49,6 +53,87 @@ jobs:
     permissions:
       actions: write
       contents: read
+    concurrency:
+      group: gself-cleanup
+      cancel-in-progress: false
     steps:
-      - name: Cleanup (placeholder for five criteria)
-        run: echo "cleanup job present; five criteria to be implemented"
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Cleanup artifacts and runs (five criteria)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          KEEP: ${{ env.KEEP }}
+          SEGMENTS: ${{ env.SEGMENTS }}
+          PREFIX: ${{ env.PREFIX }}
+        run: |
+          python3 << 'PY'
+          import json, os, subprocess, sys
+
+          keep = int(os.environ["KEEP"])
+          segments = int(os.environ["SEGMENTS"])
+          prefix = os.environ["PREFIX"].lower()
+          repo = os.environ["REPO"]
+
+          def api(path, method=None):
+              cmd = ["gh", "api"] + (["-X", method] if method else []) + [path]
+              r = subprocess.run(cmd, capture_output=True, text=True)
+              if r.returncode != 0:
+                  print(f"::warning::gh api {path} failed: {r.stderr.strip()}")
+                  return None
+              return r.stdout
+
+          # --- artifacts ---
+          arts, page = [], 1
+          while True:
+              out = api(f"repos/{repo}/actions/artifacts?per_page=100&page={page}")
+              if not out:
+                  break
+              batch = json.loads(out).get("artifacts", [])
+              if not batch:
+                  break
+              arts += [a for a in batch if a["name"].lower().startswith(prefix)]
+              page += 1
+
+          arts.sort(key=lambda a: a["created_at"], reverse=True)
+          print(f"artifacts matched {len(arts)}, keep {keep}")
+          for a in arts:
+              print(f"  {a['created_at']} {a['name']} id={a['id']}")
+
+          victims = arts[keep:]
+          for a in victims:
+              print(f"DELETE artifact {a['name']} id={a['id']}")
+              api(f"repos/{repo}/actions/artifacts/{a['id']}", method="DELETE")
+
+          # --- runs: keep newest `keep` per workflow name, delete rest + old Android CI ---
+          runs, page = [], 1
+          while True:
+              out = api(f"repos/{repo}/actions/runs?per_page=100&page={page}")
+              if not out:
+                  break
+              batch = json.loads(out).get("workflow_runs", [])
+              if not batch:
+                  break
+              runs += batch
+              page += 1
+
+          from collections import defaultdict
+          by_name = defaultdict(list)
+          for r in runs:
+              by_name[r["name"]].append(r)
+
+          for name, lst in by_name.items():
+              lst.sort(key=lambda r: r["created_at"], reverse=True)
+              if name == "Android CI":
+                  # old workflow name, delete all
+                  to_del = lst
+              else:
+                  to_del = lst[keep:]
+              print(f"runs [{name}] total={len(lst)} delete={len(to_del)}")
+              for r in to_del:
+                  print(f"DELETE run {r['id']} {r['name']} {r['created_at']}")
+                  api(f"repos/{repo}/actions/runs/{r['id']}", method="DELETE")
+
+          print("cleanup done")
+          PY
