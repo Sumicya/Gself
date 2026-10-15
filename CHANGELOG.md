@@ -1,3 +1,10 @@
+## AGENTS.md 删除（2026-10-15，主人提交 5afaa06）
+
+- 主人在本会话分支提交 `5afaa06` 删除 AGENTS.md（与 selfs `716e864`
+  删自家 AGENTS.md 同一决定）。本文件与各工作流不再指向 AGENTS.md；
+  项目口径以 selfs GLOBAL.md 与本 CHANGELOG 的真数字记录为准。
+- 上条「规范载体变更」里记的 AGENTS 依据行同步已被该删除覆盖。
+
 ## 规范载体变更 —— selfs PR #6 已合，指针回默认分支（2026-10-15）
 
 - 取证：selfs PR #6 已合入 main（merge `aedf88d`），会话分支

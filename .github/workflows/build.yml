@@ -3,7 +3,7 @@
 #   - Gself-<五段版本>.apk ：debug 签名，可直接安装测试
 # 本地签名步骤见 docs/build-and-sign-termux.md。
 #
-# 版本口径（见 AGENTS.md「版本计数口径」，遵 GLOBAL.md，规范不带版本号）：
+# 版本口径（遵 selfs GLOBAL.md「产物版本」，规范不带版本号）：
 #   - 五段 = yy.m.d.当日序号.总序号，日界 UTC+8；号源只有 git 提交数一处：
 #     总序号 = git rev-list --count HEAD，当日序号 = 当日（UTC+8）提交位次。
 #   - checkout 必须 fetch-depth: 0；取号启动行打印 head sha、两个数与命令
