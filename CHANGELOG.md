@@ -1,3 +1,17 @@
+## 继承 arena/01a10a49-gself 全部 26 个提交后删除该分支（2026-10-15）
+
+- 按主人指示整体合并该分支（2026-10-05～10-06 的 26 个提交全部进入本
+  分支历史），合并后其 compare ahead_by=0，分支删除。
+- 并入的现行内容：只做新包（minSdk 29→36、推送唤醒只挂 Android 16 的
+  BroadcastController、ColorOS 解冻只认 4 参签名，依据提交 f22c988）、
+  通知保留日志带 reason 值（472734b）、2026-10-05 真机日志回填与
+  「消息延迟 / 滞留怎么查」（81326d1、dddbab9）、验证清单校正（e7aecf0）、
+  签名脚本环境变量改 GSELF_*、docs/glossary.md、.gitignore 补 *.pyc。
+- 未并入的旧口径：run 号取号与旧清理脚本 cleanup_artifacts.py、旧单
+  工作流 build.yml、AGENTS.md 引用与旧徽章；build.yml、pr-check.yml、
+  cleanup.py、gradle.properties、build.gradle.kts 的版本注入保持现行
+  提交数口径，仅取 minSdk 36 与 dev- 本地回落命名。
+
 ## 全文逐条核对 —— 清理失败文案补端点（2026-10-15）
 
 - 按现行全文（selfs main `12b0bff972ec08dd42d534a9c21a8c7c1ec5e3c4`，
