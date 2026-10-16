@@ -29,3 +29,5 @@ CI（`Build`）跑单测 + 编译 debug + 校验 R8 入口类，产物 `Gself-<�
 ## 许可证
 
 GPL-3.0-or-later（并入的 GboardHook 是 GPL-3.0）。详见 [`LICENSE`](LICENSE)。
+
+遵循 [Sumicya/selfs](https://github.com/Sumicya/selfs) 最新 GLOBAL.md。
