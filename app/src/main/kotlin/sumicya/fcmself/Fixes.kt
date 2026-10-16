@@ -24,7 +24,7 @@ import java.util.concurrent.atomic.AtomicReference
  * GMS 常常不带，ROM 又各自加了闸门，于是应用被划掉之后就再也收不到推送。
  */
 fun Hook.wakeStoppedApps() {
-    // 只做新包（GLOBAL.md 第十七版）：广播出口只实现 Android 16+（API 36）的 BroadcastController，
+    // 只做新包（项目约定）：广播出口只实现 Android 16+（API 36）的 BroadcastController，
     // 不写 Android 10–15 的旧出口、不做双路径回退。上游证据（aosp-mirror/platform_frameworks_base
     // services/core/java/com/android/server/am/）：BroadcastController.java 首次出现于 android-16.0.0_r1，
     // android-14.0.0_r1 与 android-15.0.0_r1 的 am 包下都没有这个文件。
@@ -117,7 +117,7 @@ private fun unfreeze(target: String?) {
     val lock = wakelock.get() ?: return
     if (target == null) return
     val uid = uidOf(target) ?: return
-    // 只做新包（GLOBAL.md 第十七版）：只认当前 ColorOS 的 4 参签名（尾部带 owner），
+    // 只做新包（项目约定）：只认当前 ColorOS 的 4 参签名（尾部带 owner），
     // 不做 3 参旧签名的逐档回退；签名对不上就明确跳过，不静默装作解冻过。
     val known = knownUnfreeze
     val candidates = known?.let { listOf(it) } ?: lock.javaClass.declaredMethods
