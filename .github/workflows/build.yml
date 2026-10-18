@@ -65,7 +65,7 @@ jobs:
         # 不需要重试复用逻辑。
         head_sha="$(git rev-parse HEAD)"
         total_cmd="git rev-list --count HEAD"
-        daily_since="$(TZ=Asia/Shanghai date +%F)T00:00:00+08:00"
+        daily_since="$(date -u -d '+8 hours' +%F)T00:00:00+08:00"
         daily_cmd="git rev-list --count --since=$daily_since HEAD"
         total="$($total_cmd)"
         daily="$($daily_cmd)"
@@ -76,7 +76,7 @@ jobs:
         case "$daily" in
           ''|*[!0-9]*) echo "::error::当日序号取数失败（$daily_cmd 输出：'$daily'），停止出包" >&2; exit 1 ;;
         esac
-        day="$(TZ=Asia/Shanghai date +%y.%-m.%-d)"
+        day="$(date -u -d '+8 hours' +%y.%-m.%-d)"
         echo "VERSION_NAME=$day.$daily.$total" >> "$GITHUB_ENV"
         echo "VERSION_CODE=$total" >> "$GITHUB_ENV"
         echo "版本：Gself-$day.$daily.$total（versionCode=$total）"

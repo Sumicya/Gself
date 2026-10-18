@@ -1,3 +1,10 @@
+## 规范同步 —— 时区固定偏移与 README 按 S1 调整（2026-10-18）
+
+- 依据 selfs 最新规范提交 `01887e42d21ccb56357b0ebd1bfeba54e6704167`。
+- `build.yml` 取号命令由 `TZ=Asia/Shanghai date` 改为 `date -u -d '+8 hours'`（V1）。
+- README 删除第 3 行 Build 徽章；`## 功能（按进程分发）` 改名为 `## 功能` 并移到 `## 要求` 之后（S1）。
+- 同一提交更新本变更记录（S4）。
+
 ## 规范同步 —— 按 selfs 最新规范整理 README 与变更记录（2026-10-16）
 
 - 依据 selfs `GLOBAL.md` 最新规范提交 `662e72d8256728d08f4cefde672b27bf58b0428b`（按「仓库类型」表属有产物仓）。
@@ -35,17 +42,3 @@
   得拉起受限前台服务类型」，异常被 startForegroundOrCatch 吞掉只记
   日志，服务随后被系统收掉。附设备判定命令与白名单绕法；设备日志
   签名未取，坐实程度标未验证。
-
-## 继承 arena/01a10a49-gself 全部 26 个提交后删除该分支（2026-10-15）
-
-- 按主人指示整体合并该分支（2026-10-05～10-06 的 26 个提交全部进入本
-  分支历史），合并后其 compare ahead_by=0，分支删除。
-- 并入的现行内容：只做新包（minSdk 29→36、推送唤醒只挂 Android 16 的
-  BroadcastController、ColorOS 解冻只认 4 参签名，依据提交 f22c988）、
-  通知保留日志带 reason 值（472734b）、2026-10-05 真机日志回填与
-  「消息延迟 / 滞留怎么查」（81326d1、dddbab9）、验证清单校正（e7aecf0）、
-  签名脚本环境变量改 GSELF_*、docs/glossary.md、.gitignore 补 *.pyc。
-- 未并入的旧口径：run 号取号与旧清理脚本 cleanup_artifacts.py、旧单
-  工作流 build.yml、AGENTS.md 引用与旧徽章；build.yml、pr-check.yml、
-  cleanup.py、gradle.properties、build.gradle.kts 的版本注入保持现行
-  提交数口径，仅取 minSdk 36 与 dev- 本地回落命名。
