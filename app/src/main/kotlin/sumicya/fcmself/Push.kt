@@ -3,7 +3,7 @@ package sumicya.fcmself
 import android.content.Intent
 
 /**
- * 「是不是一条 FCM 推送」—— 全模块唯一的介入判据。
+ * 「是不是一条 FCM 推送」—— 推送唤醒这组 Hook 唯一的介入判据。
  *
  * 判据是**子串**而不是 action 全等表：`c2dm` / `firebase` 两个词就覆盖了整个推送族及其变体
  * （`…c2dm.intent.RECEIVE`、`…firebase.MESSAGING_EVENT`、以及 GMS 未来改名的任何 action），

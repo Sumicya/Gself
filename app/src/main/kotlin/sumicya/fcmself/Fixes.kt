@@ -2,6 +2,7 @@ package sumicya.fcmself
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.WorkSource
 import android.service.notification.NotificationListenerService
 
@@ -107,7 +108,118 @@ fun Hook.oplusFixes() {
         hook(find(hans, "updateGmsRestrict")) { null }
         trace("Hans GMS 限制已置空")
     }
+
+    // ColorOS may revoke Google-core network access after the first unlock when its connectivity
+    // probe runs before the user's VPN/proxy is ready. These are separate hooks so a ROM-specific
+    // mismatch in one path does not disable the other Oplus fixes.
+    install("Google 联网防火墙") { googleNetworkFirewallFix() }
+    install("Google 受限广播") { googleRestrictionBroadcastFix() }
 }
+
+/**
+ * At first unlock, ColorOS Battery may treat a failed Google connectivity probe as a reason to
+ * write a reject-all firewall rule for Google core packages. Only override this on builds that
+ * declare IgnoreGmsUserSet, where the user-facing Google network switches are not available.
+ */
+private fun Hook.googleNetworkFirewallFix() {
+    val service = classOf(OPLUS_NETWORK_MANAGEMENT_SERVICE)
+    val intType = Int::class.javaPrimitiveType!!
+    val target = find(service, "setFirewallUidRuleForNetworkType", intType, intType, intType)
+    check(target.returnType == java.lang.Void.TYPE) {
+        "Unexpected return type for ${target.declaringClass.name}#${target.name}: ${target.returnType.name}"
+    }
+
+    hook(target) { chain ->
+        val networkType = chain.args.getOrNull(0) as? Int ?: return@hook chain.proceed()
+        val uid = chain.args.getOrNull(1) as? Int ?: return@hook chain.proceed()
+        val rule = chain.args.getOrNull(2) as? Int ?: return@hook chain.proceed()
+        if (rule != FIREWALL_RULE_REJECT) return@hook chain.proceed()
+
+        val context = systemContext ?: return@hook chain.proceed()
+        if (!batteryIgnoresGoogleNetworkSetting(context)) return@hook chain.proceed()
+        val shouldDrop = shouldDropGoogleFirewallReject(
+            uid = uid,
+            rule = rule,
+            googleAppIds = googleNetworkAppIds(context),
+            batteryIgnoresGmsUserSet = true,
+        )
+
+        if (shouldDrop) {
+            trace("Oplus Google network reject dropped: uid=$uid, type=$networkType")
+            null
+        } else {
+            chain.proceed()
+        }
+    }
+    trace("Oplus Google network firewall hook 已安装")
+}
+
+/**
+ * ColorOS broadcasts this after the same failed probe; system_server listeners use it to
+ * downgrade Google wakeup alarms and standby state. Clear only the restrictive transition.
+ */
+private fun Hook.googleRestrictionBroadcastFix() {
+    // This action is Oplus-specific; avoid installing a broad broadcast hook on AOSP ROMs.
+    classOf(STARTUP)
+
+    val classes = listOf(
+        "com.android.server.am.ActivityManagerService",
+        CONTROLLER,
+    )
+    var hooked = false
+    for (className in classes) {
+        val clazz = classIfExists(className) ?: continue
+        val targets = clazz.declaredMethods.filter { method ->
+            method.name == "broadcastIntentWithFeature" &&
+                method.parameterTypes.count { it == Intent::class.java } == 1
+        }
+        if (targets.isEmpty()) continue
+
+        targets.forEach { target ->
+            hook(target.apply { isAccessible = true }) { chain ->
+                val intent = chain.args.filterIsInstance<Intent>().firstOrNull()
+                if (intent?.action == GOOGLE_RESTRICT_CHANGE &&
+                    intent.getBooleanExtra(EXTRA_RESTRICT_ENABLE, false)
+                ) {
+                    intent.putExtra(EXTRA_RESTRICT_ENABLE, false)
+                    trace("Oplus Google restrict broadcast cleared in system_server")
+                }
+                chain.proceed()
+            }
+        }
+        trace("Oplus Google restrict broadcast hook active: ${clazz.name}")
+        hooked = true
+        break // AMS delegates to BroadcastController; the outermost matching boundary is enough.
+    }
+    check(hooked) { "broadcastIntentWithFeature(Intent) not found" }
+}
+
+private fun batteryIgnoresGoogleNetworkSetting(context: Context): Boolean = runCatching {
+    val battery = context.packageManager.getApplicationInfo(
+        BATTERY_PACKAGE,
+        PackageManager.GET_META_DATA,
+    )
+    battery.metaData?.get(IGNORE_GMS_USER_SET)?.toString() == "true"
+}.getOrDefault(false)
+
+private fun googleNetworkAppIds(context: Context): Set<Int> =
+    GOOGLE_NETWORK_PACKAGES.mapNotNull { packageName ->
+        runCatching {
+            context.packageManager.getPackageUid(packageName, 0) % ANDROID_PER_USER_RANGE
+        }.getOrNull()
+    }.toSet()
+
+/** Pure policy predicate, kept separate so the user-setting and multi-user guards are testable. */
+internal fun shouldDropGoogleFirewallReject(
+    uid: Int,
+    rule: Int,
+    googleAppIds: Set<Int>,
+    batteryIgnoresGmsUserSet: Boolean,
+): Boolean =
+    batteryIgnoresGmsUserSet &&
+        rule == FIREWALL_RULE_REJECT &&
+        uid >= 0 &&
+        uid % ANDROID_PER_USER_RANGE in googleAppIds
 
 /**
  * 解冻目标应用（ColorOS）：调用之前捕获的 `OplusProxyWakeLock.unfreezeIfNeed`。
@@ -164,5 +276,18 @@ private val BLOCKED_REASONS = setOf(NotificationListenerService.REASON_PACKAGE_C
 
 private const val CONTROLLER = "com.android.server.am.BroadcastController"
 private const val STARTUP = "com.android.server.am.OplusAppStartupManager"
+private const val OPLUS_NETWORK_MANAGEMENT_SERVICE = "com.android.server.net.OplusNetworkManagementService"
+private const val BATTERY_PACKAGE = "com.oplus.battery"
+private const val IGNORE_GMS_USER_SET = "IgnoreGmsUserSet"
+private const val GOOGLE_RESTRICT_CHANGE = "oplus.intent.action.google_restrict_change"
+private const val EXTRA_RESTRICT_ENABLE = "restrict_enable"
+private const val FIREWALL_RULE_REJECT = 2
+private const val ANDROID_PER_USER_RANGE = 100_000
+private val GOOGLE_NETWORK_PACKAGES = listOf(
+    GMS,
+    "com.google.android.gsf",
+    "com.android.vending",
+    "com.google.android.configupdater",
+)
 private const val WAKELOCK_TAG = "FCMXX"
 private const val WAKELOCK_OWNER = "FcmSelf"

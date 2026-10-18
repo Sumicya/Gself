@@ -61,7 +61,7 @@ hook skip 推送唤醒: java.lang.NoSuchMethodError: …#broadcastIntentLocked
 
 ## 3. ColorOS 放行
 
-26.10.1 起 ColorOS 的四个闸门都是**无条件**放开，不再逐条判「实参里有没有推送」，所以
+26.10.1 起原有的四个 ColorOS 后台闸门都是**无条件**放开，不再逐条判「实参里有没有推送」，所以
 **没有**逐次日志（1.0.0 的 `No Intercept` / `shouldProxy bypass` / `Allow Auto Start` 已删）。
 判据只剩「载入时有没有挂上」：
 
@@ -73,6 +73,30 @@ hook skip 推送唤醒: java.lang.NoSuchMethodError: …#broadcastIntentLocked
 | `OplusBgSceneManager` 两个 GMS 限制方法置空 | 没有 `hook skip Hans GMS 限制` |
 
 非 ColorOS 机器上这四处是 `hook skip <组名>: sumicya.fcmself.Hook$Missing: <类名>`，**属正常**。
+
+### 首次解锁后 GMS 一直未连接
+
+若 FCM Diagnostics 在首次解锁附近出现 `Close err:30` / `ERR_CLOSE_BY_USER_UNLOCKED`，随后反复 `Failed connection err:25`，
+ColorOS 电池组件的 Google 连通性探测可能已对 GMS 等核心包下发禁网规则。新增的 system_server 保护只在 Battery 清单声明
+`IgnoreGmsUserSet=true`（即系统不提供可由用户切换的 Google 联网开关）时丢弃这些 Google UID 的 reject 规则；不会拦截放行规则或其他应用。
+
+重启后检查：
+
+```
+[fcmself] Oplus Google network firewall hook 已安装
+[fcmself] Oplus Google restrict broadcast hook active: ...
+```
+
+实际拦下拒绝规则和清除限制广播时分别会有：
+
+```
+[fcmself] Oplus Google network reject dropped: uid=..., type=...
+[fcmself] Oplus Google restrict broadcast cleared in system_server
+```
+
+`hook active` 只代表挂点存在；没有 `reject dropped` 可能是 ROM 未声明上述元数据、该规则没有发生，或问题在网络路由。尤其 VPN 下若日志显示
+`wasVpnBypassed=true`，可临时关闭 VPN 或确认 GMS 被 VPN 正确接管后再测；这不是强制重连计时器，FCMFix 不会替 GMS 修复 DNS、代理或被封锁的 5228–5230 端口。
+Play Integrity 的 `Labels: []` 与这两个 Hook 是否加载没有直接关系。
 
 ## 4. 通知不被自动清理
 
@@ -126,10 +150,11 @@ su -c "logcat -d | grep -iE '<包名>|c2dm|Background execution|not delivering|s
 
 | 项目 | 状态 |
 | --- | --- |
-| 编译 + `PushTest` | **已验证**（CI 持续实跑：`./gradlew test assembleDebug` 全绿，R8 入口类 dex 校验通过）。沙箱没有 JDK / Android SDK，编译只能由 CI 完成 |
+| 编译 + 单测 | **已验证**（CI 持续实跑：`./gradlew test assembleDebug` 全绿，R8 入口类 dex 校验通过）。包含 `PushTest` 与纯策略单测；本轮 ColorOS 新挂点未真机验证。沙箱没有 JDK / Android SDK，编译只能由 CI 完成 |
 | 五段版本（提交数口径）与产物名 | **已验证**（CI 实跑）：Build 按 git 提交数持续产出 `Gself-26.10.15.当日序号.总序号` 并上传同名 artifact |
 | 清理（五判据、每工作流 run 最新 5 条、全仓 artifact 最新 5 个） | **已验证**（CI 实跑）：build.yml 与 pr-check.yml 的 cleanup 步持续执行并输出逐项结论 |
 | system_server 三组 Hook（推送 / 通知 / ColorOS） | **已验证**（2026-10-05 22:13，Android 16 / API 36，ColorOS）：载入、`hook target: BroadcastController#broadcastIntentLocked(25)`、`OplusAppStartup 自启动闸门已关`、`OplusProxyBroadcast 代理已全关`、`Hans GMS 限制已置空`、`OplusProxyWakeLock instance captured`、`keep notification`、`unfreeze 可用（4 参签名）`、`wake: com.zhiliaoapp.musically` 全部出现（日志见第 9 节） |
+| ColorOS 首次解锁后的 Google 联网保护 | **代码新增，待真机验证**：按 `IgnoreGmsUserSet` 元数据及 Google appId 窄范围处理拒绝规则，并清除 Oplus 限制广播；新增纯 JVM 策略测试。新挂点是否匹配用户固件、FCM 是否恢复仍须在设备验证 |
 | 只做新包（minSdk 36 / 只挂 BroadcastController / 4 参 unfreeze） | **已验证**（同一份日志）：Android 16 上 `BroadcastController` 存在并挂上，ColorOS 的 `unfreezeIfNeed` 4 参签名可用；无 `hook skip`、无 AMS 回退痕迹 |
 | GMS 通行密钥解限 | **仅装点已验证**：`通行密钥解限 Hook 已安装` 出现两次（GMS 进程重启过）；「非 Chrome 浏览器能用通行密钥」要实际调一次才知道 |
 | Gboard 剪贴板 | **未见日志**（2026-10-05 时点）：日志里没有 `Gboard 剪贴板 Hook 已安装`，也没有 `hook skip`——先确认 Gboard 是不是当前输入法（见第 1 节），是的话这条要查 |
