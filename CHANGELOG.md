@@ -1,3 +1,8 @@
+## ColorOS 首次解锁后 GMS 断网保护（2026-10-18）
+
+- 对应 FCM Diagnostics 的 `ERR_CLOSE_BY_USER_UNLOCKED` / `Close err:30`：在 system_server 中清除 Oplus 的 Google 限制广播，并在 Battery 声明 `IgnoreGmsUserSet=true` 时阻止对 GMS、GSF、Play 商店和 ConfigUpdater 下发拒绝联网规则。放行规则和非 Google UID 不受影响；用户仍可控制联网的 ROM 不覆盖其设置。
+- 新增纯 JVM 策略测试与真机验证说明。当前沙箱没有 JDK，未能本地运行 Gradle；新挂点及 FCM 恢复效果仍待目标 ColorOS 设备验证。
+
 ## 规范同步 —— 时区固定偏移与 README 按 S1 调整（2026-10-18）
 
 - 依据 selfs 最新规范提交 `01887e42d21ccb56357b0ebd1bfeba54e6704167`。
@@ -32,13 +37,3 @@
 - 图标加 Monet：ic_launcher 与 ic_launcher_round 的 adaptive-icon 各
   加一层 monochrome（复用现有 foreground 矢量），Android 13+ 主题图
   标随壁纸取色；原图标仍是模板机器人图，本次只加单色层不换图。
-
-## Monocles Chat 重启不恢复：源码侧定位（2026-10-15）
-
-- docs/verify-on-device.md 新增第 11 节：按 Experimental14-v2.3.1
-  （f7803c2）源码核到候选机制——开机广播经 Compatibility.startService
-  以 startForegroundService 拉起 XmppConnectionService，升前台时按
-  权限选 MICROPHONE/CAMERA 类型，命中 Android 15「BOOT_COMPLETED 不
-  得拉起受限前台服务类型」，异常被 startForegroundOrCatch 吞掉只记
-  日志，服务随后被系统收掉。附设备判定命令与白名单绕法；设备日志
-  签名未取，坐实程度标未验证。

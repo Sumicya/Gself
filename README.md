@@ -12,7 +12,7 @@ fcmself（推送修复）、GooglePasswordManagerUnlock（通行密钥解限）�
 
 ## 功能
 
-- **system**：补 `FLAG_INCLUDE_STOPPED_PACKAGES` 唤醒已停止应用；忽略「包变化」类通知取消；放开 ColorOS 后台限制
+- **system**：补 `FLAG_INCLUDE_STOPPED_PACKAGES` 唤醒已停止应用；忽略「包变化」类通知取消；放开 ColorOS 后台限制，并在 Battery 隐藏 Google 联网开关的机型上拦截开机解锁后的 Google 禁网规则
 - **com.google.android.gms**：移除 Google 密码管理器的「特权浏览器允许列表」检查，非 Chrome 也能用通行密钥
 - **com.google.android.inputmethod.latin**：改写 Gboard 剪贴板显示个数（10）与过期（实际不限时长）
 

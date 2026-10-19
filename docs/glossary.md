@@ -23,7 +23,7 @@
 
 | 术语 | 含义 |
 | --- | --- |
-| 推送族（push family） | action 里含 `c2dm` 或 `firebase` 的广播，即 FCM 及其变体；本模块唯一的介入判据 |
+| 推送族（push family） | action 里含 `c2dm` 或 `firebase` 的广播，即 FCM 及其变体；推送唤醒 Hook 唯一的介入判据 |
 | 定向推送 | 带明确目标包名的推送广播（显式 component 或 `package`），`Push.isTargeted` 的判据 |
 | `FLAG_INCLUDE_STOPPED_PACKAGES` | Android 的广播标志：置位后可以唤醒处于停止态的应用；原生系统发推送会带，GMS 常常不带 |
 | 停止态（stopped） | `am force-stop` 之后的 `stopped=true` 状态，不带上述标志的广播收不到 |
