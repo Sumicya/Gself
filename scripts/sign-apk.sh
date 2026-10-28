@@ -5,7 +5,7 @@
 # 用途: 让多次出包共用同一个签名证书，可以覆盖安装，不必每次卸载再装。
 #
 # 用法:
-#   ./scripts/sign-apk.sh <apk> [输出.apk]
+#   ./tools/sign-apk.sh <apk> [输出.apk]
 #
 # 依赖（Termux 包，已核实存在）:
 #   apksigner  —— Android build-tools 的 apksigner.jar 包装，依赖 openjdk-21

@@ -2,6 +2,19 @@
 
 按规范 S4 从 CHANGELOG.md 移出的较早条目，原文未改。
 
+## 并入 main 并行线并给图标加 Monet 单色层（2026-10-15）
+
+- 按主人指示将 main 的 8 个提交（所有者并行落地：删 AGENTS/spec-
+  check/android.yml、自建 build/pr-check）整体并入本分支（合并提交
+  9596c51，共同祖先 d2bf70a）。冲突只在 build.yml、pr-check.yml 两
+  文件，按现行规范（selfs 12b0bff）取本侧：单脚本 cleanup.py、全仓
+  artifact 最新 5、每工作流 run 硬上限 5；main 侧的每序列 KEEP 口径
+  与内联清理被取代，其取号 TZ=UTC-8 与本侧 +08:00 等价。其余文件自
+  动合并，无内容丢失。
+- 图标加 Monet：ic_launcher 与 ic_launcher_round 的 adaptive-icon 各
+  加一层 monochrome（复用现有 foreground 矢量），Android 13+ 主题图
+  标随壁纸取色；原图标仍是模板机器人图，本次只加单色层不换图。
+
 ## Monocles Chat 重启不恢复：源码侧定位（2026-10-15）
 
 - docs/verify-on-device.md 新增第 11 节：按 Experimental14-v2.3.1
@@ -571,7 +584,7 @@
 - 全部 system_server 侧修复的介入判据仍是同一套「推送族 + 目标明确」（`Push.isTargeted`）
 - 开机后延迟 60 秒才介入；非对应 ROM 的挂载点独立跳过（`hook skip <组名>: <原因>`）
 - CI 结构（零 secrets、test → assembleRelease → assembleDebug → lint → 入口类 dex 校验 → 上传产物）、
-  `scripts/sign-apk.sh`、`docs/build-and-sign-termux.md`
+  `tools/sign-apk.sh`、`docs/build-and-sign-termux.md`
 
 ## 0.9.0（已被 1.0.0 覆盖）
 

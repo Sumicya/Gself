@@ -12,7 +12,7 @@ toybox grep **不支持 `\|` 交替**，多关键字用 `-E`：`grep -hE 'wake|k
 ## 0. 准备
 
 1. 装 CI 产物 `Gself-<版本>.apk`（debug 签名，可直接安装；取法见会话汇报里的下载命令块，
-   artifact 按前缀 `Gself-` 过滤），或用 `scripts/sign-apk.sh` 给自己的包签名后安装。
+   artifact 按前缀 `Gself-` 过滤），或用 `tools/sign-apk.sh` 给自己的包签名后安装。
    平台要求 **Android 16+（API 36）**：低版本会被系统在安装时拒绝
 2. LSPosed 启用模块，作用域勾 `system` + `com.google.android.gms` + Gboard（`scope.list` 已预选）
 3. 重启设备，立刻开始抓日志（system_server 里的 Hook 只能靠重启生效）

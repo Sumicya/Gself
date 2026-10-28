@@ -53,7 +53,7 @@ CI 产物用构建机上的 debug 证书签名。GitHub 托管的构建机是临
 ```bash
 git clone https://github.com/Sumicya/Gself.git
 cd Gself
-./scripts/sign-apk.sh ~/Gself-<版本>.apk        # 首次运行自动生成密钥库并提示设密码
+./tools/sign-apk.sh ~/Gself-<版本>.apk        # 首次运行自动生成密钥库并提示设密码
 ```
 
 脚本做的事看它自己就行（没有密钥库就 `keytool -genkeypair` → `apksigner sign` → `apksigner verify --print-certs`）。
