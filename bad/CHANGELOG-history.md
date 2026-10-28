@@ -584,7 +584,7 @@
 - 全部 system_server 侧修复的介入判据仍是同一套「推送族 + 目标明确」（`Push.isTargeted`）
 - 开机后延迟 60 秒才介入；非对应 ROM 的挂载点独立跳过（`hook skip <组名>: <原因>`）
 - CI 结构（零 secrets、test → assembleRelease → assembleDebug → lint → 入口类 dex 校验 → 上传产物）、
-  `tools/sign-apk.sh`、`docs/build-and-sign-termux.md`
+  `scripts/sign-apk.sh`、`docs/build-and-sign-termux.md`
 
 ## 0.9.0（已被 1.0.0 覆盖）
 

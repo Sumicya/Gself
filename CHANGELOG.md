@@ -3,6 +3,7 @@
 - 号源从 git rev-list 提交数改为 github.run_number 原值，当日序号按差值锚定（当日现存运行最小 run_number 与现存合规产物反推值取小），取号打印 HEAD SHA、run_id、run_number、R_first、当日序号与最终版本，取不到即退出。
 - 清理从 build job 内步骤拆为 cleanup-artifacts（needs: build + if: always()）与 cleanup-releases（再加默认分支条件）两个独立 job，build job 收回 actions: write；pr-check 的清理 job 改名 cleanup-artifacts 且不写 needs；cleanup.py 换全仓统一接口（GH_TOKEN/REPO/RUN_ID/SEGMENTS/CLEANUP_APPLY/CLEANUP_SCOPE）。
 - checkout 去掉 fetch-depth:0（浅克隆即可）；步骤名统一中文短语；删除 GITHUB_STEP_SUMMARY 日志尾巴步骤；scripts/sign-apk.sh 移入 tools/。
+- cleanup.py 项目前缀改为由 REPO 推导：Qself 版写死 `Qself-`，导致 Gself 首个新口径产物 Gself-26.10.28.1.57 上传后被清理 job 以前缀不符删除（#57 三 job 全绿但零产物），修补后 #58 起按 `Gself-` 前缀保留；脚本内 Qself 专属措辞与过期注释同步清理。
 
 ## ColorOS 首次解锁后 GMS 断网保护（2026-10-18）
 
