@@ -1,6 +1,6 @@
 ## 推送唤醒加入命中诊断日志，修正通知取消原因值（2026-10-29）
 
-- 推送唤醒出口入口新增诊断行 `push seen`（action、flags、目标包名），用于判断真机上推送广播是否经过该出口；定位完成后删除。
+- 推送唤醒出口入口新增诊断行 `push seen`（action、flags、目标包名），并在 `ActivityManagerService#broadcastIntentWithFeature` 上加同样的诊断行 `push seen@AMS`，用于判断推送广播是否经过 `BroadcastController#broadcastIntentLocked`；定位完成后删除。
 - 文档与注释里 `REASON_PACKAGE_CHANGED` 的值由 8 改为 5（AOSP `NotificationListenerService` 源码为 5，8 是 `REASON_APP_CANCEL`）。代码引用的是常量，行为不变。
 - 未验证：本次只经过 CI 编译，未在真机运行。
 

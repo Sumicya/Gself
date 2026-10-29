@@ -34,6 +34,18 @@ fun Hook.wakeStoppedApps() {
     val entry = find(classOf(CONTROLLER), "broadcastIntentLocked")
     trace("hook target: ${entry.declaringClass.name}#${entry.name}(${entry.parameterCount})")
 
+    // 诊断（定位后删除）：AMS 入口也打点。若这里有 push seen@AMS 而 BroadcastController 那行没有，说明 ROM 绕过了该重载。
+    install("推送入口诊断") {
+        hook(find(classOf("com.android.server.am.ActivityManagerService"), "broadcastIntentWithFeature")) { chain ->
+            val intent = chain.args.filterIsInstance<Intent>().firstOrNull()
+            if (intent != null && Push.isPush(intent.action)) {
+                trace("push seen@AMS: ${intent.action} flags=0x${Integer.toHexString(intent.flags)} target=${Push.targetOf(intent)}")
+            }
+            chain.proceed()
+        }
+        trace("push seen@AMS 诊断挂点已安装")
+    }
+
     hook(entry) { chain ->
         // 签名里只有一个 Intent 参数，按类型取即可，ROM 在前后插参数都不影响
         val intent = chain.args.filterIsInstance<Intent>().firstOrNull()

@@ -59,7 +59,8 @@ hook skip 推送唤醒: java.lang.NoSuchMethodError: …#broadcastIntentLocked
 > **诊断行（2026-10-29 诊断版起，定位后删除）**：每条推送广播进入出口都先打一行
 > `push seen: <action> flags=0x… target=<包名>`，不论是否命中。判读：
 > - 有 `push seen`、没有 `wake:`：广播到了出口，但判据没放行——看 `target=` 是否为空，或 `flags` 是否已带 `0x20`（INCLUDE_STOPPED）。
-> - 没有 `push seen`：这条推送没经过 `broadcastIntentLocked` 这个重载，挂载点选错或 ROM 走了别的路径。
+> - 没有 `push seen`，但有 `push seen@AMS`：推送经过了 AMS 入口，却没经过 `BroadcastController#broadcastIntentLocked`，ROM 绕过了该重载。
+> - 两条都没有：推送没有进入 AMS 的 `broadcastIntentWithFeature`。
 
 > **冻结 ≠ 停止**：ColorOS 上从最近任务划掉通常只是**冻结**（`ps -A | grep <包名>` 见
 > `do_freezer_trap`、`stopped=false`），这种状态广播本来就能投递。只有 `stopped=true` 才走本节这条路。
