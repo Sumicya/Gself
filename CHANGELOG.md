@@ -1,3 +1,10 @@
+## 推送唤醒补标志挂到 AMS 入口，并保留诊断行（2026-10-30）
+
+- 推送唤醒补 `FLAG_INCLUDE_STOPPED_PACKAGES` 的主挂点改为 `ActivityManagerService#broadcastIntentWithFeature`：真机日志显示推送广播经此进入，`BroadcastController#broadcastIntentLocked` 在本机从未命中。`BroadcastController` 出口保留同一判据，任一处先到即补，后到者直接跳过。
+- 新增诊断行 `push seen@AMS`，`wake:` 行追加挂点名（AMS 或 BroadcastController）；定位完成后删除诊断行。
+- `build.yml` 的 `push` 补上规范 C2 要求的 `paths-ignore` 名单（`**.md`、`docs/**`、`bad/**`、`LICENSE`、`.gitignore`）：纯文档推送不再占用 `run_number`、不出包。
+- 未验证：本次只经过 CI 编译，未在真机运行补标志后的投递结果。
+
 ## 推送唤醒加入命中诊断日志，修正通知取消原因值（2026-10-29）
 
 - 推送唤醒出口入口新增诊断行 `push seen`（action、flags、目标包名），并在 `ActivityManagerService#broadcastIntentWithFeature` 上加同样的诊断行 `push seen@AMS`，用于判断推送广播是否经过 `BroadcastController#broadcastIntentLocked`；定位完成后删除。
@@ -22,12 +29,3 @@
 - `build.yml` 取号命令由 `TZ=Asia/Shanghai date` 改为 `date -u -d '+8 hours'`（V1）。
 - README 删除第 3 行 Build 徽章；`## 功能（按进程分发）` 改名为 `## 功能` 并移到 `## 要求` 之后（S1）。
 - 同一提交更新本变更记录（S4）。
-
-## 规范同步 —— 按 selfs 最新规范整理 README 与变更记录（2026-10-16）
-
-- 依据 selfs `GLOBAL.md` 最新规范提交 `662e72d8256728d08f4cefde672b27bf58b0428b`（按「仓库类型」表属有产物仓）。
-- README 末行补规范指针（S1）。
-- CHANGELOG 只留最新 5 条（S4），较早 31 条原样移入 `bad/CHANGELOG-history.md`。
-- 源码与文档里「GLOBAL.md 第十七版」的注释和术语表条目改为「项目约定」：规范已不带版次，「只做新包」本身是本项目的约定，内容不变；`build.yml` 头注释改指现行条文名。均为注释与文档，未改功能代码，未改清理脚本与工作流逻辑。
-- 未验证：本次没有在 GitHub Actions 上运行；注释改动不影响编译，但没有本地构建。
-

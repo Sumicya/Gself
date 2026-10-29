@@ -56,11 +56,15 @@ hook skip 推送唤醒: java.lang.NoSuchMethodError: …#broadcastIntentLocked
 不是额外发一条广播。）ColorOS 上同一时刻还会走一次 `unfreezeIfNeed`，成功只在**第一次**打
 `unfreeze 可用（N 参签名）`，之后静默。
 
-> **诊断行（2026-10-29 诊断版起，定位后删除）**：每条推送广播进入出口都先打一行
-> `push seen: <action> flags=0x… target=<包名>`，不论是否命中。判读：
-> - 有 `push seen`、没有 `wake:`：广播到了出口，但判据没放行——看 `target=` 是否为空，或 `flags` 是否已带 `0x20`（INCLUDE_STOPPED）。
-> - 没有 `push seen`，但有 `push seen@AMS`：推送经过了 AMS 入口，却没经过 `BroadcastController#broadcastIntentLocked`，ROM 绕过了该重载。
-> - 两条都没有：推送没有进入 AMS 的 `broadcastIntentWithFeature`。
+> **诊断行（定位后删除）**：推送广播进入 AMS 入口与 BroadcastController 出口时各打一行。
+> - `push seen@AMS: <action> flags=0x… target=<包名>`：进入 `ActivityManagerService#broadcastIntentWithFeature`，补标志的主挂点。
+> - `push seen: <action> flags=0x… target=<包名>`：进入 `BroadcastController#broadcastIntentLocked`。
+>
+> 2026-10-30 真机证据：只有 `push seen@AMS`，没有 `push seen`，即 ROM 上推送不经过 `BroadcastController#broadcastIntentLocked` 这个重载。
+> 补标志因此挂到 AMS 入口，两处共用同一判据。判读：
+> - 有 `push seen@AMS` 与 `wake: <包名>（AMS）`：补标志已生效，继续看 GMS 是否还回调 `CANCELLED`。
+> - 有 `push seen@AMS`，没有 `wake:`：`target=` 为空，或 `flags` 已带 `0x20`（INCLUDE_STOPPED）。
+> - 没有 `push seen@AMS`：推送没有进入 AMS 的 `broadcastIntentWithFeature`。
 
 > **冻结 ≠ 停止**：ColorOS 上从最近任务划掉通常只是**冻结**（`ps -A | grep <包名>` 见
 > `do_freezer_trap`、`stopped=false`），这种状态广播本来就能投递。只有 `stopped=true` 才走本节这条路。

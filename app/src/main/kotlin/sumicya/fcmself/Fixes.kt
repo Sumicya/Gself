@@ -34,16 +34,19 @@ fun Hook.wakeStoppedApps() {
     val entry = find(classOf(CONTROLLER), "broadcastIntentLocked")
     trace("hook target: ${entry.declaringClass.name}#${entry.name}(${entry.parameterCount})")
 
-    // 诊断（定位后删除）：AMS 入口也打点。若这里有 push seen@AMS 而 BroadcastController 那行没有，说明 ROM 绕过了该重载。
-    install("推送入口诊断") {
+    // 入口一：AMS#broadcastIntentWithFeature。真机日志证明推送广播必经此处（push seen@AMS），
+    // 而 BroadcastController 的重载在本机从未命中，所以补标志的主挂点放在这里。
+    install("推送入口（AMS）") {
         hook(find(classOf("com.android.server.am.ActivityManagerService"), "broadcastIntentWithFeature")) { chain ->
+            // 签名里只有一个 Intent 参数，按类型取即可，ROM 在前后插参数都不影响
             val intent = chain.args.filterIsInstance<Intent>().firstOrNull()
+            // 诊断（定位后删除）：进入 AMS 的推送广播一律记一行，用来确认命中。
             if (intent != null && Push.isPush(intent.action)) {
                 trace("push seen@AMS: ${intent.action} flags=0x${Integer.toHexString(intent.flags)} target=${Push.targetOf(intent)}")
             }
+            wakeIfPush("AMS", intent)
             chain.proceed()
         }
-        trace("push seen@AMS 诊断挂点已安装")
     }
 
     hook(entry) { chain ->
@@ -53,14 +56,21 @@ fun Hook.wakeStoppedApps() {
         if (intent != null && Push.isPush(intent.action)) {
             trace("push seen: ${intent.action} flags=0x${Integer.toHexString(intent.flags)} target=${Push.targetOf(intent)}")
         }
-        if (intent != null && Push.isTargeted(intent) && !intent.wakesStoppedApps()) {
-            intent.addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES)
-            val target = Push.targetOf(intent)
-            unfreeze(target)
-            trace("wake: $target")
-        }
+        wakeIfPush("BroadcastController", intent)
         chain.proceed()
     }
+}
+
+/**
+ * 推送广播补 `FLAG_INCLUDE_STOPPED_PACKAGES` 并解冻目标。AMS 入口与 BroadcastController 出口共用同一判据：
+ * 任一处先到即补，后到者看到标志已带，直接跳过，不会重复解冻。
+ */
+private fun Hook.wakeIfPush(where: String, intent: Intent?) {
+    if (intent == null || !Push.isTargeted(intent) || intent.wakesStoppedApps()) return
+    intent.addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES)
+    val target = Push.targetOf(intent)
+    unfreeze(target)
+    trace("wake: $target（$where）")
 }
 
 private fun Intent.wakesStoppedApps() = flags and Intent.FLAG_INCLUDE_STOPPED_PACKAGES != 0

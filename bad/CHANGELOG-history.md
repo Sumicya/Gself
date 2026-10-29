@@ -2,6 +2,14 @@
 
 按规范 S4 从 CHANGELOG.md 移出的较早条目，原文未改。
 
+## 规范同步 —— 按 selfs 最新规范整理 README 与变更记录（2026-10-16）
+
+- 依据 selfs `GLOBAL.md` 最新规范提交 `662e72d8256728d08f4cefde672b27bf58b0428b`（按「仓库类型」表属有产物仓）。
+- README 末行补规范指针（S1）。
+- CHANGELOG 只留最新 5 条（S4），较早 31 条原样移入 `bad/CHANGELOG-history.md`。
+- 源码与文档里「GLOBAL.md 第十七版」的注释和术语表条目改为「项目约定」：规范已不带版次，「只做新包」本身是本项目的约定，内容不变；`build.yml` 头注释改指现行条文名。均为注释与文档，未改功能代码，未改清理脚本与工作流逻辑。
+- 未验证：本次没有在 GitHub Actions 上运行；注释改动不影响编译，但没有本地构建。
+
 ## 规范同步 —— selfs 工具清单与外部项目审查规则（2026-10-15）
 
 - 依据 selfs `GLOBAL.md` 最新规范提交 `d7700aee263300cbf2b66f27c03e790ab6949ec3`（[提交链接](https://github.com/Sumicya/selfs/commit/d7700aee263300cbf2b66f27c03e790ab6949ec3)）核对本仓适用范围。
