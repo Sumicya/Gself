@@ -2,6 +2,12 @@
 
 按规范 S4 从 CHANGELOG.md 移出的较早条目，原文未改。
 
+## 规范同步 —— selfs 工具清单与外部项目审查规则（2026-10-15）
+
+- 依据 selfs `GLOBAL.md` 最新规范提交 `d7700aee263300cbf2b66f27c03e790ab6949ec3`（[提交链接](https://github.com/Sumicya/selfs/commit/d7700aee263300cbf2b66f27c03e790ab6949ec3)）核对本仓适用范围。
+- Gself 是 Android Hook 模块，DexSQL 仅在需要对 APK/DEX 做静态检索或排查入口、调用关系时作为可选分析工具；当前 CI 已有 R8 入口类检查，因此本次不新增依赖、不改构建或 Hook 代码，也不表示已安装或运行 DexSQL。
+- 外部项目与 `https://t.me/xinyuanai` 只作为发现线索，不视为安全或质量背书。候选项目须独立核对上游、维护状态、许可证、权限及数据流向后，才可按具体需求引入；未验证内容不得记为已验证。
+- Gself 没有单独复制全局规范，继续以 selfs 最新 `GLOBAL.md` 为准；本条记录项目侧适用性与本次不改代码的决定。
 ## 并入 main 并行线并给图标加 Monet 单色层（2026-10-15）
 
 - 按主人指示将 main 的 8 个提交（所有者并行落地：删 AGENTS/spec-

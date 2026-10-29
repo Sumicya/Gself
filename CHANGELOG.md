@@ -1,3 +1,9 @@
+## 推送唤醒加入命中诊断日志，修正通知取消原因值（2026-10-29）
+
+- 推送唤醒出口入口新增诊断行 `push seen`（action、flags、目标包名），用于判断真机上推送广播是否经过该出口；定位完成后删除。
+- 文档与注释里 `REASON_PACKAGE_CHANGED` 的值由 8 改为 5（AOSP `NotificationListenerService` 源码为 5，8 是 `REASON_APP_CANCEL`）。代码引用的是常量，行为不变。
+- 未验证：本次只经过 CI 编译，未在真机运行。
+
 ## 号源改 run_number 原值并对齐双工作流清理结构（2026-10-28）
 
 - 号源从 git rev-list 提交数改为 github.run_number 原值，当日序号按差值锚定（当日现存运行最小 run_number 与现存合规产物反推值取小），取号打印 HEAD SHA、run_id、run_number、R_first、当日序号与最终版本，取不到即退出。
@@ -25,9 +31,3 @@
 - 源码与文档里「GLOBAL.md 第十七版」的注释和术语表条目改为「项目约定」：规范已不带版次，「只做新包」本身是本项目的约定，内容不变；`build.yml` 头注释改指现行条文名。均为注释与文档，未改功能代码，未改清理脚本与工作流逻辑。
 - 未验证：本次没有在 GitHub Actions 上运行；注释改动不影响编译，但没有本地构建。
 
-## 规范同步 —— selfs 工具清单与外部项目审查规则（2026-10-15）
-
-- 依据 selfs `GLOBAL.md` 最新规范提交 `d7700aee263300cbf2b66f27c03e790ab6949ec3`（[提交链接](https://github.com/Sumicya/selfs/commit/d7700aee263300cbf2b66f27c03e790ab6949ec3)）核对本仓适用范围。
-- Gself 是 Android Hook 模块，DexSQL 仅在需要对 APK/DEX 做静态检索或排查入口、调用关系时作为可选分析工具；当前 CI 已有 R8 入口类检查，因此本次不新增依赖、不改构建或 Hook 代码，也不表示已安装或运行 DexSQL。
-- 外部项目与 `https://t.me/xinyuanai` 只作为发现线索，不视为安全或质量背书。候选项目须独立核对上游、维护状态、许可证、权限及数据流向后，才可按具体需求引入；未验证内容不得记为已验证。
-- Gself 没有单独复制全局规范，继续以 selfs 最新 `GLOBAL.md` 为准；本条记录项目侧适用性与本次不改代码的决定。

@@ -37,6 +37,10 @@ fun Hook.wakeStoppedApps() {
     hook(entry) { chain ->
         // 签名里只有一个 Intent 参数，按类型取即可，ROM 在前后插参数都不影响
         val intent = chain.args.filterIsInstance<Intent>().firstOrNull()
+        // 诊断（定位后删除）：进入本出口的推送广播一律记一行，不论目标与标志，用来判断 Hook 是否被命中。
+        if (intent != null && Push.isPush(intent.action)) {
+            trace("push seen: ${intent.action} flags=0x${Integer.toHexString(intent.flags)} target=${Push.targetOf(intent)}")
+        }
         if (intent != null && Push.isTargeted(intent) && !intent.wakesStoppedApps()) {
             intent.addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES)
             val target = Push.targetOf(intent)
@@ -269,7 +273,7 @@ private val wakelock = AtomicReference<Any?>()
 private var knownUnfreeze: Method? = null
 
 /**
- * 被忽略的通知取消原因：AOSP 的 `REASON_PACKAGE_CHANGED`(8)，
+ * 被忽略的通知取消原因：AOSP 的 `REASON_PACKAGE_CHANGED`(5；8 是 REASON_APP_CANCEL)，
  * 以及 ColorOS 15 / OxygenOS 15 自造的 10020 / 10021。
  */
 private val BLOCKED_REASONS = setOf(NotificationListenerService.REASON_PACKAGE_CHANGED, 10020, 10021)

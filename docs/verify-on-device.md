@@ -56,6 +56,11 @@ hook skip 推送唤醒: java.lang.NoSuchMethodError: …#broadcastIntentLocked
 不是额外发一条广播。）ColorOS 上同一时刻还会走一次 `unfreezeIfNeed`，成功只在**第一次**打
 `unfreeze 可用（N 参签名）`，之后静默。
 
+> **诊断行（2026-10-29 诊断版起，定位后删除）**：每条推送广播进入出口都先打一行
+> `push seen: <action> flags=0x… target=<包名>`，不论是否命中。判读：
+> - 有 `push seen`、没有 `wake:`：广播到了出口，但判据没放行——看 `target=` 是否为空，或 `flags` 是否已带 `0x20`（INCLUDE_STOPPED）。
+> - 没有 `push seen`：这条推送没经过 `broadcastIntentLocked` 这个重载，挂载点选错或 ROM 走了别的路径。
+
 > **冻结 ≠ 停止**：ColorOS 上从最近任务划掉通常只是**冻结**（`ps -A | grep <包名>` 见
 > `do_freezer_trap`、`stopped=false`），这种状态广播本来就能投递。只有 `stopped=true` 才走本节这条路。
 
@@ -101,7 +106,7 @@ Play Integrity 的 `Labels: []` 与这两个 Hook 是否加载没有直接关系
 ## 4. 通知不被自动清理
 
 拦的是 `NotificationManagerService.cancelAllNotificationsInt`，只在取消原因为
-`REASON_PACKAGE_CHANGED`(8) 或 ColorOS 的 10020 / 10021 时忽略这次取消：
+`REASON_PACKAGE_CHANGED`(5) 或 ColorOS 的 10020 / 10021 时忽略这次取消：
 
 ```
 [fcmself] keep notification: <包名>
@@ -289,7 +294,7 @@ LSPosed 日志本身会在模块载入时自动记一行，两条路互相兜底
 - `wake:` + `unfreeze 可用（4 参签名）` 说明**核心链路在 Android 16 / ColorOS 上成立**，
   且「只做新包」的挂载点选择正确（`BroadcastController` 在这台机器上存在）。
 - `keep notification` 打给 `com.termux` / `mark.via` / `devicelockcontroller` 属**设计行为**：
-  拦的是「取消原因为 8 / 10020 / 10021 的整包取消」，对所有包生效、没有白名单；
+  拦的是「取消原因为 5 / 10020 / 10021 的整包取消」，对所有包生效、没有白名单；
   自 26.10.5.1 起日志带原因值（`keep notification: <包名>（reason=10020）`），据此判断是不是误拦——
   这些多是 ColorOS 空闲清理或包变化触发的取消。要判断有没有误拦，按第 6 节第 3 条验。
 - 没有任何 `hook skip`，也没有 `Gboard 剪贴板 Hook 已安装`：Gboard 那组只在 Gboard 被加载过之后才打日志，
