@@ -97,7 +97,7 @@ jobs:
                 f"run_number={run_number} R_first={first} 当日序号={daily} 版本={version}")
           with open(os.environ["GITHUB_ENV"], "a") as env:
               env.write(f"VERSION_NAME={version}\nVERSION_CODE={run_number}\n")
-PY
+          PY
           then
             echo "::error::取号脚本失败：$(tr '\n' ' ' < ver.err | head -c 300)"
             exit 1
