@@ -1,3 +1,11 @@
+## 许可证换 GPL-3 全文、补项目限制与随包许可（2026-10-30）
+
+- `LICENSE` 由自写的 569 字节说明换成 GPL-3.0 全文（35149 字节，与 Qself 同源），GitHub 不再显示 `NOASSERTION`；「为什么用 GPL-3」与三个上游归属写进 README「许可证」章，不写进 `LICENSE`。
+- APK 随包附同一份全文（`app/src/main/assets/LICENSE`），对应 GPL-3 §4「二进制发布随附许可全文」；本模块没有界面，§5(d) 的「可点的关于页」无法提供，以 README 许可证章 + 随包 `LICENSE` 呈现，写明若将来加界面再补入口。
+- README 新增「项目限制」：不支持锁 bootloader 的 User Product、只在 Android 16 + ColorOS 真机验证、无界面无配置、DexKit 两组功能可能因宿主改版失效。构建章补「产物 ↔ 对应源码」的查法（artifact 第五段 = `run_number`）。
+- `README` 功能章按两层挂载改写推送一条，原「补 `FLAG_INCLUDE_STOPPED_PACKAGES`」不再完整。
+- 未验证：`assets/LICENSE` 是否被完整打进 APK 由 CI 的「打印产物体积构成」步骤体现，本轮未装机核对。
+
 ## 模块安装包瘦身：只留 arm64 与压缩 .so（2026-10-30）
 
 - 起因：用户只要收消息，却看到一个近 1 MB 的模块。资源目录只有 17 KB 矢量图，业务代码不足 30 KB，体积不在我们写的代码上。
@@ -33,8 +41,3 @@
 - 清理从 build job 内步骤拆为 cleanup-artifacts（needs: build + if: always()）与 cleanup-releases（再加默认分支条件）两个独立 job，build job 收回 actions: write；pr-check 的清理 job 改名 cleanup-artifacts 且不写 needs；cleanup.py 换全仓统一接口（GH_TOKEN/REPO/RUN_ID/SEGMENTS/CLEANUP_APPLY/CLEANUP_SCOPE）。
 - checkout 去掉 fetch-depth:0（浅克隆即可）；步骤名统一中文短语；删除 GITHUB_STEP_SUMMARY 日志尾巴步骤；scripts/sign-apk.sh 移入 tools/。
 - cleanup.py 项目前缀改为由 REPO 推导：Qself 版写死 `Qself-`，导致 Gself 首个新口径产物 Gself-26.10.28.1.57 上传后被清理 job 以前缀不符删除（#57 三 job 全绿但零产物），修补后 #58 起按 `Gself-` 前缀保留；脚本内 Qself 专属措辞与过期注释同步清理。
-
-## ColorOS 首次解锁后 GMS 断网保护（2026-10-18）
-
-- 对应 FCM Diagnostics 的 `ERR_CLOSE_BY_USER_UNLOCKED` / `Close err:30`：在 system_server 中清除 Oplus 的 Google 限制广播，并在 Battery 声明 `IgnoreGmsUserSet=true` 时阻止对 GMS、GSF、Play 商店和 ConfigUpdater 下发拒绝联网规则。放行规则和非 Google UID 不受影响；用户仍可控制联网的 ROM 不覆盖其设置。
-- 新增纯 JVM 策略测试与真机验证说明。当前沙箱没有 JDK，未能本地运行 Gradle；新挂点及 FCM 恢复效果仍待目标 ColorOS 设备验证。
