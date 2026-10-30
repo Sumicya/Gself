@@ -1,3 +1,11 @@
+## 模块安装包瘦身：只留 arm64 与压缩 .so（2026-10-30）
+
+- 起因：用户只要收消息，却看到一个近 1 MB 的模块。资源目录只有 17 KB 矢量图，业务代码不足 30 KB，体积不在我们写的代码上。
+- 定位：`app/build.gradle.kts` 既没有 `abiFilters` 也没有 `packaging` 配置，于是依赖（DexKit）自带的 `armeabi-v7a` / `arm64-v8a` / `x86` / `x86_64` 四份 `libdexkit.so` 全部打进包；同时 AGP 4.2 起 `useLegacyPackaging` 默认 false，`.so` 在 APK 里按 store 存（不压缩、4 KB 对齐），原生库字节一分不少地计入体积。
+- 改动：`defaultConfig.ndk.abiFilters` 只留 `arm64-v8a`（Android 16 设备全部 64 位，模块只在本机跑）；`packaging.jniLibs.useLegacyPackaging = true`，`.so` 改为安装时解压、APK 内 deflate 存储。两项都不删功能，推送唤醒路径无原生依赖。
+- `build.yml` 新增「打印产物体积构成」步骤：打印压缩后/解压后总字节与体积最大的 15 个条目，体积构成在 Actions 日志里可直接核对，不靠自述。
+- 未验证：新包体积以 CI 产物实测为准；`useLegacyPackaging` 下 `System.loadLibrary("dexkit")` 由安装时解压出的库加载，DexKit 两组功能（通行密钥解限、Gboard 剪贴板）仍需真机复测。
+
 ## 推送唤醒改为「语义层 + 标志层」两层，判据抽成纯函数（2026-10-30）
 
 - 新增语义层：Hook `Intent#isExcludingStopped()`，对定向推送答 false。这是 AOSP 判定「要不要排除停止态应用」的唯一枢轴（`IntentResolver.java:729` 取值、`:749` 据此跳过过滤器；`BroadcastSkipPolicy` 无第二处停止态判断），因此不依赖哪个 AMS 重载进来，也不受 ROM 改签名影响。
@@ -28,10 +36,3 @@
 
 - 对应 FCM Diagnostics 的 `ERR_CLOSE_BY_USER_UNLOCKED` / `Close err:30`：在 system_server 中清除 Oplus 的 Google 限制广播，并在 Battery 声明 `IgnoreGmsUserSet=true` 时阻止对 GMS、GSF、Play 商店和 ConfigUpdater 下发拒绝联网规则。放行规则和非 Google UID 不受影响；用户仍可控制联网的 ROM 不覆盖其设置。
 - 新增纯 JVM 策略测试与真机验证说明。当前沙箱没有 JDK，未能本地运行 Gradle；新挂点及 FCM 恢复效果仍待目标 ColorOS 设备验证。
-
-## 规范同步 —— 时区固定偏移与 README 按 S1 调整（2026-10-18）
-
-- 依据 selfs 最新规范提交 `01887e42d21ccb56357b0ebd1bfeba54e6704167`。
-- `build.yml` 取号命令由 `TZ=Asia/Shanghai date` 改为 `date -u -d '+8 hours'`（V1）。
-- README 删除第 3 行 Build 徽章；`## 功能（按进程分发）` 改名为 `## 功能` 并移到 `## 要求` 之后（S1）。
-- 同一提交更新本变更记录（S4）。

@@ -100,6 +100,22 @@ jobs:
           cd ${{ github.workspace }}/app/build/outputs/apk
           mv debug/app-debug.apk debug/Gself-${{ env.VERSION_NAME }}.apk
 
+      - name: 打印产物体积构成
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import glob, zipfile
+          apk = sorted(glob.glob('app/build/outputs/apk/debug/*.apk'))[0]
+          with zipfile.ZipFile(apk) as z:
+              rows = [(i.compress_size, i.file_size, i.filename) for i in z.infolist()]
+          total_c = sum(r[0] for r in rows)
+          total_u = sum(r[1] for r in rows)
+          print(f'{apk}: 压缩后 {total_c} 字节 / 解压 {total_u} 字节，{len(rows)} 个条目')
+          print('压缩后字节    解压字节  条目')
+          for c, u, n in sorted(rows, reverse=True)[:15]:
+              print(f'{c:>10}{u:>12}  {n}')
+          PY
+
       - name: 核对 R8 保留 Xposed 入口类
         shell: bash
         run: |

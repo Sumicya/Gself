@@ -20,6 +20,12 @@ android {
         val buildNumber = providers.gradleProperty("versionCode").orNull?.toIntOrNull() ?: 1
         versionName = providers.gradleProperty("versionName").orNull ?: "dev-$buildNumber"
         versionCode = buildNumber
+
+        // LSPosed 模块只在本机跑，不需要全 ABI 包：Android 16（API 36）设备全部是 64 位。
+        // 依赖（DexKit）自带 armeabi-v7a / arm64-v8a / x86 / x86_64 四份 .so，只留本机这一份。
+        ndk {
+            abiFilters += "arm64-v8a"
+        }
     }
 
     buildTypes {
@@ -30,6 +36,14 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+    }
+
+    // .so 默认不经压缩（AGP 4.2 起 useLegacyPackaging=false，为了安装后能直接 mmap），
+    // 对靠安装包体积说话的场景是纯亏：改成安装时解压，APK 里按 deflate 存。
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
         }
     }
 

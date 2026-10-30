@@ -1,5 +1,12 @@
 # CHANGELOG 历史
 
+## 规范同步 —— 时区固定偏移与 README 按 S1 调整（2026-10-18）
+
+- 依据 selfs 最新规范提交 `01887e42d21ccb56357b0ebd1bfeba54e6704167`。
+- `build.yml` 取号命令由 `TZ=Asia/Shanghai date` 改为 `date -u -d '+8 hours'`（V1）。
+- README 删除第 3 行 Build 徽章；`## 功能（按进程分发）` 改名为 `## 功能` 并移到 `## 要求` 之后（S1）。
+- 同一提交更新本变更记录（S4）。
+
 按规范 S4 从 CHANGELOG.md 移出的较早条目，原文未改。
 
 ## 规范同步 —— 按 selfs 最新规范整理 README 与变更记录（2026-10-16）
