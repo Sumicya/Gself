@@ -1,15 +1,15 @@
-## 推送唤醒补标志挂到 AMS 全部广播入口（2026-10-30）
+## 推送唤醒改为「语义层 + 标志层」两层，判据抽成纯函数（2026-10-30）
 
-- 推送唤醒补 `FLAG_INCLUDE_STOPPED_PACKAGES` 的挂点改为 `ActivityManagerService` 上所有带 `Intent` 参数的 `broadcastIntent` / `broadcastIntentWithFeature` / `broadcastIntentLocked` 重载，按名字全部挂上，不再只挂参数最多的一个。
-- 移除 `BroadcastController#broadcastIntentLocked` 挂点：真机 `push seen` 从未命中（推断为 ColorOS 上被内联，未证实）；它原在 2026-10-05 的日志里出现过 `wake:`。
-- 真机验收（2026-10-30 12:39，nagramx）：`am force-stop` 后由 GMS 的 c2dm 广播以新 pid 拉起，`wake:` 两处命中，GMS 侧 `CANCELLED` 计数 0，通知入队；推送广播从 `AMS#broadcastIntentWithFeature` 进入。
-- 真机对照（shell 广播，仅有无 `--include-stopped-packages`）：不带 `0x20` 不投递（进程未启动），带 `0x20` 投递成功（进程启动）。
-- ColorOS services.jar 反汇编（标准库解析 dex，`/tmp`，未入库）：AMS 广播入口与 `BroadcastController` 的调用关系已核对；停止应用过滤读取 `Intent.isExcludingStopped()`，ColorOS 另有 `IStaticExt.onIsFilterStopped` 扩展（只对系统包且带 `ForbidStop` 元数据生效，不构成第三方应用的闸门）。
-- 定位完成后删除诊断行 `push seen@AMS`；`wake:` 行保留挂点名（如 `AMS#broadcastIntentWithFeature`），仍能定位命中的入口。
-- 精简与重构：广播入口重载查找抽成 `intentOverloads`，推送唤醒与 ColorOS 受限广播两组共用；`unfreeze` 去掉候选列表循环，改为「缓存签名 → 调用 → 首次成功记一行」；`googleRestrictionBroadcastFix` 去掉 `hooked` 标志与 `check`；`XposedMain` 去掉与组内 `install` 重复的外层包裹。
-- 修正过期口径：`app/build.gradle.kts` 与 `gradle.properties` 的号源注释由「git 提交数」改为 `run_number`，`docs/glossary.md` 的挂载点示例、总序号、当日序号、非发行版本、滚动清理各行按现行实现重写，`docs/verify-on-device.md` 第 7 节的版本口径、第 2 节的诊断行说明、第 1 节与第 8 节的挂点与日志示例同步；`cleanup.py` 注释里的 `concurrency` group 由 `qself-cleanup` 改为 `gself-cleanup`。通知取消原因注释里的「恰好等于 8」改为现行的 5 / 10020 / 10021。
-- `build.yml` 的 `push` 补上规范 C2 要求的 `paths-ignore` 名单（`**.md`、`docs/**`、`bad/**`、`LICENSE`、`.gitignore`）：纯文档推送不再占用 `run_number`、不出包。
-- 未验证：本轮精简与诊断行删除只经过 CI 编译，未在真机复测；`unfreeze` 重构后的行为与重构前一致（同一 4 参签名、同一日志时机）属代码推断。
+- 新增语义层：Hook `Intent#isExcludingStopped()`，对定向推送答 false。这是 AOSP 判定「要不要排除停止态应用」的唯一枢轴（`IntentResolver.java:729` 取值、`:749` 据此跳过过滤器；`BroadcastSkipPolicy` 无第二处停止态判断），因此不依赖哪个 AMS 重载进来，也不受 ROM 改签名影响。
+- 保留标志层：在 `ActivityManagerService` 所有带 `Intent` 参数的 `broadcastIntent` / `broadcastIntentWithFeature` / `broadcastIntentLocked` 重载上补 `FLAG_INCLUDE_STOPPED_PACKAGES`。补标志必须赶在 `BroadcastController#broadcastIntentLocked` 复制 intent（`:896`）之前，因为系统随后给副本补 `FLAG_EXCLUDE_STOPPED_PACKAGES`（`:922`，原文「By default broadcasts do not go to stopped apps」）；这正是此前挂在 BC 从不命中的同一处机制。
+- 判据抽成纯函数 `Push.needsStoppedPatch(action, target, flags)`：两个挂载点只拆 `Intent`，判据表（推送族、定向、已带 `0x20` 不重复补）由 JVM 单测覆盖，补了「已带标志不再补」「无目标不动」「非推送零介入」三条。
+- 新增两层自证日志：`决策入口兜底：<包名>（… 未带 0x20，第 N 次）` 表示标志层漏了这条、语义层兜住，同时是「还有没挂上的 AMS 入口」的信号；`停止态决策未被调用：3 条推送已补标志…` 表示枢轴没被调用（可能被内联）。前 3 次逐条、之后每 100 次一条，不刷屏。
+- 删除诊断行 `push seen@AMS`（定位已完成），`wake:` 保留挂点名；`XposedMain` 去掉与组内 `install` 重复的外层包裹；广播重载查找抽成 `intentOverloads` 供两层与 ColorOS 受限广播共用；`unfreeze` 去掉候选列表循环。
+- 真机验收（2026-10-30 12:39，nagramx，上一版挂点）：`am force-stop` 后由 GMS 的 c2dm 广播以新 pid 拉起，`wake:` 命中，GMS 侧 `CANCELLED` 计数 0，通知入队。
+- 真机对照（shell 广播，仅有无 `--include-stopped-packages`）：不带 `0x20` 不投递，带 `0x20` 投递成功。
+- 文档纠错：通知分组原写「原生 AOSP 不会因包变化取消通知」不成立——`NotificationManagerService#mPackageIntentReceiver` 在包移除 / 禁用时以 `REASON_PACKAGE_CHANGED`(5) 取消（`:2199`、`:2281`）；本模块拦它是故意偏离，代价（卸载 / 禁用后通知可能滞留）与「不在此处回调 PackageManager 以免锁序反转」的理由已写进代码注释与 `docs/verify-on-device.md` 第 4 节。同时修正 `app/build.gradle.kts`、`gradle.properties` 的号源注释（run_number），`docs/glossary.md` 6 行过期口径，`docs/verify-on-device.md` 第 1 / 2 / 7 / 8 节的挂点与日志示例，`cleanup.py` 注释里的 `qself-cleanup`。
+- `build.yml` 的 `push` 补上规范 C2 要求的 `paths-ignore` 名单：纯文档推送不再占用 `run_number`、不出包。
+- 未验证：语义层挂点是本轮新增，只经 CI 编译与 JVM 单测，未在真机确认命中；两层在真机上的分工要按 `docs/verify-on-device.md` 第 2 节的三条日志判读。
 
 ## 推送唤醒加入命中诊断日志，修正通知取消原因值（2026-10-29）
 

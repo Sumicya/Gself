@@ -24,8 +24,9 @@
 | 术语 | 含义 |
 | --- | --- |
 | 推送族（push family） | action 里含 `c2dm` 或 `firebase` 的广播，即 FCM 及其变体；推送唤醒 Hook 唯一的介入判据 |
-| 定向推送 | 带明确目标包名的推送广播（显式 component 或 `package`），`Push.isTargeted` 的判据 |
-| `FLAG_INCLUDE_STOPPED_PACKAGES` | Android 的广播标志：置位后可以唤醒处于停止态的应用；原生系统发推送会带，GMS 常常不带 |
+| 定向推送 | 带明确目标包名的推送广播（显式 component 或 `package`），`Push.isTargetedPush` 的判据 |
+| 停止态枢轴 | `Intent.isExcludingStopped()`：停止态过滤只在它为真时生效（AOSP `IntentResolver.java:729`、`:749`）；语义层对定向推送改答 false，标志层给广播补 `0x20`，两层任一成立即可投递 |
+| `FLAG_INCLUDE_STOPPED_PACKAGES` | Android 的广播标志（`0x20`）：置位后可以唤醒处于停止态的应用；原生系统自己发 boot_completed 就带它，GMS 发推送时常常不带 |
 | 停止态（stopped） | `am force-stop` 之后的 `stopped=true` 状态，不带上述标志的广播收不到 |
 | 冻结（frozen） | ColorOS 把后台应用冻住（`do_freezer_trap`），`stopped=false`；从最近任务划掉通常是冻结而不是停止 |
 | 三段归因 | 推送排查的三段：① 服务器 → GMS ② GMS → 应用 ③ 应用 → 通知栏；本模块只管第 ② 段 |

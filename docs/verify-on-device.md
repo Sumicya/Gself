@@ -21,8 +21,10 @@ toybox grep **不支持 `\|` 交替**，多关键字用 `-E`：`grep -hE 'wake|k
 
 ```
 [fcmself] fcmself 载入 system_server（Android 16 / API 36）
-[fcmself] hook active: AMS 广播入口 N 个重载   ← 2026-10-30 起的挂点：ActivityManagerService 上所有带 Intent 参数的
-                                              broadcastIntent / broadcastIntentWithFeature / broadcastIntentLocked 重载；N 随 ROM 而变
+[fcmself] 停止态决策已接管：Intent#isExcludingStopped   ← 语义层：AOSP 判定「要不要排除停止态应用」的唯一枢轴
+[fcmself] hook active: AMS 广播入口 N 个重载            ← 标志层：ActivityManagerService 上所有带 Intent 参数的
+                                                        broadcastIntent / broadcastIntentWithFeature / broadcastIntentLocked
+                                                        重载；N 随 ROM 而变
 [fcmself] OplusProxyWakeLock instance captured        ← 仅 ColorOS
 [fcmself] unfreeze 可用（4 参签名）                    ← 仅 ColorOS，只打一次
 ```
@@ -48,20 +50,38 @@ hook skip 推送入口（AMS）: sumicya.fcmself.Hook$Missing: com.android.serve
 （`dumpsys package <包名> | grep stopped=` 应为 `stopped=true`）。然后推一条 FCM 消息：
 
 ```
-[fcmself] wake: <包名>
+[fcmself] wake: <包名>（AMS#broadcastIntentWithFeature）
 ```
 
 出现这行且通知弹出 = 核心生效。（这是给正在发送的那条广播补 `FLAG_INCLUDE_STOPPED_PACKAGES`，
 不是额外发一条广播。）ColorOS 上同一时刻还会走一次 `unfreezeIfNeed`，成功只在**第一次**打
 `unfreeze 可用（N 参签名）`，之后静默。
 
-`wake:` 后面的括号是命中的入口（如 `AMS#broadcastIntentWithFeature`）。没有 `wake:` 只有三种可能：
-推送没进 AMS 的任何广播入口重载（再查 GMS 出站或 ROM 的其他入口）、`target=` 为空（非定向），
-或原广播已带 `0x20`。
+### 两层挂载与判读
 
-> 2026-10-30 真机证据：GMS 的 c2dm 广播从 `AMS#broadcastIntentWithFeature` 进入，补上 `0x20` 后
-> 应用以新 pid 拉起、GMS 侧 `CANCELLED` 计数 0、通知入队；旧的 `BroadcastController` 挂点从未命中，
-> shell 对照实验（同一广播，仅有无 `--include-stopped-packages`）证明带 `0x20` 才能投递到已停止应用。
+补停止态放行分两层，日志能分辨是哪一层在干活：
+
+| 载入时的行 | 含义 |
+| --- | --- |
+| `停止态决策已接管：Intent#isExcludingStopped` | 语义层挂上：AOSP 判定「要不要排除停止态应用」的唯一枢轴（`IntentResolver.java:729` → `:749`） |
+| `hook active: AMS 广播入口 N 个重载` | 标志层挂上：`ActivityManagerService` 上所有带 `Intent` 参数的广播重载 |
+
+运行期只会出现下面三种之一：
+
+| 运行期行 | 含义 | 该做什么 |
+| --- | --- | --- |
+| `wake: <包名>（AMS#…）`，没有别的 | 标志层补了 `0x20` 并解冻，语义层静默（标志已让枢轴不再排除停止态） | 正常，看通知是否弹出 |
+| `决策入口兜底：<包名>（… 未带 0x20，第 N 次）` | 某条推送没经过已挂的 AMS 重载，由语义层兜住 | 说明还有没挂上的入口，把该行与 `am_proc_start` 时间一起贴回来 |
+| `停止态决策未被调用：3 条推送已补标志，Intent#isExcludingStopped 一次未进（可能被内联）` | 枢轴没被调用 | 只靠标志层在跑；若随后推送仍收不到，再按第 5 节分段查 |
+
+> 为什么补标志要趁早：`BroadcastController#broadcastIntentLocked` 进门前先复制 intent
+> （`BroadcastController.java:896`），再给**副本**补 `FLAG_EXCLUDE_STOPPED_PACKAGES`（`:922`，
+> 原文「By default broadcasts do not go to stopped apps」）。复制之后再改原件已经晚了，所以标志必须
+> 在 AMS 入口补；而语义层直接裁决枢轴，与复制无关。
+
+> **下一步由真机数据决定，不靠猜**：若连续几天只有 `wake:` 行、没有 `决策入口兜底`，且没有出现
+> `停止态决策未被调用`，说明两层里的标志层已覆盖全部入口、语义层只是保险；那时可以考虑只留语义层一层
+> （一次挂载、不再扫 AMS 重载）。反之若出现 `决策入口兜底`，说明标志层漏了入口，必须保留两层。
 
 > **冻结 ≠ 停止**：ColorOS 上从最近任务划掉通常只是**冻结**（`ps -A | grep <包名>` 见
 > `do_freezer_trap`、`stopped=false`），这种状态广播本来就能投递。只有 `stopped=true` 才走本节这条路。
@@ -111,8 +131,13 @@ Play Integrity 的 `Labels: []` 与这两个 Hook 是否加载没有直接关系
 `REASON_PACKAGE_CHANGED`(5) 或 ColorOS 的 10020 / 10021 时忽略这次取消：
 
 ```
-[fcmself] keep notification: <包名>
+[fcmself] keep notification: <包名>（reason=5）
 ```
+
+这是**故意偏离原生**的一处：AOSP 的 `NotificationManagerService#mPackageIntentReceiver` 自己就会在包变化
+（移除、禁用）时以 `REASON_PACKAGE_CHANGED`(5) 取消整包通知（`NotificationManagerService.java:2199`、`:2281`）。
+代价是应用被卸载 / 禁用后，它的通知可能留在栏里，等别的路径（手动清除、渠道删除、用户切换）清掉。
+要不要收窄成「包已删除才放行」，先看真机 reason 值：`reason=5` 若总伴随包被卸载，就该收窄。
 
 ## 5. 三段归因
 
@@ -160,7 +185,8 @@ su -c "logcat -d | grep -iE '<包名>|c2dm|Background execution|not delivering|s
 | 编译 + 单测 | **已验证**（CI 持续实跑：`./gradlew test assembleDebug` 全绿，R8 入口类 dex 校验通过）。包含 `PushTest` 与纯策略单测；本轮 ColorOS 新挂点未真机验证。沙箱没有 JDK / Android SDK，编译只能由 CI 完成 |
 | 五段版本（`run_number` 口径）与产物名 | **已验证**（CI 实跑）：Build 取本次 `run_number` 为第五段，持续产出 `Gself-yy.m.d.当日序号.总序号` 并上传同名 artifact |
 | 清理（五判据、每工作流 run 最新 5 条、全仓 artifact 最新 5 个） | **已验证**（CI 实跑）：build.yml 与 pr-check.yml 的 cleanup 步持续执行并输出逐项结论 |
-| system_server 三组 Hook（推送 / 通知 / ColorOS） | **已验证**（2026-10-05 22:13，Android 16 / API 36，ColorOS）：载入、`hook target: BroadcastController#broadcastIntentLocked(25)`、`OplusAppStartup 自启动闸门已关`、`OplusProxyBroadcast 代理已全关`、`Hans GMS 限制已置空`、`OplusProxyWakeLock instance captured`、`keep notification`、`unfreeze 可用（4 参签名）`、`wake: com.zhiliaoapp.musically` 全部出现（日志见第 9 节） |
+| system_server 三组 Hook（推送 / 通知 / ColorOS） | **已验证**（2026-10-05 22:13，Android 16 / API 36，ColorOS）：载入、当时的 `hook target: BroadcastController#broadcastIntentLocked(25)`（该挂点 2026-10-30 已移除，见第 2 节）、`OplusAppStartup 自启动闸门已关`、`OplusProxyBroadcast 代理已全关`、`Hans GMS 限制已置空`、`OplusProxyWakeLock instance captured`、`keep notification`、`unfreeze 可用（4 参签名）`、`wake: com.zhiliaoapp.musically` 全部出现（日志见第 9 节） |
+| 推送唤醒标志层（AMS 入口） | **已验证**（2026-10-30 12:39，ColorOS / Android 16，nagramx）：`am force-stop` 后 `wake:` 命中，进程由 c2dm 广播以新 pid 拉起，GMS 侧 `CANCELLED` 计数 0，通知入队 |
 | ColorOS 首次解锁后的 Google 联网保护 | **代码新增，待真机验证**：按 `IgnoreGmsUserSet` 元数据及 Google appId 窄范围处理拒绝规则，并清除 Oplus 限制广播；新增纯 JVM 策略测试。新挂点是否匹配用户固件、FCM 是否恢复仍须在设备验证 |
 | 只做新包（minSdk 36 / 4 参 unfreeze） | **已验证**（2026-10-05 同一份日志）：Android 16 上 `BroadcastController` 存在并挂上，ColorOS 的 `unfreezeIfNeed` 4 参签名可用。**注**：2026-10-30 起推送挂点改为 AMS 入口（见第 2 节），BroadcastController 挂点在当前构建上不再命中 |
 | GMS 通行密钥解限 | **仅装点已验证**：`通行密钥解限 Hook 已安装` 出现两次（GMS 进程重启过）；「非 Chrome 浏览器能用通行密钥」要实际调一次才知道 |
@@ -168,7 +194,8 @@ su -c "logcat -d | grep -iE '<包名>|c2dm|Background execution|not delivering|s
 | Gself 真机链路 | **已验证**（2026-10-06，OnePlus/ColorOS，`26.10.6.1.128`）：推送唤醒 `wake:` 批量命中（含「长连接断流后重启恢复」场景，见第 10 节）、通知保留 `keep notification` 命中；三组挂载点已在三合一时验过 |
 | 1.0.0 冻结态链路 | 已验通（OnePlus/ColorOS，build `20260926_1edb471`）：载入 / hook 装配 / `shouldProxy bypass` / `No Intercept` / flag / `unfreeze` / `Keep notification` 全命中 |
 | 1.0.0 force-stop 唤醒 | 已验通（2026-09-26，OnePlus/ColorOS，nagramx fork）：`stopped=true` 下推送以新 pid 拉起应用 |
-| 介入判据（`Push.isPush`） | 单测覆盖（`PushTest`）；`isTargeted` 要真 Intent，只能靠真机日志 |
+| 介入判据（`Push.needsStoppedPatch`） | 单测覆盖（`PushTest`）：判据是纯函数（action / 目标包名 / flags），整张表在 JVM 里验 |
+| 语义层 `Intent#isExcludingStopped` | **未真机验证**（2026-10-30 本轮新增）：只经 CI 编译，未在设备上确认该挂点命中；载入日志出现 `停止态决策已接管` 只证明挂上 |
 | 参数按类型/按值识别 | **未验证**：无 JVM 单测（要真 Intent / 真 ROM 类） |
 | release（R8）产物 | **未验证**：CI 只出 debug 包，release 变体只在本地产出、没人装上验过 |
 

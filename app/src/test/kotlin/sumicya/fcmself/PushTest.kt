@@ -5,12 +5,15 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * [Push.isPush] 的唯一一份检查：介入判据是全模块的单一支点，判错了就是「对所有广播放行」
- * 或「一个都不放行」，两种都致命。
+ * 推送判据表的唯一一份检查。介入判据是全模块的单一支点：判错了就是「对所有广播放行」或
+ * 「一个都不放行」，两种都致命。
  *
- * `isTargeted` 要真 `android.content.Intent`，JVM 单测拿不到，由 docs/verify-on-device.md 覆盖。
+ * [Push.needsStoppedPatch] 是纯函数（action / 目标包名 / flags 三个值，不碰 Android 对象），
+ * 所以整张表都能在 JVM 里直接验；挂载点只负责把 `Intent` 拆成这三个值。
  */
 class PushTest {
+
+    private val noFlags = 0x10000000
 
     @Test
     fun acceptsTheWholePushFamily() {
@@ -36,5 +39,43 @@ class PushTest {
         assertFalse(Push.isPush("android.intent.action.BOOT_COMPLETED"))
         assertFalse(Push.isPush("com.example.intent.RECEIVE"))
         assertFalse(Push.isPush("com.google.android.gms.action.RECONNECT"))
+    }
+
+    /** 唯一的介入条件：推送族 + 有目标包名 + 还没带 0x20。 */
+    @Test
+    fun patchesOnlyTargetedPushesWithoutTheFlag() {
+        assertTrue(
+            Push.needsStoppedPatch(
+                "com.google.android.c2dm.intent.RECEIVE",
+                "fork.risin42.nagramx",
+                noFlags,
+            ),
+        )
+    }
+
+    /** 已带 0x20 就不再补：同一条广播经过多个 AMS 重载时只补一次、只解冻一次。 */
+    @Test
+    fun neverPatchesTwice() {
+        assertFalse(
+            Push.needsStoppedPatch(
+                "com.google.android.c2dm.intent.RECEIVE",
+                "fork.risin42.nagramx",
+                noFlags or 0x20,
+            ),
+        )
+    }
+
+    /** 没有目标包名就不动：记不下对象，也无从解冻。 */
+    @Test
+    fun leavesUntargetedBroadcastsAlone() {
+        assertFalse(Push.needsStoppedPatch("com.google.android.c2dm.intent.RECEIVE", null, noFlags))
+        assertFalse(Push.needsStoppedPatch("com.google.android.c2dm.intent.RECEIVE", "", noFlags))
+    }
+
+    /** 非推送族一律零介入，哪怕带目标、哪怕没带标志。 */
+    @Test
+    fun ignoresNonPushBroadcasts() {
+        assertFalse(Push.needsStoppedPatch("android.intent.action.BOOT_COMPLETED", "pkg", noFlags))
+        assertFalse(Push.needsStoppedPatch(null, "pkg", noFlags))
     }
 }
