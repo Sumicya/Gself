@@ -136,26 +136,44 @@ jobs:
         shell: bash
         run: |
           python3 - <<'PY'
-          import glob, sys, zipfile
+          import glob, sys, traceback, zipfile
 
           BUDGET = 360_000  # 体积预算：超出说明有白装打进来了，先看构成再决定，不默默放过
-          apk = sorted(glob.glob('app/build/outputs/apk/debug/*.apk'))[0]
-          with zipfile.ZipFile(apk) as z:
-              infos = z.infolist()
-              entries = {i.filename: len(z.read(i.filename)) for i in infos}
-              classes = sum(v for k, v in entries.items() if k.startswith('classes') and k.endswith('.dex'))
-          total_c = sum(i.compress_size for i in infos)
-          total_u = sum(i.file_size for i in infos)
-          print(f'{apk}: 压缩后 {total_c} 字节 / 解压 {total_u} 字节，{len(infos)} 个条目')
-          print(f'dex 合计 {classes} 字节；ABI 目录 '
-                f'{sorted({n.split("/")[1] for n in entries if n.startswith("lib/")})}')
-          print('压缩后字节    解压字节  条目')
-          for i in sorted(infos, key=lambda x: x.compress_size, reverse=True)[:15]:
-              print(f'{i.compress_size:>10}{i.file_size:>12}  {i.filename}')
-          if total_c > BUDGET:
-              print(f'产物体积 {total_c} 字节超出预算 {BUDGET} 字节')
+
+
+          def annotate(text: str) -> None:
+              # ::error:: 注解在 API 里一行就能取到，不用等 job 日志
+              print("::error::" + text.replace("\n", " ")[:800])
+
+
+          try:
+              apks = sorted(glob.glob('app/build/outputs/apk/debug/*.apk'))
+              if not apks:
+                  annotate('没有找到 APK')
+                  sys.exit(1)
+              apk = apks[0]
+              with zipfile.ZipFile(apk) as z:
+                  infos = z.infolist()
+                  entries = {i.filename: len(z.read(i.filename)) for i in infos}
+              classes = sum(v for k, v in entries.items()
+                            if k.startswith('classes') and k.endswith('.dex'))
+              total_c = sum(i.compress_size for i in infos)
+              total_u = sum(i.file_size for i in infos)
+              abis = sorted({n.split('/')[1] for n in entries if n.startswith('lib/')})
+              print(f'{apk}: 压缩后 {total_c} 字节 / 解压 {total_u} 字节，{len(infos)} 个条目')
+              print(f'dex 合计 {classes} 字节；lib/ 下的 ABI：{abis}')
+              print('压缩后字节    解压字节  条目')
+              for i in sorted(infos, key=lambda x: x.compress_size, reverse=True)[:15]:
+                  print(f'{i.compress_size:>10}{i.file_size:>12}  {i.filename}')
+              if total_c > BUDGET:
+                  annotate(f'产物体积 {total_c} 字节超出预算 {BUDGET} 字节')
+                  sys.exit(1)
+              print(f'体积预算 {BUDGET} 字节，余量 {BUDGET - total_c} 字节')
+          except SystemExit:
+              raise
+          except BaseException:
+              annotate('体积统计异常：' + traceback.format_exc())
               sys.exit(1)
-          print(f'体积预算 {BUDGET} 字节，余量 {BUDGET - total_c} 字节')
           PY
 
       - name: 核对 R8 保留 Xposed 入口类
