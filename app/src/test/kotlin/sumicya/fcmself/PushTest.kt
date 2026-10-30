@@ -1,5 +1,8 @@
 package sumicya.fcmself
 
+import android.content.Intent
+
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -70,6 +73,28 @@ class PushTest {
     fun leavesUntargetedBroadcastsAlone() {
         assertFalse(Push.needsStoppedPatch("com.google.android.c2dm.intent.RECEIVE", null, noFlags))
         assertFalse(Push.needsStoppedPatch("com.google.android.c2dm.intent.RECEIVE", "", noFlags))
+    }
+
+    /**
+     * 语义层快路的等价性：只有在原生答案本来就是 true 时才接管。
+     *
+     * 真值表来自 AOSP `Intent.java:10023`——`(flags & (0x10 | 0x20)) == 0x10`。
+     * 早退分支返回 `proceed()`，与原方法返回值逐位相同，所以这不改变任何非推送 intent 的结果。
+     */
+    @Test
+    fun matchesAospExclusionTruthTable() {
+        assertFalse(Push.excludesStopped(0))
+        assertTrue(Push.excludesStopped(0x10))
+        assertFalse(Push.excludesStopped(0x20))
+        assertFalse(Push.excludesStopped(0x30))
+        assertTrue(Push.excludesStopped(0x10 or 0x10000000))
+    }
+
+    /** 挂载点与判据都直接用 `android.content.Intent` 的常量；这两个值来自 AOSP `Intent.java:7192` / `:7203`。 */
+    @Test
+    fun flagConstantsKeepTheirAospValues() {
+        assertEquals(0x10, Intent.FLAG_EXCLUDE_STOPPED_PACKAGES)
+        assertEquals(0x20, Intent.FLAG_INCLUDE_STOPPED_PACKAGES)
     }
 
     /** 非推送族一律零介入，哪怕带目标、哪怕没带标志。 */

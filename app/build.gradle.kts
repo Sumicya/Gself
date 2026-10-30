@@ -39,6 +39,21 @@ android {
         }
     }
 
+    // 打包时剔掉运行期用不到的随包资源：Kotlin 的 .kotlin_builtins / .kotlin_module 只服务编译器与
+    // 反射库（本模块不用 kotlin-reflect），协程调试探针、依赖的 build 元数据同理。
+    // 注意别动 META-INF/xposed/**：那是 LSPosed 读的 module.prop / java_init.list / scope.list。
+    packaging {
+        resources {
+            excludes += setOf(
+                "kotlin/**",
+                "META-INF/*.kotlin_module",
+                "META-INF/*.version",
+                "META-INF/com/**",
+                "DebugProbesKt.bin",
+            )
+        }
+    }
+
     // .so 默认不经压缩（AGP 4.2 起 useLegacyPackaging=false，为了安装后能直接 mmap），
     // 对靠安装包体积说话的场景是纯亏：改成安装时解压，APK 里按 deflate 存。
     packaging {

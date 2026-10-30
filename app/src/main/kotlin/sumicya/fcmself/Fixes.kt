@@ -58,6 +58,9 @@ private val decisionHits = AtomicInteger()
 private fun Hook.stoppedFilterDecision() {
     hook(find(Intent::class.java, "isExcludingStopped")) { chain ->
         val intent = chain.thisObject as? Intent ?: return@hook chain.proceed()
+        // 快路：原生答案本来就是 false（没带 EXCLUDE，或已带 INCLUDE）时直接放行——
+        // proceed() 的返回值与「返回 false」完全相同，省掉后面的字符串判据。绝大多数解析走这里。
+        if (!Push.excludesStopped(intent.flags)) return@hook chain.proceed()
         if (!Push.isTargetedPush(intent)) return@hook chain.proceed()
         val hits = decisionHits.incrementAndGet()
         // 只在标志层漏了这条时出声：前 3 次逐条记，之后每 100 次记一次，避免洪水
@@ -75,9 +78,12 @@ private fun Hook.broadcastEntryFlags() {
     var hooked = 0
     for (name in BROADCAST_ENTRIES) {
         for (m in intentOverloads(ams, name)) {
+            // Intent 的下标在装挂载点时就定下来（按类型算，ROM 在前后插参数都不影响），
+            // 运行期直接按下标取：`filterIsInstance` 每次调用都会新建一个 ArrayList，
+            // 而这里每次系统广播都会进来一次，白分配。
+            val intentIndex = m.parameterTypes.indexOfFirst { it == Intent::class.java }
             hook(m) { chain ->
-                // 签名里只有一个 Intent 参数，按类型认，ROM 在前后插参数都不影响
-                chain.args.filterIsInstance<Intent>().firstOrNull()?.let { waken(it, "AMS#$name") }
+                (chain.args.getOrNull(intentIndex) as? Intent)?.let { waken(it, "AMS#$name") }
                 chain.proceed()
             }
             hooked++
@@ -96,8 +102,9 @@ private fun intentOverloads(clazz: Class<*>, name: String): List<Method> =
 
 /** 补 `FLAG_INCLUDE_STOPPED_PACKAGES` 并解冻目标；判据全在 [Push.needsStoppedPatch]，这里只执行。 */
 private fun waken(intent: Intent, where: String) {
-    if (!Push.needsStoppedPatch(intent)) return
+    // 目标包名只查一次：判据与日志共用，不为了「可读」多走一遍 component / package 取值
     val target = Push.targetOf(intent) ?: return
+    if (!Push.needsStoppedPatch(intent.action, target, intent.flags)) return
     intent.addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES)
     if (patchedPushes.incrementAndGet() == 3 && decisionHits.get() == 0) {
         trace("停止态决策未被调用：3 条推送已补标志，Intent#isExcludingStopped 一次未进（可能被内联）")
@@ -129,10 +136,18 @@ fun Hook.notificationFixes() {
             //             而 reason 是唯一取值落在这三个数里的 int。代价是别的 int 参数恰好等于 5 / 10020 / 10021 时
             //             会误拦一次取消（只影响「通知没被清掉」，不影响投递）。
             //             日志里带上命中的 reason 值：真机日志按值判定误拦（例如出现 reason=5 却并非包变化）。
-            val reason = chain.args.filterIsInstance<Int>().firstOrNull { it in BLOCKED_REASONS }
-                ?: return@hook chain.proceed()
-            val pkg = chain.args.filterIsInstance<String>().firstOrNull()
-            trace("keep notification: $pkg（reason=$reason）")
+            // 一次遍历取「第一个落在拦截集合里的 int」与「第一个 String」，不建列表：
+            // 这条 Hook 每次整包取消都会进来，而 `filterIsInstance` 每次都要新建 ArrayList。
+            var reason: Int? = null
+            var pkg: String? = null
+            for (i in chain.args.indices) {
+                when (val arg = chain.args[i]) {
+                    is Int -> if (reason == null && arg in BLOCKED_REASONS) reason = arg
+                    is String -> if (pkg == null) pkg = arg
+                }
+            }
+            val hit = reason ?: return@hook chain.proceed()
+            trace("keep notification: $pkg（reason=$hit）")
             null
         }
     }
@@ -235,8 +250,9 @@ private fun Hook.googleRestrictionBroadcastFix() {
         if (targets.isEmpty()) continue
 
         for (target in targets) {
+            val intentIndex = target.parameterTypes.indexOfFirst { it == Intent::class.java }
             hook(target) { chain ->
-                val intent = chain.args.filterIsInstance<Intent>().firstOrNull()
+                val intent = chain.args.getOrNull(intentIndex) as? Intent
                 if (intent?.action == GOOGLE_RESTRICT_CHANGE &&
                     intent.getBooleanExtra(EXTRA_RESTRICT_ENABLE, false)
                 ) {

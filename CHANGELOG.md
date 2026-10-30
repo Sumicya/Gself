@@ -1,3 +1,13 @@
+## 推送热路径零分配、打包去白装并加体积预算闸门（2026-10-30）
+
+- 语义层快路：`Intent#isExcludingStopped` 每次 intent 解析都会进来，先只做一次掩码比较——只有原生答案本来是 true（带 `0x10` 且不带 `0x20`）才继续走字符串判据，其余直接 `proceed()`。返回值与原方法逐位相同（AOSP `Intent.java:10023`），单测用真值表钉住。
+- 挂载点去分配：AMS 广播入口与 ColorOS 受限广播两处，`Intent` 的实参下标在装挂载点时按类型算好（`ActivityManagerService.java:14391`/`:14402`、`BroadcastController.java:710` 的单 `Intent` 参数签名），运行期 `chain.args[idx]` 直取；`filterIsInstance` 每次调用都会新建一个 ArrayList，而这里每次系统广播都要进来一次。通知 Hook 原来两次 `filterIsInstance` 也改成一次索引遍历。
+- 判据去分配：`Push.isPush` 从「列表 + `any` + lambda」展开成两次 `String.contains`；`waken` 只取一次目标包名（原来判据与日志各取一次）；`Push.needsStoppedPatch` 按代价排序（位运算 → `contains` → 目标包名）。
+- 单测新增两条：`excludesStopped` 的真值表（4 种 flags 组合 + 带高位标志），以及 `Intent.FLAG_EXCLUDE_STOPPED_PACKAGES == 0x10` / `FLAG_INCLUDE_STOPPED_PACKAGES == 0x20` 的常量守卫（值漂了单元测试当场红，而不是真机静默失效）。
+- 体积：`packaging.resources.excludes` 剔掉 `kotlin/**`、`META-INF/*.kotlin_module`、`META-INF/*.version`、`META-INF/com/**`、`DebugProbesKt.bin`（运行期不需要：模块不用 kotlin-reflect）；`proguard-rules.pro` 加 `-allowaccessmodification`（本模块没有对外 API，唯一的对外名字已由 `-keepnames` 保住）。
+- CI 新增体积预算闸门：`打印产物体积构成并校验体积预算` 步骤打印压缩后/解压后总量、dex 合计字节、`lib/` 下的 ABI 目录与前 15 大条目，并在压缩后总字节超过 360,000 时让构建失败——体积回归不再靠人盯。
+- 未验证：真机运行期耗时没有仪器可测（沙箱无设备），本轮用「每次调用是否分配对象」与「快路指令数」作为可核对的替代指标；新包体积以 CI artifact `size_in_bytes` 实测为准。
+
 ## 许可证换 GPL-3 全文、补项目限制与随包许可（2026-10-30）
 
 - `LICENSE` 由自写的 569 字节说明换成 GPL-3.0 全文（35149 字节，与 Qself 同源）；GitHub 的许可识别只看默认分支，合并进 `main` 前接口仍返回 `NOASSERTION`（2026-10-30 21:00 UTC+8 实测），合并后才会识别为 GPL-3.0。「为什么用 GPL-3」与三个上游归属写进 README「许可证」章，不写进 `LICENSE`。
@@ -34,10 +44,3 @@
 - 推送唤醒出口入口新增诊断行 `push seen`（action、flags、目标包名），并在 `ActivityManagerService#broadcastIntentWithFeature` 上加同样的诊断行 `push seen@AMS`，用于判断推送广播是否经过 `BroadcastController#broadcastIntentLocked`；定位完成后删除。
 - 文档与注释里 `REASON_PACKAGE_CHANGED` 的值由 8 改为 5（AOSP `NotificationListenerService` 源码为 5，8 是 `REASON_APP_CANCEL`）。代码引用的是常量，行为不变。
 - 未验证：本次只经过 CI 编译，未在真机运行。
-
-## 号源改 run_number 原值并对齐双工作流清理结构（2026-10-28）
-
-- 号源从 git rev-list 提交数改为 github.run_number 原值，当日序号按差值锚定（当日现存运行最小 run_number 与现存合规产物反推值取小），取号打印 HEAD SHA、run_id、run_number、R_first、当日序号与最终版本，取不到即退出。
-- 清理从 build job 内步骤拆为 cleanup-artifacts（needs: build + if: always()）与 cleanup-releases（再加默认分支条件）两个独立 job，build job 收回 actions: write；pr-check 的清理 job 改名 cleanup-artifacts 且不写 needs；cleanup.py 换全仓统一接口（GH_TOKEN/REPO/RUN_ID/SEGMENTS/CLEANUP_APPLY/CLEANUP_SCOPE）。
-- checkout 去掉 fetch-depth:0（浅克隆即可）；步骤名统一中文短语；删除 GITHUB_STEP_SUMMARY 日志尾巴步骤；scripts/sign-apk.sh 移入 tools/。
-- cleanup.py 项目前缀改为由 REPO 推导：Qself 版写死 `Qself-`，导致 Gself 首个新口径产物 Gself-26.10.28.1.57 上传后被清理 job 以前缀不符删除（#57 三 job 全绿但零产物），修补后 #58 起按 `Gself-` 前缀保留；脚本内 Qself 专属措辞与过期注释同步清理。

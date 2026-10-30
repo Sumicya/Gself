@@ -18,3 +18,8 @@
 # 序列化壳）连同没用到的部分一起钉进 dex。
 # 它也不反射自己的类：全仓唯一的 `Class.forName` 是 DexKitBridge 里查
 # `dalvik.system.BaseDexClassLoader`（`DexKitBridge.kt:653`），所以收缩内部类名是安全的。
+
+# 允许 R8 收缩/改写可见性：类与成员改私有后更容易内联与整类删除。
+# 本模块没有对外 API（唯一的「对外名字」是 XposedMain 与 Hook$Missing 的类名，上面已用 -keepnames 保住），
+# 所以这条没有兼容性代价。
+-allowaccessmodification
