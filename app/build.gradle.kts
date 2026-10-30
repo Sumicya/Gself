@@ -54,13 +54,12 @@ android {
         }
     }
 
-    // .so 默认不经压缩（AGP 4.2 起 useLegacyPackaging=false，为了安装后能直接 mmap），
-    // 对靠安装包体积说话的场景是纯亏：改成安装时解压，APK 里按 deflate 存。
-    packaging {
-        jniLibs {
-            useLegacyPackaging = true
-        }
-    }
+    // `.so` 保持 AGP 默认的「不压缩、4 KB 对齐、安装后直接 mmap」。2026-10-30 实测：
+    // 这里写 useLegacyPackaging = true 之后，APK 里 lib/arm64-v8a/libdexkit.so 的 compress_size
+    // 仍等于 file_size（190746 字节，store），即该开关在 AGP 9 这条链路上没有生效。
+    // 不再依赖它，也不改用 extractNativeLibs=true 去硬压：压缩只能省约 120 KB，代价是
+    // 安装时解压、与 Android 16 的原生库加载语义打对台，而本模块没法在真机上验证这个改动，
+    // 收益不抵「DexKit 加载失败导致两组功能静默失效」的风险。
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

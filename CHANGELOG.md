@@ -4,11 +4,12 @@
 - 挂载点去分配：AMS 广播入口与 ColorOS 受限广播两处，`Intent` 的实参下标在装挂载点时按类型算好（`ActivityManagerService.java:14391`/`:14402`、`BroadcastController.java:710` 的单 `Intent` 参数签名），运行期 `chain.args[idx]` 直取；`filterIsInstance` 每次调用都会新建一个 ArrayList，而这里每次系统广播都要进来一次。通知 Hook 原来两次 `filterIsInstance` 也改成一次索引遍历。
 - 判据去分配：`Push.isPush` 从「列表 + `any` + lambda」展开成两次 `String.contains`；`waken` 只取一次目标包名（原来判据与日志各取一次）；`Push.needsStoppedPatch` 按代价排序（位运算 → `contains` → 目标包名）。
 - 单测新增两条：`excludesStopped` 的真值表（4 种 flags 组合 + 带高位标志），以及 `Intent.FLAG_EXCLUDE_STOPPED_PACKAGES == 0x10` / `FLAG_INCLUDE_STOPPED_PACKAGES == 0x20` 的常量守卫（值漂了单元测试当场红，而不是真机静默失效）。
-- 体积：`packaging.resources.excludes` 剔掉 `kotlin/**`、`META-INF/*.kotlin_module`、`META-INF/*.version`、`META-INF/com/**`、`DebugProbesKt.bin`（运行期不需要：模块不用 kotlin-reflect）；`proguard-rules.pro` 加 `-allowaccessmodification`（本模块没有对外 API，唯一的对外名字已由 `-keepnames` 保住）。
-- CI 新增体积预算闸门：`打印产物体积构成并校验体积预算` 步骤打印压缩后/解压后总量、dex 合计字节、`lib/` 下的 ABI 目录与前 15 大条目，并在压缩后总字节超过 360,000 时让构建失败——体积回归不再靠人盯。
+- 体积：`packaging.resources.excludes` 剔掉 `kotlin/**`、`META-INF/*.kotlin_module`、`META-INF/*.version`、`META-INF/com/**`、`DebugProbesKt.bin`（运行期不需要：模块不用 kotlin-reflect）；`proguard-rules.pro` 加 `-allowaccessmodification`（本模块没有对外 API，唯一的对外名字已由 `-keepnames` 保住）。上一轮加的 `packaging.jniLibs.useLegacyPackaging = true` 实测无效：APK 里 `lib/arm64-v8a/libdexkit.so` 的 `compress_size` 与 `file_size` 同为 190,746 字节（store），开关没让 `.so` 走 deflate，已删除并在原处留下实测备注；不用 `extractNativeLibs=true` 去硬压——省约 120 KB，代价是安装时解压、与 Android 16 的原生库加载语义对打，而 DexKit 加载失败会让通行密钥解限与 Gboard 剪贴板两组静默失效，收益不抵风险。
+- CI 体积闸门拆成两步：`报告产物体积构成` 打印 APK 文件字节、条目压缩后/解压后合计、dex 合计、`lib/` 下 ABI 与前 8 大条目，并用一行 `::notice::` 把结论带出（Actions 的 job 日志要另开页面，注解在 `check-runs/<id>/annotations` 一取就有）；`校验体积预算` 放到 `上传产物` 之后，超预算照样红，但红的是指标、不连产物一起扣掉。
+- 体积口径纠正：预算原先按 artifact 的 `size_in_bytes`（305–320 KB 的 zip）定成 360,000，而闸门量的是 APK 本身，两者差着一个 zip 头与重新压缩的差，于是同一条构建既「通过」又「超标」。现在两边统一为 APK 文件自身的字节数，预算按实测重定为 500,000（余量约 54 KB）。实测构成（`26.10.31.6.76`）：APK 446,265 字节，其中 `classes.dex` 236,792、`lib/arm64-v8a/libdexkit.so` 190,746（store）、`assets/LICENSE` 14,203，ABI 只有 `arm64-v8a` 一份——dex 与 DexKit 原生库合计占 95.7%，我们自己写的代码不在体积里。
 - 载入期汇总：`install` 改为返回这一组是否整组装上，`wakeStoppedApps` 收尾打一行 `推送达标：语义层在｜标志层在`（任一层缺、两层全缺各有措辞），排查时不用在两条日志里拼。
-- 出包健壮性（含一次自伤与修复）：取号步的两个 `gh api` 调用加了 5 次重试，失败时把 `gh` 原始输出写成 `::error::` 注解（Actions 的 job 日志要另开页面才看得到，注解一行即可取）。同一次改动里 heredoc 终止符 `PY` 被写在第 0 列，直接把整份工作流变成非法 YAML（运行记录 72 零 job 秒失败）；已按 10 列缩进修正，并用 `bash -n` 逐块校验 5 个 `run:` 块的语法。——2026-10-30 18:00 UTC+8 前后 Actions 接口连续抖动，第 68、69 两轮都卡在 `repos/…/artifacts` 那行 502 直接红掉，与代码无关；重试不改变取号结果。
-- 未验证：真机运行期耗时没有仪器可测（沙箱无设备），本轮用「每次调用是否分配对象」与「快路指令数」作为可核对的替代指标；新包体积以 CI artifact `size_in_bytes` 实测为准。
+- 出包健壮性（含两次自伤与修复）：取号步的两个 `gh api` 调用加了 5 次重试，失败时把 `gh` 原始输出写成 `::error::` 注解。改 heredoc 时把终止符 `PY` 写在第 0 列，整份工作流变成非法 YAML（运行记录 72 零 job 秒失败），已按 10 列缩进修正并用 `bash -n` 逐块校验全部 `run:` 块；接着想用 `trap on_err ERR` 把构建失败的尾巴写成注解，运行记录 74 证明它在本仓库的步骤外壳里不触发（只报 `Process completed with exit code 1`），改成在 python 里 `except BaseException` 捕获并自己 `::error::`，运行记录 75 才第一次读到真实的超标字节数。——2026-10-30 18:00 UTC+8 前后 Actions 接口连续抖动，第 68、69 两轮都卡在 `repos/…/artifacts` 那行 502 直接红掉，与代码无关；重试不改变取号结果。
+- 未验证：真机运行期耗时没有仪器可测（沙箱无设备），本轮用「每次调用是否分配对象」与「快路指令数」作为可核对的替代指标；体积数字取自 APK 文件本身（不再用 artifact 的 `size_in_bytes`），真机未复测。
 
 ## 许可证换 GPL-3 全文、补项目限制与随包许可（2026-10-30）
 
