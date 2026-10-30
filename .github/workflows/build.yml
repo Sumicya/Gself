@@ -48,8 +48,19 @@ jobs:
           RUN_NUMBER: ${{ github.run_number }}
         run: |
           set -euo pipefail
-          gh api "repos/$REPO/actions/workflows/build.yml/runs?per_page=100" > runs.json
-          gh api "repos/$REPO/actions/artifacts?per_page=100" > arts.json
+          # GitHub 的 Actions 接口会抖（2026-10-30 18:00 UTC+8 前后连续两次取号步 502 直接红掉整轮），
+          # 取号只读两个接口，重试不改变结果，却能把这种平台抖动挡在构建之外。
+          fetch() {
+            for i in 1 2 3 4 5; do
+              if gh api "$1" > "$2"; then return 0; fi
+              echo "取号接口 $1 第 $i 次失败，3 秒后重试" >&2
+              sleep 3
+            done
+            echo "取号接口 $1 连续 5 次失败" >&2
+            return 1
+          }
+          fetch "repos/$REPO/actions/workflows/build.yml/runs?per_page=100" runs.json
+          fetch "repos/$REPO/actions/artifacts?per_page=100" arts.json
           python3 - <<'PY'
           import json, os, re, sys
           from datetime import datetime, timedelta, timezone
