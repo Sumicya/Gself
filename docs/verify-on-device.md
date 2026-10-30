@@ -83,6 +83,14 @@ hook skip 推送入口（AMS）: sumicya.fcmself.Hook$Missing: com.android.serve
 > `停止态决策未被调用`，说明两层里的标志层已覆盖全部入口、语义层只是保险；那时可以考虑只留语义层一层
 > （一次挂载、不再扫 AMS 重载）。反之若出现 `决策入口兜底`，说明标志层漏了入口，必须保留两层。
 
+> **不依赖模块自述的旁证**（平台自己的 EventLog，换谁写的模块都看得见）：
+> ```bash
+> su -c 'logcat -b events -d | grep -E "am_proc_start|notification_cancel_all"'
+> ```
+> `am_proc_start` 里 `callingAction=c2dm RECEIVE` 说明进程是由推送广播拉起的；`notification_cancel_all`
+> 每行带 `reason`（AOSP 在 `NotificationManagerService.java:11204` 写这条事件），拿它可以核对模块拦下的
+> 是哪一类取消，不必信模块日志。三条一起看（`wake:` / `am_proc_start` / `CANCELLED` 计数）才算验收。
+
 > **冻结 ≠ 停止**：ColorOS 上从最近任务划掉通常只是**冻结**（`ps -A | grep <包名>` 见
 > `do_freezer_trap`、`stopped=false`），这种状态广播本来就能投递。只有 `stopped=true` 才走本节这条路。
 
