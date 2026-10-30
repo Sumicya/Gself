@@ -1,9 +1,12 @@
-## 推送唤醒补标志挂到 AMS 入口，并保留诊断行（2026-10-30）
+## 推送唤醒补标志挂到 AMS 全部广播入口，并保留诊断行（2026-10-30）
 
-- 推送唤醒补 `FLAG_INCLUDE_STOPPED_PACKAGES` 的主挂点改为 `ActivityManagerService#broadcastIntentWithFeature`：真机日志显示推送广播经此进入，`BroadcastController#broadcastIntentLocked` 在本机从未命中。`BroadcastController` 出口保留同一判据，任一处先到即补，后到者直接跳过。
-- 新增诊断行 `push seen@AMS`，`wake:` 行追加挂点名（AMS 或 BroadcastController）；定位完成后删除诊断行。
+- 推送唤醒补 `FLAG_INCLUDE_STOPPED_PACKAGES` 的挂点改为 `ActivityManagerService` 上所有带 `Intent` 参数的 `broadcastIntent` / `broadcastIntentWithFeature` / `broadcastIntentLocked` 重载，按名字全部挂上，不再只挂参数最多的一个。
+- 移除 `BroadcastController#broadcastIntentLocked` 挂点：真机 `push seen` 从未命中（推断为 ColorOS 上被内联，未证实）；它原在 2026-10-05 的日志里出现过 `wake:`。
+- 真机对照（shell 广播，仅有无 `--include-stopped-packages`）：不带 `0x20` 不投递（进程未启动），带 `0x20` 投递成功（进程启动）。
+- ColorOS services.jar 反汇编（标准库解析 dex，`/tmp`，未入库）：AMS 广播入口与 `BroadcastController` 的调用关系已核对；停止应用过滤读取 `Intent.isExcludingStopped()`，ColorOS 另有 `IStaticExt.onIsFilterStopped` 扩展。
+- 新增诊断行 `push seen@AMS`，`wake:` 行追加挂点名（如 `AMS#broadcastIntentWithFeature`）；定位完成后删除诊断行。
 - `build.yml` 的 `push` 补上规范 C2 要求的 `paths-ignore` 名单（`**.md`、`docs/**`、`bad/**`、`LICENSE`、`.gitignore`）：纯文档推送不再占用 `run_number`、不出包。
-- 未验证：本次只经过 CI 编译，未在真机运行补标志后的投递结果。
+- 未验证：本次只经过 CI 编译，未在真机运行补标志后的投递结果；ColorOS 的 `onIsFilterStopped` 扩展内容未核实。
 
 ## 推送唤醒加入命中诊断日志，修正通知取消原因值（2026-10-29）
 

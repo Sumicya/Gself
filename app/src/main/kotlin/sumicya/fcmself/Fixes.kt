@@ -20,50 +20,47 @@ import java.util.concurrent.atomic.AtomicReference
 // ---------- 1. 推送唤醒（核心） ----------
 
 /**
- * 在系统唯一的广播出口补上 `FLAG_INCLUDE_STOPPED_PACKAGES`，解决
+ * 在广播入口补上 `FLAG_INCLUDE_STOPPED_PACKAGES`，解决
  * `Failed to broadcast to stopped app`：原生 AOSP 发往特定应用的推送广播本就带这个标志，
  * GMS 常常不带，ROM 又各自加了闸门，于是应用被划掉之后就再也收不到推送。
  */
 fun Hook.wakeStoppedApps() {
-    // 只做新包（项目约定）：广播出口只实现 Android 16+（API 36）的 BroadcastController，
-    // 不写 Android 10–15 的旧出口、不做双路径回退。上游证据（aosp-mirror/platform_frameworks_base
-    // services/core/java/com/android/server/am/）：BroadcastController.java 首次出现于 android-16.0.0_r1，
-    // android-14.0.0_r1 与 android-15.0.0_r1 的 am 包下都没有这个文件。
-    // 不支持的环境由 minSdk = 36 在安装时明确拒绝；类/方法缺失时 [install] 打一条 `hook skip 推送唤醒`
-    // 后整组不生效（功能不生效，不会损坏系统）。
-    val entry = find(classOf(CONTROLLER), "broadcastIntentLocked")
-    trace("hook target: ${entry.declaringClass.name}#${entry.name}(${entry.parameterCount})")
-
-    // 入口一：AMS#broadcastIntentWithFeature。真机日志证明推送广播必经此处（push seen@AMS），
-    // 而 BroadcastController 的重载在本机从未命中，所以补标志的主挂点放在这里。
+    // 入口：ActivityManagerService 上所有带 Intent 参数的广播重载。
+    // 真机证据（2026-10-30）：GMS 的 c2dm 广播经 AMS#broadcastIntentWithFeature 进入，
+    // 且只有带 FLAG_INCLUDE_STOPPED_PACKAGES 的广播才能投递到已停止应用（shell 对照实验）。
+    // 挂点按名字取全部重载，不再只挂参数最多的一个，ROM 逐版本增删参数不影响命中。
+    // BroadcastController#broadcastIntentLocked 曾是主挂点，但真机从未命中（ColorOS 上它很可能被内联），已移除。
     install("推送入口（AMS）") {
-        hook(find(classOf("com.android.server.am.ActivityManagerService"), "broadcastIntentWithFeature")) { chain ->
-            // 签名里只有一个 Intent 参数，按类型取即可，ROM 在前后插参数都不影响
-            val intent = chain.args.filterIsInstance<Intent>().firstOrNull()
-            // 诊断（定位后删除）：进入 AMS 的推送广播一律记一行，用来确认命中。
-            if (intent != null && Push.isPush(intent.action)) {
-                trace("push seen@AMS: ${intent.action} flags=0x${Integer.toHexString(intent.flags)} target=${Push.targetOf(intent)}")
+        val ams = classOf("com.android.server.am.ActivityManagerService")
+        var hooked = 0
+        for (name in BROADCAST_ENTRIES) {
+            val overloads = ams.declaredMethods.filter { m ->
+                m.name == name && m.parameterTypes.any { it == Intent::class.java }
             }
-            wakeIfPush("AMS", intent)
-            chain.proceed()
+            for (m in overloads) {
+                m.isAccessible = true
+                hook(m) { chain ->
+                    // 签名里只有一个 Intent 参数，按类型取即可，ROM 在前后插参数都不影响
+                    val intent = chain.args.filterIsInstance<Intent>().firstOrNull()
+                    // 诊断（定位后删除）：进入 AMS 的推送广播一律记一行，用来确认命中。
+                    if (intent != null && Push.isPush(intent.action)) {
+                        trace("push seen@AMS: ${intent.action} flags=0x${Integer.toHexString(intent.flags)} target=${Push.targetOf(intent)}")
+                    }
+                    wakeIfPush("AMS#$name", intent)
+                    chain.proceed()
+                }
+                hooked++
+            }
         }
-    }
-
-    hook(entry) { chain ->
-        // 签名里只有一个 Intent 参数，按类型取即可，ROM 在前后插参数都不影响
-        val intent = chain.args.filterIsInstance<Intent>().firstOrNull()
-        // 诊断（定位后删除）：进入本出口的推送广播一律记一行，不论目标与标志，用来判断 Hook 是否被命中。
-        if (intent != null && Push.isPush(intent.action)) {
-            trace("push seen: ${intent.action} flags=0x${Integer.toHexString(intent.flags)} target=${Push.targetOf(intent)}")
-        }
-        wakeIfPush("BroadcastController", intent)
-        chain.proceed()
+        trace("hook active: AMS 广播入口 $hooked 个重载")
     }
 }
 
+private val BROADCAST_ENTRIES = listOf("broadcastIntent", "broadcastIntentWithFeature", "broadcastIntentLocked")
+
 /**
- * 推送广播补 `FLAG_INCLUDE_STOPPED_PACKAGES` 并解冻目标。AMS 入口与 BroadcastController 出口共用同一判据：
- * 任一处先到即补，后到者看到标志已带，直接跳过，不会重复解冻。
+ * 推送广播补 `FLAG_INCLUDE_STOPPED_PACKAGES` 并解冻目标。判据只在一处（[wakeStoppedApps] 的 AMS 入口）；
+ * 同一条广播若经过多个重载，后到者看到标志已带即跳过，不会重复解冻。
  */
 private fun Hook.wakeIfPush(where: String, intent: Intent?) {
     if (intent == null || !Push.isTargeted(intent) || intent.wakesStoppedApps()) return

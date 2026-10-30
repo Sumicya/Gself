@@ -21,9 +21,8 @@ toybox grep **不支持 `\|` 交替**，多关键字用 `-E`：`grep -hE 'wake|k
 
 ```
 [fcmself] fcmself 载入 system_server（Android 16 / API 36）
-[fcmself] hook target: com.android.server.am.BroadcastController#broadcastIntentLocked(25)
-                                          ↑ 括号里是参数个数，随 ROM / 版本不同（本机 ColorOS + Android 16 实测 25，早期样机是 19）；
-                                            代码按「参数最多」的重载取，不依赖具体数字
+[fcmself] hook active: AMS 广播入口 N 个重载   ← 2026-10-30 起的挂点：ActivityManagerService 上所有带 Intent 参数的
+                                              broadcastIntent / broadcastIntentWithFeature / broadcastIntentLocked 重载；N 随 ROM 而变
 [fcmself] OplusProxyWakeLock instance captured        ← 仅 ColorOS
 [fcmself] unfreeze 可用（4 参签名）                    ← 仅 ColorOS，只打一次
 ```
@@ -35,7 +34,7 @@ toybox grep **不支持 `\|` 交替**，多关键字用 `-E`：`grep -hE 'wake|k
   `通行密钥解限 Hook 已安装`，Gboard 侧是 `Gboard 剪贴板 Hook 已安装`（后两条在各自应用的进程里，
   用 `su -c 'logcat -d -s FcmSelf'` 同样能看到）。**Gboard 那条只有在 Gboard 作为当前输入法被加载过之后才会出现**；
   一次都没看到就先确认当前输入法：`su -c "settings get secure default_input_method"`
-- `hook target:` 那行只在 system_server 载入时打一次；`keep notification` / `wake` 是运行期日志，按需出现
+- `hook active:` 那行只在 system_server 载入时打一次；`keep notification` / `wake` 是运行期日志，按需出现
 
 **必须没有的一行**（出现说明核心挂载点没找到，模块整体不工作）：
 
@@ -56,15 +55,14 @@ hook skip 推送唤醒: java.lang.NoSuchMethodError: …#broadcastIntentLocked
 不是额外发一条广播。）ColorOS 上同一时刻还会走一次 `unfreezeIfNeed`，成功只在**第一次**打
 `unfreeze 可用（N 参签名）`，之后静默。
 
-> **诊断行（定位后删除）**：推送广播进入 AMS 入口与 BroadcastController 出口时各打一行。
-> - `push seen@AMS: <action> flags=0x… target=<包名>`：进入 `ActivityManagerService#broadcastIntentWithFeature`，补标志的主挂点。
-> - `push seen: <action> flags=0x… target=<包名>`：进入 `BroadcastController#broadcastIntentLocked`。
->
-> 2026-10-30 真机证据：只有 `push seen@AMS`，没有 `push seen`，即 ROM 上推送不经过 `BroadcastController#broadcastIntentLocked` 这个重载。
-> 补标志因此挂到 AMS 入口，两处共用同一判据。判读：
-> - 有 `push seen@AMS` 与 `wake: <包名>（AMS）`：补标志已生效，继续看 GMS 是否还回调 `CANCELLED`。
+> **诊断行（定位后删除）**：推送广播进入 AMS 广播入口时打一行 `push seen@AMS: <action> flags=0x… target=<包名>`，
+> 不论是否命中，标注的是进入的重载所在的入口。判读：
+> - 有 `push seen@AMS` 与 `wake: <包名>（AMS#…）`：补标志已生效，继续看 GMS 是否还回调 `CANCELLED`。
 > - 有 `push seen@AMS`，没有 `wake:`：`target=` 为空，或 `flags` 已带 `0x20`（INCLUDE_STOPPED）。
-> - 没有 `push seen@AMS`：推送没有进入 AMS 的 `broadcastIntentWithFeature`。
+> - 没有 `push seen@AMS`：推送没有进入 AMS 的任何广播入口重载，需要再查 GMS 出站或 ROM 的其他入口。
+>
+> 2026-10-30 真机证据：`push seen@AMS` 对 GMS 的 c2dm 广播稳定命中，旧的 `BroadcastController` 挂点从未命中；
+> shell 对照实验（同一广播，仅有无 `--include-stopped-packages`）证明带 `0x20` 才能投递到已停止应用。
 
 > **冻结 ≠ 停止**：ColorOS 上从最近任务划掉通常只是**冻结**（`ps -A | grep <包名>` 见
 > `do_freezer_trap`、`stopped=false`），这种状态广播本来就能投递。只有 `stopped=true` 才走本节这条路。
@@ -165,7 +163,7 @@ su -c "logcat -d | grep -iE '<包名>|c2dm|Background execution|not delivering|s
 | 清理（五判据、每工作流 run 最新 5 条、全仓 artifact 最新 5 个） | **已验证**（CI 实跑）：build.yml 与 pr-check.yml 的 cleanup 步持续执行并输出逐项结论 |
 | system_server 三组 Hook（推送 / 通知 / ColorOS） | **已验证**（2026-10-05 22:13，Android 16 / API 36，ColorOS）：载入、`hook target: BroadcastController#broadcastIntentLocked(25)`、`OplusAppStartup 自启动闸门已关`、`OplusProxyBroadcast 代理已全关`、`Hans GMS 限制已置空`、`OplusProxyWakeLock instance captured`、`keep notification`、`unfreeze 可用（4 参签名）`、`wake: com.zhiliaoapp.musically` 全部出现（日志见第 9 节） |
 | ColorOS 首次解锁后的 Google 联网保护 | **代码新增，待真机验证**：按 `IgnoreGmsUserSet` 元数据及 Google appId 窄范围处理拒绝规则，并清除 Oplus 限制广播；新增纯 JVM 策略测试。新挂点是否匹配用户固件、FCM 是否恢复仍须在设备验证 |
-| 只做新包（minSdk 36 / 只挂 BroadcastController / 4 参 unfreeze） | **已验证**（同一份日志）：Android 16 上 `BroadcastController` 存在并挂上，ColorOS 的 `unfreezeIfNeed` 4 参签名可用；无 `hook skip`、无 AMS 回退痕迹 |
+| 只做新包（minSdk 36 / 4 参 unfreeze） | **已验证**（2026-10-05 同一份日志）：Android 16 上 `BroadcastController` 存在并挂上，ColorOS 的 `unfreezeIfNeed` 4 参签名可用。**注**：2026-10-30 起推送挂点改为 AMS 入口（见第 2 节），BroadcastController 挂点在当前构建上不再命中 |
 | GMS 通行密钥解限 | **仅装点已验证**：`通行密钥解限 Hook 已安装` 出现两次（GMS 进程重启过）；「非 Chrome 浏览器能用通行密钥」要实际调一次才知道 |
 | Gboard 剪贴板 | **未见日志**（2026-10-05 时点）：日志里没有 `Gboard 剪贴板 Hook 已安装`，也没有 `hook skip`——先确认 Gboard 是不是当前输入法（见第 1 节），是的话这条要查 |
 | Gself 真机链路 | **已验证**（2026-10-06，OnePlus/ColorOS，`26.10.6.1.128`）：推送唤醒 `wake:` 批量命中（含「长连接断流后重启恢复」场景，见第 10 节）、通知保留 `keep notification` 命中；三组挂载点已在三合一时验过 |
@@ -297,7 +295,7 @@ LSPosed 日志本身会在模块载入时自动记一行，两条路互相兜底
 判读：
 
 - `wake:` + `unfreeze 可用（4 参签名）` 说明**核心链路在 Android 16 / ColorOS 上成立**，
-  且「只做新包」的挂载点选择正确（`BroadcastController` 在这台机器上存在）。
+  且「只做新包」的挂载点选择正确（2026-10-05 时 `BroadcastController` 在这台机器上存在；2026-10-30 起挂点改为 AMS 入口）。
 - `keep notification` 打给 `com.termux` / `mark.via` / `devicelockcontroller` 属**设计行为**：
   拦的是「取消原因为 5 / 10020 / 10021 的整包取消」，对所有包生效、没有白名单；
   自 26.10.5.1 起日志带原因值（`keep notification: <包名>（reason=10020）`），据此判断是不是误拦——
