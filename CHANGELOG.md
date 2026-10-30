@@ -1,6 +1,6 @@
 ## 许可证换 GPL-3 全文、补项目限制与随包许可（2026-10-30）
 
-- `LICENSE` 由自写的 569 字节说明换成 GPL-3.0 全文（35149 字节，与 Qself 同源），GitHub 不再显示 `NOASSERTION`；「为什么用 GPL-3」与三个上游归属写进 README「许可证」章，不写进 `LICENSE`。
+- `LICENSE` 由自写的 569 字节说明换成 GPL-3.0 全文（35149 字节，与 Qself 同源）；GitHub 的许可识别只看默认分支，合并进 `main` 前接口仍返回 `NOASSERTION`（2026-10-30 21:00 UTC+8 实测），合并后才会识别为 GPL-3.0。「为什么用 GPL-3」与三个上游归属写进 README「许可证」章，不写进 `LICENSE`。
 - APK 随包附同一份全文（`app/src/main/assets/LICENSE`），对应 GPL-3 §4「二进制发布随附许可全文」；本模块没有界面，§5(d) 的「可点的关于页」无法提供，以 README 许可证章 + 随包 `LICENSE` 呈现，写明若将来加界面再补入口。
 - README 新增「项目限制」：不支持锁 bootloader 的 User Product、只在 Android 16 + ColorOS 真机验证、无界面无配置、DexKit 两组功能可能因宿主改版失效。构建章补「产物 ↔ 对应源码」的查法（artifact 第五段 = `run_number`）。
 - `README` 功能章按两层挂载改写推送一条，原「补 `FLAG_INCLUDE_STOPPED_PACKAGES`」不再完整。
