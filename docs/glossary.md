@@ -9,7 +9,7 @@
 | 模块（module） | 本仓库的 LSPosed 模块 Gself；无界面、无配置、不写文件，装完勾作用域重启即生效 |
 | 作用域（scope） | LSPosed 里允许模块代码注入的进程名单；本模块是 `system` + `com.google.android.gms` + Gboard |
 | Hook | 在宿主进程里拦截某个方法，在调用前后插入自己的代码 |
-| 挂载点 | 被 Hook 的具体方法（如 `BroadcastController#broadcastIntentLocked`） |
+| 挂载点 | 被 Hook 的具体方法（如 `ActivityManagerService#broadcastIntentWithFeature`） |
 | system_server | Android 的系统服务进程；推送唤醒、通知保留、ColorOS 放行三组 Hook 都在这里 |
 | GMS | `com.google.android.gms`，Google Play 服务；通行密钥解限这组 Hook 在它的进程里 |
 | Gboard | `com.google.android.inputmethod.latin`，Google 输入法；剪贴板改写在这组 |
@@ -45,13 +45,13 @@
 | 只做新包 | 本项目约定：涉及平台新机制的只实现新机制，不做旧机制双写与逐档回退；不支持的环境在构建或安装时明确拒绝 |
 | minSdk | 最低支持的 Android 版本；本模块 = 36（Android 16），旧版本由系统在安装时拒绝，文档不假装支持 |
 | 五段版本 | 全局发行版本格式 `yy.m.d.当日序号.总序号`，例：`26.10.5.4.24` 只是格式示例 |
-| 总序号 | 第五段，等于 `versionCode`；取「全仓最大 run 号 + 1」「现存发行产物第五段 + 1」「本次 run 号」三者最大，单调递增、跨工作流改名不回退（查法写在 `build.yml`，不写死现值） |
-| 当日序号 | 第四段，当天 main 分支出包运行里 run 号不大于本次的个数，含本次、从 1 起 |
-| 出包运行 | 占用当日序号的运行：main 的 `push` 与从 main 触发的 `workflow_dispatch` |
-| 非发行版本 | 取不到发行序号时的版本名，形如 `dev-<构建数>`；PR 检查、其它分支与本地构建都用它 |
-| 单一版本来源 | 版本只在 Android CI 的「Compute release version」算一次，产物名、artifact 名与构建元数据都从它生成 |
+| 总序号 | 第五段，等于 `versionCode`；取 `build.yml` 本次运行的 `run_number` 原值，不从提交数、时间戳或本地计数推算（取法写在 `build.yml`，不写死现值） |
+| 当日序号 | 第四段，当日（`UTC+8`）`build.yml` 运行的位次，从 1 起；按差值锚定：当日现存运行的最小 `run_number` 与现存合规产物反推值取小作为首条号，失败运行同样占号 |
+| 出包运行 | 占用当日序号的运行：`build.yml` 的 `push`（不限分支）与 `workflow_dispatch`；PR 校验运行永不计入 |
+| 非发行版本 | 取不到发行版本时的名字，形如 `dev-1`（不传 `-PversionCode` 时 `versionCode` 为 1）；PR 校验与本地构建都用它 |
+| 单一版本来源 | 版本只在 CI 的「算版本 yy.m.d.当日序号.总序号」一步算一次，产物名、artifact 名与 `versionCode` 都从它生成 |
 | artifact（Actions 产物） | GitHub Actions 的上传产物；本仓库只发 `Gself-<版本>.apk`，不发 Release |
 | Release / tag | GitHub 的发行与标签；本仓库不发 Release、不打 tag |
-| 滚动清理 | 出包成功后自动删除旧 artifact，**只按发行对象计数**保留最近 5 个（`KEEP_ARTIFACT` 指定）；范围按项目名前缀 `Gself-`（含遗留 `fcmself-` / `fcmfix-`）筛选；非发行包 `Gself-dev-<构建数>` 不占名额，按 `retention-days` 过期 |
+| 滚动清理 | 每次 `build.yml` / `pr-check.yml` 跑完都执行（构建红了也跑）：artifact 全仓按 `created_at` 保留最新 5 个，每工作流运行保留最新 5 条；判据（命名、来源、重复当日序号、号源口径、数量）全写在 `.github/scripts/cleanup.py` |
 | `retention-days` | artifact 的时间兜底过期天数（本仓库 5 天），不代替按数量的滚动清理 |
 | 项目名前缀筛选 | 清理只按 artifact 名前缀（本项目名 + `-`，大小写不敏感）圈定对象，不按「最新 N 个」直接删无关对象 |

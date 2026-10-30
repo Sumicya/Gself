@@ -34,19 +34,10 @@ fun Hook.wakeStoppedApps() {
         val ams = classOf("com.android.server.am.ActivityManagerService")
         var hooked = 0
         for (name in BROADCAST_ENTRIES) {
-            val overloads = ams.declaredMethods.filter { m ->
-                m.name == name && m.parameterTypes.any { it == Intent::class.java }
-            }
-            for (m in overloads) {
-                m.isAccessible = true
+            for (m in intentOverloads(ams, name)) {
                 hook(m) { chain ->
-                    // 签名里只有一个 Intent 参数，按类型取即可，ROM 在前后插参数都不影响
-                    val intent = chain.args.filterIsInstance<Intent>().firstOrNull()
-                    // 诊断（定位后删除）：进入 AMS 的推送广播一律记一行，用来确认命中。
-                    if (intent != null && Push.isPush(intent.action)) {
-                        trace("push seen@AMS: ${intent.action} flags=0x${Integer.toHexString(intent.flags)} target=${Push.targetOf(intent)}")
-                    }
-                    wakeIfPush("AMS#$name", intent)
+                    // 签名里只有一个 Intent 参数，按类型认，ROM 在前后插参数都不影响
+                    wakeIfPush("AMS#$name", chain.args.filterIsInstance<Intent>().firstOrNull())
                     chain.proceed()
                 }
                 hooked++
@@ -58,14 +49,20 @@ fun Hook.wakeStoppedApps() {
 
 private val BROADCAST_ENTRIES = listOf("broadcastIntent", "broadcastIntentWithFeature", "broadcastIntentLocked")
 
+/** 某个广播入口名字下所有带 `Intent` 参数的重载（ROM 逐版本增删参数，只按名字与类型认）。 */
+private fun intentOverloads(clazz: Class<*>, name: String): List<Method> =
+    clazz.declaredMethods
+        .filter { it.name == name && it.parameterTypes.any { p -> p == Intent::class.java } }
+        .onEach { it.isAccessible = true }
+
 /**
  * 推送广播补 `FLAG_INCLUDE_STOPPED_PACKAGES` 并解冻目标。判据只在一处（[wakeStoppedApps] 的 AMS 入口）；
  * 同一条广播若经过多个重载，后到者看到标志已带即跳过，不会重复解冻。
  */
 private fun Hook.wakeIfPush(where: String, intent: Intent?) {
     if (intent == null || !Push.isTargeted(intent) || intent.wakesStoppedApps()) return
+    val target = Push.targetOf(intent) ?: return
     intent.addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES)
-    val target = Push.targetOf(intent)
     unfreeze(target)
     trace("wake: $target（$where）")
 }
@@ -83,7 +80,7 @@ fun Hook.notificationFixes() {
         val nms = classOf("com.android.server.notification.NotificationManagerService")
         hook(find(nms, "cancelAllNotificationsInt")) { chain ->
             // ponytail: reason 按值认，不按下标——ROM 签名里 pkg / reason 的位置都随版本漂移，
-            //             而 reason 是唯一取值落在这三个数里的 int。代价是别的 int 参数恰好等于 8 时
+            //             而 reason 是唯一取值落在这三个数里的 int。代价是别的 int 参数恰好等于 5 / 10020 / 10021 时
             //             会误拦一次取消（只影响「通知没被清掉」，不影响投递）。
             //             日志里带上命中的 reason 值：真机日志按值判定误拦（例如出现 reason=8 却并非包变化）。
             val reason = chain.args.filterIsInstance<Int>().firstOrNull { it in BLOCKED_REASONS }
@@ -159,12 +156,11 @@ private fun Hook.googleNetworkFirewallFix() {
         if (rule != FIREWALL_RULE_REJECT) return@hook chain.proceed()
 
         val context = systemContext ?: return@hook chain.proceed()
-        if (!batteryIgnoresGoogleNetworkSetting(context)) return@hook chain.proceed()
         val shouldDrop = shouldDropGoogleFirewallReject(
             uid = uid,
             rule = rule,
             googleAppIds = googleNetworkAppIds(context),
-            batteryIgnoresGmsUserSet = true,
+            batteryIgnoresGmsUserSet = batteryIgnoresGoogleNetworkSetting(context),
         )
 
         if (shouldDrop) {
@@ -182,24 +178,18 @@ private fun Hook.googleNetworkFirewallFix() {
  * downgrade Google wakeup alarms and standby state. Clear only the restrictive transition.
  */
 private fun Hook.googleRestrictionBroadcastFix() {
-    // This action is Oplus-specific; avoid installing a broad broadcast hook on AOSP ROMs.
+    // 只在 ColorOS 上装：OplusAppStartupManager 不存在就抛 Missing，由 install 记一条 hook skip，
+    // 不给 AOSP 机器挂这个额外的广播入口。
     classOf(STARTUP)
 
-    val classes = listOf(
-        "com.android.server.am.ActivityManagerService",
-        CONTROLLER,
-    )
-    var hooked = false
-    for (className in classes) {
+    // AMS 与 BroadcastController 都可能是最外层入口，挂上第一个能用的就走（AMS 会转到 BC，不必两边都挂）。
+    for (className in listOf("com.android.server.am.ActivityManagerService", CONTROLLER)) {
         val clazz = classIfExists(className) ?: continue
-        val targets = clazz.declaredMethods.filter { method ->
-            method.name == "broadcastIntentWithFeature" &&
-                method.parameterTypes.count { it == Intent::class.java } == 1
-        }
+        val targets = intentOverloads(clazz, "broadcastIntentWithFeature")
         if (targets.isEmpty()) continue
 
-        targets.forEach { target ->
-            hook(target.apply { isAccessible = true }) { chain ->
+        for (target in targets) {
+            hook(target) { chain ->
                 val intent = chain.args.filterIsInstance<Intent>().firstOrNull()
                 if (intent?.action == GOOGLE_RESTRICT_CHANGE &&
                     intent.getBooleanExtra(EXTRA_RESTRICT_ENABLE, false)
@@ -211,10 +201,9 @@ private fun Hook.googleRestrictionBroadcastFix() {
             }
         }
         trace("Oplus Google restrict broadcast hook active: ${clazz.name}")
-        hooked = true
-        break // AMS delegates to BroadcastController; the outermost matching boundary is enough.
+        return
     }
-    check(hooked) { "broadcastIntentWithFeature(Intent) not found" }
+    throw NoSuchMethodError("broadcastIntentWithFeature(Intent)")
 }
 
 private fun batteryIgnoresGoogleNetworkSetting(context: Context): Boolean = runCatching {
@@ -248,29 +237,27 @@ internal fun shouldDropGoogleFirewallReject(
  * 解冻目标应用（ColorOS）：调用之前捕获的 `OplusProxyWakeLock.unfreezeIfNeed`。
  * 由 [wakeStoppedApps] 在放行推送广播时调用；失败不影响广播放行。
  */
-private fun unfreeze(target: String?) {
+private fun unfreeze(target: String) {
     val lock = wakelock.get() ?: return
-    if (target == null) return
     val uid = uidOf(target) ?: return
     // 只做新包（项目约定）：只认当前 ColorOS 的 4 参签名（尾部带 owner），
     // 不做 3 参旧签名的逐档回退；签名对不上就明确跳过，不静默装作解冻过。
-    val known = knownUnfreeze
-    val candidates = known?.let { listOf(it) } ?: lock.javaClass.declaredMethods
-        .filter { it.name == "unfreezeIfNeed" && it.parameterCount == 4 }
-    if (known == null && candidates.isEmpty()) {
-        trace("unfreeze 跳过：没有 4 参 unfreezeIfNeed 签名")
-        return
-    }
-    for (method in candidates) {
-        val args = arrayOf<Any?>(uid, WorkSource(), WAKELOCK_TAG, WAKELOCK_OWNER)
-        if (runCatching { method.apply { isAccessible = true }.invoke(lock, *args) }.isSuccess) {
-            // 只记「找到了可用签名」这一次，不每条推送打一行
-            if (knownUnfreeze == null) trace("unfreeze 可用（4 参签名）")
-            knownUnfreeze = method
+    val method = knownUnfreeze ?: lock.javaClass.declaredMethods
+        .firstOrNull { it.name == "unfreezeIfNeed" && it.parameterCount == 4 }
+        ?.apply { isAccessible = true }
+        ?: run {
+            trace("unfreeze 跳过：没有 4 参 unfreezeIfNeed 签名")
             return
         }
+    if (runCatching { method.invoke(lock, uid, WorkSource(), WAKELOCK_TAG, WAKELOCK_OWNER) }.isFailure) {
+        trace("unfreeze 跳过：4 参签名调用失败")
+        return
     }
-    if (known == null) trace("unfreeze 跳过：4 参签名调用失败")
+    // 「找到了可用签名」只记这一次，之后每条推送静默调用
+    if (knownUnfreeze == null) {
+        knownUnfreeze = method
+        trace("unfreeze 可用（4 参签名）")
+    }
 }
 
 /** system Context 只为给包名换 uid（ColorOS 解冻用），入口跑在 system_server 里，直接取现成的。 */

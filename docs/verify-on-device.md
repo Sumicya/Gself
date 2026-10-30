@@ -39,7 +39,7 @@ toybox grep **不支持 `\|` 交替**，多关键字用 `-E`：`grep -hE 'wake|k
 **必须没有的一行**（出现说明核心挂载点没找到，模块整体不工作）：
 
 ```
-hook skip 推送唤醒: java.lang.NoSuchMethodError: …#broadcastIntentLocked
+hook skip 推送入口（AMS）: sumicya.fcmself.Hook$Missing: com.android.server.am.ActivityManagerService
 ```
 
 ## 2. 核心：唤醒已停止的应用
@@ -55,13 +55,12 @@ hook skip 推送唤醒: java.lang.NoSuchMethodError: …#broadcastIntentLocked
 不是额外发一条广播。）ColorOS 上同一时刻还会走一次 `unfreezeIfNeed`，成功只在**第一次**打
 `unfreeze 可用（N 参签名）`，之后静默。
 
-> **诊断行（定位后删除）**：推送广播进入 AMS 广播入口时打一行 `push seen@AMS: <action> flags=0x… target=<包名>`，
-> 不论是否命中，标注的是进入的重载所在的入口。判读：
-> - 有 `push seen@AMS` 与 `wake: <包名>（AMS#…）`：补标志已生效，继续看 GMS 是否还回调 `CANCELLED`。
-> - 有 `push seen@AMS`，没有 `wake:`：`target=` 为空，或 `flags` 已带 `0x20`（INCLUDE_STOPPED）。
-> - 没有 `push seen@AMS`：推送没有进入 AMS 的任何广播入口重载，需要再查 GMS 出站或 ROM 的其他入口。
->
-> 2026-10-30 真机证据：`push seen@AMS` 对 GMS 的 c2dm 广播稳定命中，旧的 `BroadcastController` 挂点从未命中；
+`wake:` 后面的括号是命中的入口（如 `AMS#broadcastIntentWithFeature`）。没有 `wake:` 只有三种可能：
+推送没进 AMS 的任何广播入口重载（再查 GMS 出站或 ROM 的其他入口）、`target=` 为空（非定向），
+或原广播已带 `0x20`。
+
+> 2026-10-30 真机证据：GMS 的 c2dm 广播从 `AMS#broadcastIntentWithFeature` 进入，补上 `0x20` 后
+> 应用以新 pid 拉起、GMS 侧 `CANCELLED` 计数 0、通知入队；旧的 `BroadcastController` 挂点从未命中，
 > shell 对照实验（同一广播，仅有无 `--include-stopped-packages`）证明带 `0x20` 才能投递到已停止应用。
 
 > **冻结 ≠ 停止**：ColorOS 上从最近任务划掉通常只是**冻结**（`ps -A | grep <包名>` 见
@@ -152,14 +151,14 @@ su -c "logcat -d | grep -iE '<包名>|c2dm|Background execution|not delivering|s
    ```
    耗电明显上升就按 `Fixes.kt` 里 `ponytail:` 注释的路径把推送判据加回来。
 3. **取消原因按值认，不按下标**。验法：正常用一段时间，看有没有「该被清掉的通知没被清掉」
-   （别的 int 参数恰好等于 8 会误拦一次取消）。出现就按注释改成「第一个 String 之后」的定位。
+   （别的 int 参数恰好等于 5 / 10020 / 10021 会误拦一次取消）。出现就按注释改成「第一个 String 之后」的定位。
 
 ## 7. 当前验证状态
 
 | 项目 | 状态 |
 | --- | --- |
 | 编译 + 单测 | **已验证**（CI 持续实跑：`./gradlew test assembleDebug` 全绿，R8 入口类 dex 校验通过）。包含 `PushTest` 与纯策略单测；本轮 ColorOS 新挂点未真机验证。沙箱没有 JDK / Android SDK，编译只能由 CI 完成 |
-| 五段版本（提交数口径）与产物名 | **已验证**（CI 实跑）：Build 按 git 提交数持续产出 `Gself-26.10.15.当日序号.总序号` 并上传同名 artifact |
+| 五段版本（`run_number` 口径）与产物名 | **已验证**（CI 实跑）：Build 取本次 `run_number` 为第五段，持续产出 `Gself-yy.m.d.当日序号.总序号` 并上传同名 artifact |
 | 清理（五判据、每工作流 run 最新 5 条、全仓 artifact 最新 5 个） | **已验证**（CI 实跑）：build.yml 与 pr-check.yml 的 cleanup 步持续执行并输出逐项结论 |
 | system_server 三组 Hook（推送 / 通知 / ColorOS） | **已验证**（2026-10-05 22:13，Android 16 / API 36，ColorOS）：载入、`hook target: BroadcastController#broadcastIntentLocked(25)`、`OplusAppStartup 自启动闸门已关`、`OplusProxyBroadcast 代理已全关`、`Hans GMS 限制已置空`、`OplusProxyWakeLock instance captured`、`keep notification`、`unfreeze 可用（4 参签名）`、`wake: com.zhiliaoapp.musically` 全部出现（日志见第 9 节） |
 | ColorOS 首次解锁后的 Google 联网保护 | **代码新增，待真机验证**：按 `IgnoreGmsUserSet` 元数据及 Google appId 窄范围处理拒绝规则，并清除 Oplus 限制广播；新增纯 JVM 策略测试。新挂点是否匹配用户固件、FCM 是否恢复仍须在设备验证 |
@@ -247,7 +246,7 @@ LSPosed 日志本身会在模块载入时自动记一行，两条路互相兜底
 
 ## 8. 反馈问题时请附上
 
-- 从重启开始的完整 `FcmSelf` 日志（尤其 `hook target:` 与所有 `hook skip` 行）
+- 从重启开始的完整 `FcmSelf` 日志（尤其 `hook active:` 与所有 `hook skip` 行）
 - 产物版本号（artifact 名 `Gself-<版本>`）、ROM 名称与版本、GMS 版本号、LSPosed 版本、Android 版本
 - 目标应用包名 + 「杀掉应用 → 推送」的复现步骤
 

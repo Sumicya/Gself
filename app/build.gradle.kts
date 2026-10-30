@@ -9,14 +9,14 @@ android {
     defaultConfig {
         // 对外身份是 Gself；内部包名（namespace / 入口类）不变，CI 的 R8 入口校验仍查 sumicya/fcmself/XposedMain
         applicationId = "sumicya.gself"
-        // 只做新包（项目约定）：广播出口只实现 Android 16+ 的 BroadcastController，
+        // 只做新包（项目约定）：广播出口只实现 Android 16+ 的 AMS 广播入口，
         // 旧版本不做兼容，安装时由 minSdk 明确拒绝。
         minSdk = 36
         targetSdk = 36
-        // 发行版本（五段 yy.m.d.当日序号.总序号）由 CI 以 git 提交数一处算定并经
+        // 发行版本（五段 yy.m.d.当日序号.总序号）由 CI 以 build.yml 的 run_number 一处算定并经
         // -PversionName / -PversionCode 传入，这里只读，不自己算日期、不取 run 号。
         // 取不到 = 非发行本地构建：名字带 dev- 前缀，绝不伪装成发行版本；
-        // 要接着 CI 的总序号走就传 -PversionCode=<git rev-list --count HEAD 的值>。
+        // 要接着 CI 的总序号走就传 -PversionCode=<最近一次 CI 产物的第五段>。
         val buildNumber = providers.gradleProperty("versionCode").orNull?.toIntOrNull() ?: 1
         versionName = providers.gradleProperty("versionName").orNull ?: "dev-$buildNumber"
         versionCode = buildNumber
@@ -25,7 +25,7 @@ android {
     buildTypes {
         // debug / release 同一套裁剪（入口类由 proguard-rules.pro 保住，LSPosed 按类名字符串加载）。
         // CI 只出 debug 包：它用默认 debug 证书签名，可直接安装测试；
-        // release 变体保留给本地按需构建（未签名，用 scripts/sign-apk.sh 签）。
+        // release 变体保留给本地按需构建（未签名，用 tools/sign-apk.sh 签）。
         configureEach {
             isMinifyEnabled = true
             isShrinkResources = true

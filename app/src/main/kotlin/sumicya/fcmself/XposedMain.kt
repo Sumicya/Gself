@@ -32,9 +32,9 @@ class XposedMain : XposedModule() {
         val hooks = Hook(this, param.classLoader)
         xposedApi = hooks.api
         trace("fcmself 载入 system_server（Android ${Build.VERSION.RELEASE} / API ${Build.VERSION.SDK_INT}）")
-        hooks.install("推送唤醒") { wakeStoppedApps() }
-        hooks.install("通知保留") { notificationFixes() }
-        hooks.install("ColorOS 放行") { oplusFixes() }
+        hooks.wakeStoppedApps()
+        hooks.notificationFixes()
+        hooks.oplusFixes()
     }
 
     /** app 进程入口：按包名分发 GMS / Gboard 两组。 */

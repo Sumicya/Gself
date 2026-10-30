@@ -9,7 +9,7 @@
 - `releases`：Release 只留最近 1 个，无保留 Release 对应的本项目前缀 tag 一并删。权限只授 `contents: write`，
   只在出包工作流 `build.yml` 里、默认分支上跑；不取号，不需要完整历史。
 
-三个清理作业共用同一个 `concurrency` group `qself-cleanup` 串行，避免并发删同一对象。
+三个清理作业共用同一个 `concurrency` group `gself-cleanup` 串行，避免并发删同一对象。
 
 清理失败按原因分口径（规范 a8787a8）：403 权限类打 `::warning::` 写明对象、端点与返回码后继续，
 不让 job 红；403 以外的失败当轮即红 job 并逐条点名附返回码。
