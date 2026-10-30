@@ -48,6 +48,14 @@ jobs:
           RUN_NUMBER: ${{ github.run_number }}
         run: |
           set -euo pipefail
+          # 失败原因写成 ::error:: 注解：job 日志要另开页面，注解在 API 里一行就能取到，
+          # 不用靠猜是哪一步、更不用重新推一次去试。
+          on_err() {
+            rc=$?; trap - ERR
+            echo "::error::取号步失败 rc=$rc，命令：$(printf '%s' "$BASH_COMMAND" | tr '\n' ' ' | head -c 300)"
+            exit $rc
+          }
+          trap on_err ERR
           # 取号只读两个接口：Actions 接口抖动时重试，抖动挡在构建之外；
           # 真失败就把 gh 的原始输出写成 ::error:: 注解——job 日志要另开页面，注解一行就能取到。
           fetch() {
@@ -108,6 +116,14 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
+          # 构建失败时把 build.log 末尾写进注解：编译错误、单测失败、R8 报错都在里面，
+          # 注解可见即可定位，不必依赖下载 job 日志。
+          on_err() {
+            rc=$?; trap - ERR
+            echo "::error::构建失败 rc=$rc；build.log 末尾：$(tail -8 build.log 2>/dev/null | tr '\n' ' ' | head -c 800)"
+            exit $rc
+          }
+          trap on_err ERR
           ./gradlew -Pfcmself.buildNumber="${{ env.VERSION_CODE }}" -PversionName="${{ env.VERSION_NAME }}" -PversionCode="${{ env.VERSION_CODE }}" test assembleDebug 2>&1 | tee build.log
 
       - name: 改产物名
