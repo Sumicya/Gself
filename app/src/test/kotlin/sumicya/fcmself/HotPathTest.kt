@@ -4,7 +4,6 @@ import java.lang.management.ManagementFactory
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
-import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
 
 /**
@@ -27,8 +26,10 @@ class HotPathTest {
 
     @Test
     fun hotPathDoesNotAllocate() {
-        assumeTrue(bean.isThreadAllocatedMemorySupported, "JVM 不支持线程分配计数，跳过（不计为通过）")
-        assumeTrue(bean.isThreadAllocatedMemoryEnabled, "线程分配计数被关闭，跳过（不计为通过）")
+        // 不写成 assumeTrue 跳过：跳过在 CI 里看不出来，等于把「量过了」变成「可能没量」。
+        // CI 用 Temurin 21（HotSpot），这项计数默认可用；真不可用就红，让人去看，而不是悄悄放行。
+        assertTrue(bean.isThreadAllocatedMemorySupported, "JVM 不支持线程分配计数，无法验证零分配")
+        assertTrue(bean.isThreadAllocatedMemoryEnabled, "线程分配计数被关闭，无法验证零分配")
 
         val pushAction = "com.google.android.c2dm.intent.RECEIVE"
         val otherAction = "android.intent.action.SCREEN_ON"
