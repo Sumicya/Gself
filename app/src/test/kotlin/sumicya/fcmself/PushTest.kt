@@ -68,6 +68,18 @@ class PushTest {
         )
     }
 
+    /** 带 0x10 但已带 0x20 时不补：INCLUDE 已在，再补一次只是白改一遍 flags。 */
+    @Test
+    fun neverPatchesWhenIncludeIsAlreadySet() {
+        assertFalse(
+            Push.needsStoppedPatch(
+                "com.google.android.c2dm.intent.RECEIVE",
+                "fork.risin42.nagramx",
+                noFlags or 0x30,
+            ),
+        )
+    }
+
     /** 没有目标包名就不动：记不下对象，也无从解冻。 */
     @Test
     fun leavesUntargetedBroadcastsAlone() {
@@ -88,6 +100,8 @@ class PushTest {
         assertFalse(Push.excludesStopped(0x20))
         assertFalse(Push.excludesStopped(0x30))
         assertTrue(Push.excludesStopped(0x10 or 0x10000000))
+        assertFalse(Push.excludesStopped(0x20 or 0x10000000))
+        assertTrue(Push.excludesStopped(-1 and 0x10))  // 高位全是 1 时只看这两个标志位
     }
 
     /** 挂载点与判据都直接用 `android.content.Intent` 的常量；这两个值来自 AOSP `Intent.java:7192` / `:7203`。 */
