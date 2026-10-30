@@ -48,20 +48,21 @@ jobs:
           RUN_NUMBER: ${{ github.run_number }}
         run: |
           set -euo pipefail
-          # GitHub 的 Actions 接口会抖（2026-10-30 18:00 UTC+8 前后连续两次取号步 502 直接红掉整轮），
-          # 取号只读两个接口，重试不改变结果，却能把这种平台抖动挡在构建之外。
+          # 取号只读两个接口：Actions 接口抖动时重试，抖动挡在构建之外；
+          # 真失败就把 gh 的原始输出写成 ::error:: 注解——job 日志要另开页面，注解一行就能取到。
           fetch() {
             for i in 1 2 3 4 5; do
-              if gh api "$1" > "$2"; then return 0; fi
-              echo "取号接口 $1 第 $i 次失败，3 秒后重试" >&2
+              if out=$(gh api "$1" 2>&1) && printf '%s' "$out" > "$2"; then return 0; fi
+              echo "取号接口 $1 第 $i 次失败：$(printf '%s' "$out" | tr '\n' ' ' | head -c 200)" >&2
               sleep 3
             done
-            echo "取号接口 $1 连续 5 次失败" >&2
+            echo "::error::取号失败：$1 连续 5 次不可用；最后一次输出：$(printf '%s' "$out" | tr '\n' ' ' | head -c 300)"
             return 1
           }
           fetch "repos/$REPO/actions/workflows/build.yml/runs?per_page=100" runs.json
           fetch "repos/$REPO/actions/artifacts?per_page=100" arts.json
-          python3 - <<'PY'
+
+          if ! python3 - 2>ver.err <<'PY'
           import json, os, re, sys
           from datetime import datetime, timedelta, timezone
 
@@ -96,8 +97,12 @@ jobs:
                 f"run_number={run_number} R_first={first} 当日序号={daily} 版本={version}")
           with open(os.environ["GITHUB_ENV"], "a") as env:
               env.write(f"VERSION_NAME={version}\nVERSION_CODE={run_number}\n")
-          PY
-          rm -f runs.json arts.json
+PY
+          then
+            echo "::error::取号脚本失败：$(tr '\n' ' ' < ver.err | head -c 300)"
+            exit 1
+          fi
+          rm -f runs.json arts.json ver.err
 
       - name: 测试与构建
         shell: bash
