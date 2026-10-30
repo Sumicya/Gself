@@ -159,6 +159,12 @@ jobs:
                    ', '.join('%s=%d' % (i.filename, i.compress_size) for i in top[:3])))
           with open('apk-size.txt', 'w') as f:
               f.write(str(apk_size))
+          # 分项落盘：让「哪个部分长大了」也变成可校验的指标，而不只是看一个总数
+          with open('apk-parts.txt', 'w') as f:
+              f.write('dex %d\n' % dex)
+              f.write('native %d\n'
+                      % sum(i.compress_size for i in infos if i.filename.endswith('.so')))
+              f.write('abi %s\n' % (','.join(abis) or 'none'))
           PY
 
       - name: 核对 R8 保留 Xposed 入口类
@@ -190,13 +196,35 @@ jobs:
         shell: bash
         run: |
           # 放在上传之后：超预算要红，但红的是指标，不是把产物一起扣掉
-          BUDGET=500000  # 当前实测 45 万上下（.so 计 190 KB、dex 计 237 KB、许可全文 14 KB）；
+          # 三个上限都从 2026-10-31 的实测留余量：APK 452315（其中 .so 190746、dex 236792、许可全文 14203）
+          BUDGET=500000
+          DEX=250000
+          NATIVE=200000
           size=$(cat apk-size.txt)
+          dex=$(awk '$1 == "dex" {print $2}' apk-parts.txt)
+          native=$(awk '$1 == "native" {print $2}' apk-parts.txt)
+          abi=$(awk '$1 == "abi" {print $2}' apk-parts.txt)
+          dex=${dex:-0}
+          native=${native:-0}
+          rc=0
           if [ "$size" -gt "$BUDGET" ]; then
             echo "::error::产物体积 $size 字节超出预算 $BUDGET 字节"
-            exit 1
+            rc=1
           fi
-          echo "体积 $size 字节，预算 $BUDGET，余量 $((BUDGET - size))"
+          if [ "$dex" -gt "$DEX" ]; then
+            echo "::error::dex $dex 字节超出上限 $DEX 字节"
+            rc=1
+          fi
+          if [ "$native" -gt "$NATIVE" ]; then
+            echo "::error::原生库 $native 字节超出上限 $NATIVE 字节"
+            rc=1
+          fi
+          if [ "$abi" != "arm64-v8a" ]; then
+            echo "::error::原生库 ABI 是 '$abi'，只允许 arm64-v8a"
+            rc=1
+          fi
+          echo "APK $size/$BUDGET 余 $((BUDGET - size))；dex $dex/$DEX；原生 $native/$NATIVE；ABI $abi"
+          exit $rc
 
   cleanup-artifacts:
     needs: build
