@@ -56,9 +56,9 @@ android {
 
     // .so 默认按 store 存（AGP 4.2 起 useLegacyPackaging=false，为了安装后能直接 mmap），
     // 原生库的原始字节一分不少地计入 APK。改成安装时解压，APK 内按 deflate 存。
-    // 这一项是量出来的，不是猜的：同一份代码只增删这三行，APK 从 446,265 变成 651,327 字节，
+    // 这一项是量出来的，不是猜的：同一份代码只增删这三行，APK 由 452,315 变成 651,327 字节，
     // 其中 `lib/arm64-v8a/libdexkit.so` 由 190,746（deflate）变 381,024（store），
-    // 剩下的 14,784 字节是 store 时每个库的对齐附加字节。删掉这三行，包体大 46%。
+    // 剩下的 8,734 字节是对齐与额外字段。删掉这三行，包体大 44%。
     packaging {
         jniLibs {
             useLegacyPackaging = true
