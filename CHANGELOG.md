@@ -6,6 +6,7 @@
 - 单测新增两条：`excludesStopped` 的真值表（4 种 flags 组合 + 带高位标志），以及 `Intent.FLAG_EXCLUDE_STOPPED_PACKAGES == 0x10` / `FLAG_INCLUDE_STOPPED_PACKAGES == 0x20` 的常量守卫（值漂了单元测试当场红，而不是真机静默失效）。
 - 体积：`packaging.resources.excludes` 剔掉 `kotlin/**`、`META-INF/*.kotlin_module`、`META-INF/*.version`、`META-INF/com/**`、`DebugProbesKt.bin`（运行期不需要：模块不用 kotlin-reflect）；`proguard-rules.pro` 加 `-allowaccessmodification`（本模块没有对外 API，唯一的对外名字已由 `-keepnames` 保住）。
 - CI 新增体积预算闸门：`打印产物体积构成并校验体积预算` 步骤打印压缩后/解压后总量、dex 合计字节、`lib/` 下的 ABI 目录与前 15 大条目，并在压缩后总字节超过 360,000 时让构建失败——体积回归不再靠人盯。
+- 载入期汇总：`install` 改为返回这一组是否整组装上，`wakeStoppedApps` 收尾打一行 `推送达标：语义层在｜标志层在`（任一层缺、两层全缺各有措辞），排查时不用在两条日志里拼。
 - 未验证：真机运行期耗时没有仪器可测（沙箱无设备），本轮用「每次调用是否分配对象」与「快路指令数」作为可核对的替代指标；新包体积以 CI artifact `size_in_bytes` 实测为准。
 
 ## 许可证换 GPL-3 全文、补项目限制与随包许可（2026-10-30）

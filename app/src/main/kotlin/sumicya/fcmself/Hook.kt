@@ -28,13 +28,13 @@ typealias Fixes = Hook.() -> Unit
  */
 class Hook(val api: XposedInterface, val loader: ClassLoader) {
 
-    /** 登记一组挂载点；组内任何一处失败只影响这一组。 */
-    fun install(name: String, fixes: Fixes) {
-        try {
-            fixes()
-        } catch (t: Throwable) {
-            trace("hook skip $name: $t")
-        }
+    /** 登记一组挂载点；组内任何一处失败只影响这一组。返回这一组是否整组装上。 */
+    fun install(name: String, fixes: Fixes): Boolean = try {
+        fixes()
+        true
+    } catch (t: Throwable) {
+        trace("hook skip $name: $t")
+        false
     }
 
     /** 加载类；不存在抛 [Missing]，由 [install] 降级成一条日志。 */

@@ -39,8 +39,14 @@ import java.util.concurrent.atomic.AtomicReference
  * 兜底并打一行 `决策入口兜底`——这行同时是「还有没挂上的 AMS 入口」的客观信号。
  */
 fun Hook.wakeStoppedApps() {
-    install("停止态决策") { stoppedFilterDecision() }
-    install("推送入口（AMS）") { broadcastEntryFlags() }
+    val decided = install("停止态决策") { stoppedFilterDecision() }
+    val flagged = install("推送入口（AMS）") { broadcastEntryFlags() }
+    // 两层是互为保险的：一行讲清哪层活着，比让主人去两条日志里拼强。
+    if (decided || flagged) {
+        trace("推送达标：语义层${if (decided) "在" else "缺"}｜标志层${if (flagged) "在" else "缺"}")
+    } else {
+        trace("推送达标：两层都没挂上——这台 ROM 上推送唤醒不工作")
+    }
 }
 
 /** 已补标志的推送条数：只看「哪一层在干活」，不参与判据。 */

@@ -22,6 +22,7 @@ toybox grep **不支持 `\|` 交替**，多关键字用 `-E`：`grep -hE 'wake|k
 ```
 [fcmself] fcmself 载入 system_server（Android 16 / API 36）
 [fcmself] 停止态决策已接管：Intent#isExcludingStopped   ← 语义层：AOSP 判定「要不要排除停止态应用」的唯一枢轴
+[fcmself] 推送达标：语义层在｜标志层在                     ← 一句话汇总哪层活着；出现「缺」说明那一层没挂上
 [fcmself] hook active: AMS 广播入口 N 个重载            ← 标志层：ActivityManagerService 上所有带 Intent 参数的
                                                         broadcastIntent / broadcastIntentWithFeature / broadcastIntentLocked
                                                         重载；N 随 ROM 而变
@@ -64,6 +65,7 @@ hook skip 推送入口（AMS）: sumicya.fcmself.Hook$Missing: com.android.serve
 | 载入时的行 | 含义 |
 | --- | --- |
 | `停止态决策已接管：Intent#isExcludingStopped` | 语义层挂上：AOSP 判定「要不要排除停止态应用」的唯一枢轴（`IntentResolver.java:729` → `:749`） |
+| `推送达标：语义层在｜标志层在` | 两层都活着；任一为「缺」时只靠另一层，两层都缺时这一行会写明推送唤醒不工作 |
 | `hook active: AMS 广播入口 N 个重载` | 标志层挂上：`ActivityManagerService` 上所有带 `Intent` 参数的广播重载 |
 
 运行期只会出现下面三种之一：
