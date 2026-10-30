@@ -16,6 +16,13 @@ fcmself（推送修复）、GooglePasswordManagerUnlock（通行密钥解限）�
 - **com.google.android.gms**：移除 Google 密码管理器的「特权浏览器允许列表」检查，非 Chrome 也能用通行密钥
 - **com.google.android.inputmethod.latin**：改写 Gboard 剪贴板显示个数（10）与过期（实际不限时长）
 
+## 安装与使用
+
+1. 从 Actions 的 `Build` 最新一次运行里下载 artifact `Gself-<版本>.zip`，解出同名的 `.apk`（debug 签名，可直接安装）。
+2. 装完不用点开（模块没有界面、没有图标入口）。在 LSPosed 管理器里启用「Gself」，作用域勾 `system`、`com.google.android.gms`、Gboard（`scope.list` 已预选），然后重启。
+3. 验收：按 [`docs/verify-on-device.md`](docs/verify-on-device.md) 第 1 节确认模块被加载（日志 tag `FcmSelf`，出现 `推送达标：语义层在｜标志层在` 即两层都在），再按第 2 节把目标应用 `am force-stop` 后用推送唤醒。
+4. 停用或卸载同样要重启一次：`system` 进程里的挂载不会自己退掉。
+
 ## 构建
 
 ```bash
