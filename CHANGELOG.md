@@ -4,7 +4,8 @@
 - 定位：`app/build.gradle.kts` 既没有 `abiFilters` 也没有 `packaging` 配置，于是依赖（DexKit）自带的 `armeabi-v7a` / `arm64-v8a` / `x86` / `x86_64` 四份 `libdexkit.so` 全部打进包；同时 AGP 4.2 起 `useLegacyPackaging` 默认 false，`.so` 在 APK 里按 store 存（不压缩、4 KB 对齐），原生库字节一分不少地计入体积。
 - 改动：`defaultConfig.ndk.abiFilters` 只留 `arm64-v8a`（Android 16 设备全部 64 位，模块只在本机跑）；`packaging.jniLibs.useLegacyPackaging = true`，`.so` 改为安装时解压、APK 内 deflate 存储。两项都不删功能，推送唤醒路径无原生依赖。
 - `build.yml` 新增「打印产物体积构成」步骤：打印压缩后/解压后总字节与体积最大的 15 个条目，体积构成在 Actions 日志里可直接核对，不靠自述。
-- 未验证：新包体积以 CI 产物实测为准；`useLegacyPackaging` 下 `System.loadLibrary("dexkit")` 由安装时解压出的库加载，DexKit 两组功能（通行密钥解限、Gboard 剪贴板）仍需真机复测。
+- 第二刀（dex 侧）：`app/proguard-rules.pro` 里手写的 `-keep class org.luckypray.dexkit.** { *; }` 把整个 DexKit API 面钉进 dex；DexKit 2.2.0 自己的 AAR 已用 `consumerProguardFiles` 声明了只保 native 方法的窄规则（源码 `dexkit-android/build.gradle:77` → `dexkit-android/proguard-rules.pro`），AGP 会自动应用，故删除手写宽规则；DexKit 不反射自身（全仓唯一 `Class.forName` 在 `DexKitBridge.kt:653`，查的是平台类 `dalvik.system.BaseDexClassLoader`）。
+- 未验证：新包体积以 CI 产物实测为准；`useLegacyPackaging` 下 `System.loadLibrary("dexkit")` 由安装时解压出的库加载；R8 缩小 DexKit 后，通行密钥解限与 Gboard 剪贴板两组仍需真机复测（若 JNI 保名规则未生效，会在各自进程打一条 `hook skip`，不影响推送）。
 
 ## 推送唤醒改为「语义层 + 标志层」两层，判据抽成纯函数（2026-10-30）
 

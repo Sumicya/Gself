@@ -11,6 +11,10 @@
 # 异常类名被混淆成「q1:」就没意义了——只保留类名，不保留成员。
 -keepnames class sumicya.fcmself.Hook$Missing
 
-# DexKit 靠反射/JNI 访问自身内部，release R8 不能裁
--keep class org.luckypray.dexkit.** { *; }
--keep class org.luckypray.dexkit.**$* { *; }
+# DexKit 只通过 JNI 回调自己的 native 方法。它自己的 AAR 已经用 consumerProguardFiles 声明了
+# `-keepclasseswithmembers,includedescriptorclasses class org.luckypray.dexkit.** { native <methods>; }`
+# （2.2.0 源码 `dexkit-android/build.gradle:77` → `dexkit-android/proguard-rules.pro`），AGP 会自动应用。
+# 这里不再手写 `-keep class org.luckypray.dexkit.** { *; }`：那会把整个 API 面（查询构造器、匹配器、
+# 序列化壳）连同没用到的部分一起钉进 dex。
+# 它也不反射自己的类：全仓唯一的 `Class.forName` 是 DexKitBridge 里查
+# `dalvik.system.BaseDexClassLoader`（`DexKitBridge.kt:653`），所以收缩内部类名是安全的。
