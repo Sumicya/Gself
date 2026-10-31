@@ -58,6 +58,21 @@ class HotPathTest {
         batch(40_000) // 20 万次函数调用（每次批 5 个函数 × 40000）
         val used = allocatedBytes() - before
 
+        // 阳性对照：同一个计量器、同一台机器，故意分配 2 万个对象，必须被量出来。
+        // 没有这一段，上面的「0 字节」可能只是计量器没读数——一个从来没报过错的检查等于没加。
+        val beforeControl = allocatedBytes()
+        // 全部留着不放：对象一旦逃不掉，JIT 的逃逸分析就没法把它们抹成标量，计量器必然读得到
+        val keepAll = ArrayList<Any>(20_000)
+        for (i in 0 until 20_000) {
+            keepAll.add(ArrayList<String>(1).also { it.add("probe-$i") })
+        }
+        val control = allocatedBytes() - beforeControl
+        assertEquals(20_000, keepAll.size, "对照组的对象必须真的被创建并留住")
+        assertTrue(
+            control > 500_000,
+            "阳性对照只量到 $control 字节，2 万个 ArrayList + 字符串至少该有几十万字节：计量器没在工作，零分配结论不算数",
+        )
+
         assertTrue(
             used <= 8192,
             "热路径 20 万次调用分配了 $used 字节；预期 ≤ 8192（即每次 < 0.05 字节，等于不分配）",

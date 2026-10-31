@@ -48,14 +48,9 @@ jobs:
           RUN_NUMBER: ${{ github.run_number }}
         run: |
           set -euo pipefail
-          # 失败原因写成 ::error:: 注解：job 日志要另开页面，注解在 API 里一行就能取到，
-          # 不用靠猜是哪一步、更不用重新推一次去试。
-          on_err() {
-            rc=$?; trap - ERR
-            echo "::error::取号步失败 rc=$rc，命令：$(printf '%s' "$BASH_COMMAND" | tr '\n' ' ' | head -c 300)"
-            exit $rc
-          }
-          trap on_err ERR
+          # 失败原因写成 ::error:: 注解：job 日志要另开页面，注解在 API 里一行就能取到。
+          # 不用 trap ... ERR：2026-10-30 运行 74 实测它在这个步骤外壳里不触发（只报通用退出码），
+          # 所以每个可能失败的调用都用 if ! 显式接管，注解由分支自己打。
           # 取号只读两个接口：Actions 接口抖动时重试，抖动挡在构建之外；
           # 真失败就把 gh 的原始输出写成 ::error:: 注解——job 日志要另开页面，注解一行就能取到。
           fetch() {
@@ -81,7 +76,10 @@ jobs:
           arts = json.load(open("arts.json"))["artifacts"]
 
           def local_day(stamp: str) -> str:
-              return datetime.fromisoformat(stamp.replace("Z", "+00:00")).astimezone(TZ).strftime("%y.%-m.%-d")
+              # 整数拼接，不用 %m/%d（会补零）也不用 %-m/%-d（非 glibc 平台不生效）。
+              # Python 3.11 起 fromisoformat 直接认接口回的零时区后缀，不必手写替换。
+              d = datetime.fromisoformat(stamp).astimezone(TZ)
+              return f"{d.year % 100}.{d.month}.{d.day}"
 
           today = local_day(datetime.now(TZ).isoformat())
           todays = [r["run_number"] for r in runs if local_day(r["run_started_at"]) == today]
@@ -99,8 +97,10 @@ jobs:
           if daily < 1:
               sys.exit(f"当日序号小于 1：run_number={run_number} R_first={first}")
           version = f"{today}.{daily}.{run_number}"
-          if not re.fullmatch(r"\d{2}\.\d{1,2}\.\d{1,2}\.\d+\.\d+", version):
-              sys.exit(f"版本不是五段：{version}")
+          # 规范给定的形状断言：两位年、不补零的月与日、两个不带前导零的正整数
+          shape = r"\d{2}\.(1[0-2]|[1-9])\.(3[01]|[12][0-9]|[1-9])\.([1-9]\d*)\.([1-9]\d*)"
+          if not re.fullmatch(shape, version):
+              sys.exit(f"版本不符合 yy.m.d.当日序号.总序号（不补零）：{version}")
           print(f"取号：HEAD SHA={os.environ.get('GITHUB_SHA', '')} run_id={os.environ['RUN_ID']} "
                 f"run_number={run_number} R_first={first} 当日序号={daily} 版本={version}")
           with open(os.environ["GITHUB_ENV"], "a") as env:
@@ -118,13 +118,11 @@ jobs:
           set -o pipefail
           # 构建失败时把 build.log 末尾写进注解：编译错误、单测失败、R8 报错都在里面，
           # 注解可见即可定位，不必依赖下载 job 日志。
-          on_err() {
-            rc=$?; trap - ERR
-            echo "::error::构建失败 rc=$rc；build.log 末尾：$(tail -8 build.log 2>/dev/null | tr '\n' ' ' | head -c 800)"
-            exit $rc
-          }
-          trap on_err ERR
-          ./gradlew -Pfcmself.buildNumber="${{ env.VERSION_CODE }}" -PversionName="${{ env.VERSION_NAME }}" -PversionCode="${{ env.VERSION_CODE }}" test assembleDebug 2>&1 | tee build.log
+          # 同上：不靠 trap ERR（实测不触发），显式 if ! 接管并把 build.log 末尾写进注解。
+          if ! ./gradlew -Pfcmself.buildNumber="${{ env.VERSION_CODE }}" -PversionName="${{ env.VERSION_NAME }}" -PversionCode="${{ env.VERSION_CODE }}" test assembleDebug 2>&1 | tee build.log; then
+            echo "::error::构建失败；build.log 末尾：$(tail -8 build.log 2>/dev/null | tr '\n' ' ' | head -c 800)"
+            exit 1
+          fi
 
       - name: 改产物名
         shell: bash

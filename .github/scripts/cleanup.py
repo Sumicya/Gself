@@ -167,6 +167,9 @@ for a in sorted(arts, key=lambda x: (x["created_at"], x["id"]), reverse=True):
         drop_a.append((a, ws, f"口径：名不是 {PREFIX} 前缀"))
     elif len(seg) != SEGMENTS or not all(part.isdigit() for part in seg):
         drop_a.append((a, ws, f"口径：段数={len(seg)} 要求={SEGMENTS}，各段须为数字"))
+    elif any(part != "0" and part.startswith("0") for part in seg):
+        # 规范 2026-10-31 补：月、日、当日序号、总序号都不带前导零，26.11.01 这类按不合规产物删
+        drop_a.append((a, ws, f"口径：出现补零段 {name}，只允许 yy.m.d.当日序号.总序号 的不补零写法"))
     elif r and r["event"] == "pull_request":
         drop_a.append((a, ws, "来源：workflow_run 事件是 pull_request"))
     else:
