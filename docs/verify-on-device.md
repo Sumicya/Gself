@@ -96,6 +96,34 @@ hook skip 推送入口（AMS）: sumicya.fcmself.Hook$Missing: com.android.serve
 > **冻结 ≠ 停止**：ColorOS 上从最近任务划掉通常只是**冻结**（`ps -A | grep <包名>` 见
 > `do_freezer_trap`、`stopped=false`），这种状态广播本来就能投递。只有 `stopped=true` 才走本节这条路。
 
+## 2.1 验收：一条命令跑完（约 3 分钟）
+
+核心链路只有四个可观测信号，按顺序一次跑完，缺哪一项就按它后面的节去查。把 `<包名>` 换成本机实际应用（`fork.risin42.nagramx` 之类）。
+
+```bash
+PKG=<包名>
+su -c "am force-stop $PKG"
+su -c "dumpsys package $PKG | grep -E 'stopped='"        # ① 期望 stopped=true
+su -c "pidof $PKG"                                       # ② 期望空（进程真的没了）
+su -c "logcat -c"
+# 这里推一条 FCM 消息，等 60 秒
+sleep 60
+su -c "pidof $PKG"                                       # ③ 期望有新的 pid
+su -c "logcat -d -s FcmSelf"                             # 期望含 wake: $PKG（AMS#…）
+su -c "logcat -b events -d | grep -E 'am_proc_start' | grep -E 'c2dm|firebase'"   # ④ 期望 callingAction=c2dm RECEIVE
+su -c "dumpsys notification --noredact | grep -i $PKG"    # 通知已入队
+su -c "logcat -d | grep -ci cancelled"                    # 期望 0：没有待投递消息被取消
+```
+
+| 信号 | 通过条件 | 缺了查哪 |
+| --- | --- | --- |
+| ① 停止态 | `stopped=true` | 前态没造出来：先划掉最近任务再 `am force-stop`，否则这条链路根本没被触发（见第 2 节「冻结 ≠ 停止」） |
+| ② 前态进程 | `pidof` 为空 | 同上，进程还在就测不到推送拉起 |
+| ③ 拉起 | 有新 pid，且 `FcmSelf` 日志里有 `wake: <包名>` | 先看第 1 节三层日志，再按第 2 节「两层挂载与判读」分辨哪层在干活 |
+| ④ 平台旁证 | `am_proc_start` 带 `callingAction=c2dm RECEIVE` | 说明是推送广播拉起的；没有则推送没到设备，按第 5 节三段归因查 ① |
+
+四项全中才算验收通过；本清单不采信模块自述（③ 的日志是模块自己打的），② 与 ④ 都取自平台的进程表与 EventLog。
+
 ## 3. ColorOS 放行
 
 26.10.1 起原有的四个 ColorOS 后台闸门都是**无条件**放开，不再逐条判「实参里有没有推送」，所以
@@ -197,17 +225,17 @@ su -c "logcat -d | grep -iE '<包名>|c2dm|Background execution|not delivering|s
 | 清理（五判据、每工作流 run 最新 5 条、全仓 artifact 最新 5 个） | **已验证**（CI 实跑）：build.yml 与 pr-check.yml 的 cleanup 步持续执行并输出逐项结论 |
 | system_server 三组 Hook（推送 / 通知 / ColorOS） | **已验证**（2026-10-05 22:13，Android 16 / API 36，ColorOS）：载入、当时的 `hook target: BroadcastController#broadcastIntentLocked(25)`（该挂点 2026-10-30 已移除，见第 2 节）、`OplusAppStartup 自启动闸门已关`、`OplusProxyBroadcast 代理已全关`、`Hans GMS 限制已置空`、`OplusProxyWakeLock instance captured`、`keep notification`、`unfreeze 可用（4 参签名）`、`wake: com.zhiliaoapp.musically` 全部出现（日志见第 9 节） |
 | 推送唤醒标志层（AMS 入口） | **已验证**（2026-10-30 12:39，ColorOS / Android 16，nagramx）：`am force-stop` 后 `wake:` 命中，进程由 c2dm 广播以新 pid 拉起，GMS 侧 `CANCELLED` 计数 0，通知入队 |
-| ColorOS 首次解锁后的 Google 联网保护 | **代码新增，待真机验证**：按 `IgnoreGmsUserSet` 元数据及 Google appId 窄范围处理拒绝规则，并清除 Oplus 限制广播；新增纯 JVM 策略测试。新挂点是否匹配用户固件、FCM 是否恢复仍须在设备验证 |
+| ColorOS 首次解锁后的 Google 联网保护 | **代码新增，待真机验证**：按 `IgnoreGmsUserSet` 元数据及 Google appId 窄范围处理拒绝规则，并清除 Oplus 限制广播；新增纯 JVM 策略测试。新挂点是否匹配用户固件、FCM 是否恢复仍须在设备验证。怎么验：第 3 节末「首次解锁后 GMS 一直未连接」的日志窗口（重启后看 FCM Diagnostics 的 `Close err` 与 `dumpsys batterystats`）；约 10 分钟 |
 | 只做新包（minSdk 36 / 4 参 unfreeze） | **已验证**（2026-10-05 同一份日志）：Android 16 上 `BroadcastController` 存在并挂上，ColorOS 的 `unfreezeIfNeed` 4 参签名可用。**注**：2026-10-30 起推送挂点改为 AMS 入口（见第 2 节），BroadcastController 挂点在当前构建上不再命中 |
 | GMS 通行密钥解限 | **仅装点已验证**：`通行密钥解限 Hook 已安装` 出现两次（GMS 进程重启过）；「非 Chrome 浏览器能用通行密钥」要实际调一次才知道 |
-| Gboard 剪贴板 | **未见日志**（2026-10-05 时点）：日志里没有 `Gboard 剪贴板 Hook 已安装`，也没有 `hook skip`——先确认 Gboard 是不是当前输入法（见第 1 节），是的话这条要查 |
+| Gboard 剪贴板 | **未见日志**（2026-10-05 时点）：日志里没有 `Gboard 剪贴板 Hook 已安装`，也没有 `hook skip`。怎么验：`su -c "settings get secure default_input_method"` 确认是 Gboard，切到 Gboard 打一次字，再 `su -c 'logcat -d -s FcmSelf'`；约 2 分钟 |
 | Gself 真机链路 | **已验证**（2026-10-06，OnePlus/ColorOS，`26.10.6.1.128`）：推送唤醒 `wake:` 批量命中（含「长连接断流后重启恢复」场景，见第 10 节）、通知保留 `keep notification` 命中；三组挂载点已在三合一时验过 |
 | 1.0.0 冻结态链路 | 已验通（OnePlus/ColorOS，build `20260926_1edb471`）：载入 / hook 装配 / `shouldProxy bypass` / `No Intercept` / flag / `unfreeze` / `Keep notification` 全命中 |
 | 1.0.0 force-stop 唤醒 | 已验通（2026-09-26，OnePlus/ColorOS，nagramx fork）：`stopped=true` 下推送以新 pid 拉起应用 |
 | 介入判据（`Push.needsStoppedPatch`） | 单测覆盖（`PushTest`）：判据是纯函数（action / 目标包名 / flags），整张表在 JVM 里验 |
-| 语义层 `Intent#isExcludingStopped` | **未真机验证**（2026-10-30 本轮新增）：只经 CI 编译，未在设备上确认该挂点命中；载入日志出现 `停止态决策已接管` 只证明挂上 |
-| 参数按类型/按值识别 | **未验证**：无 JVM 单测（要真 Intent / 真 ROM 类） |
-| release（R8）产物 | **未验证**：CI 只出 debug 包，release 变体只在本地产出、没人装上验过 |
+| 语义层 `Intent#isExcludingStopped` | **未真机验证**（2026-10-30 本轮新增）：只经 CI 编译，未在设备上确认该挂点命中；载入日志出现 `停止态决策已接管` 只证明挂上。怎么验：第 2.1 节的命令块，同时看 `logcat -d -s FcmSelf` 里有没有 `决策入口兜底`（没有=标志层已覆盖全部入口，语义层只是保险）；约 3 分钟 |
+| 参数按类型/按值识别 | **未验证**：无 JVM 单测（要真 Intent / 真 ROM 类）。怎么验：第 2.1 节的命令块，`wake:` 打出来即说明 `chain.args[idx]` 取对了；约 3 分钟 |
+| release（R8）产物 | **未验证**：CI 只出 debug 包，release 变体只在本地产出、没人装上验过。怎么验：`./gradlew assembleRelease`（需 JDK 21 + Android SDK）→ `tools/sign-apk.sh` 签名 → 装机跑第 2.1 节；约 15 分钟 |
 
 ## 7.1 消息延迟 / 滞留：怎么抓日志
 

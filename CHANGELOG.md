@@ -14,6 +14,8 @@
 - 载入期汇总：`install` 改为返回这一组是否整组装上，`wakeStoppedApps` 收尾打一行 `推送达标：语义层在｜标志层在`（任一层缺、两层全缺各有措辞），排查时不用在两条日志里拼。
 - 出包健壮性（含两次自伤与修复）：取号步的两个 `gh api` 调用加了 5 次重试，失败时把 `gh` 原始输出写成 `::error::` 注解。改 heredoc 时把终止符 `PY` 写在第 0 列，整份工作流变成非法 YAML（运行记录 72 零 job 秒失败），已按 10 列缩进修正并用 `bash -n` 逐块校验全部 `run:` 块；接着想用 `trap on_err ERR` 把构建失败的尾巴写成注解，运行记录 74 证明它在本仓库的步骤外壳里不触发（只报 `Process completed with exit code 1`），改成在 python 里 `except BaseException` 捕获并自己 `::error::`，运行记录 75 才第一次读到真实的超标字节数。——2026-10-30 18:00 UTC+8 前后 Actions 接口连续抖动，第 68、69 两轮都卡在 `repos/…/artifacts` 那行 502 直接红掉，与代码无关；重试不改变取号结果。
 - README 补上原本缺失的「安装与使用」章（规范章节顺序里的这一节此前一直省略）：下载 artifact、装完在 LSPosed 勾作用域后重启、按 `docs/verify-on-device.md` 第 1、2 节验收、停用也要重启一次。纯文档提交命中 `paths-ignore`，不占号。
+- 真机验收从「散在七节里的命令」收敛成一条可复制的块：`docs/verify-on-device.md` 新增第 2.1 节，`PKG=<包名>` 之后依次跑 force-stop → `dumpsys package … stopped=` → `pidof` → 等 60 秒 → `pidof` → `logcat -s FcmSelf` → EventLog `am_proc_start` → `dumpsys notification` → `grep -ci cancelled`，四项信号（停止态、前态无进程、新 pid 且 `wake:`、平台侧 `callingAction=c2dm RECEIVE`）全中才算通过，每项缺了直接指向该查的节。约 3 分钟跑完，其中两项取自平台的进程表与 EventLog，不采信模块自述。
+- 同一文件「当前验证状态」表里五条未验证项各补「怎么验 + 预计耗时」：语义层挂点与参数下标（3 分钟，第 2.1 节）、release 产物（`assembleRelease` + `tools/sign-apk.sh` + 装机，15 分钟）、ColorOS 首次解锁后的 Google 联网保护（10 分钟，第 3 节日志窗口）、Gboard 剪贴板（2 分钟，先确认默认输入法）。状态行不再只是一句「未验证」。
 - 未验证：真机运行期耗时没有仪器可测（沙箱无设备），本轮用「每次调用是否分配对象」与「快路指令数」作为可核对的替代指标；体积数字取自 APK 文件本身（不再用 artifact 的 `size_in_bytes`），真机未复测。
 
 ## 许可证换 GPL-3 全文、补项目限制与随包许可（2026-10-30）
