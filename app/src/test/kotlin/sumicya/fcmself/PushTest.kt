@@ -111,6 +111,27 @@ class PushTest {
         assertEquals(0x20, Intent.FLAG_INCLUDE_STOPPED_PACKAGES)
     }
 
+    /**
+     * `Fixes.kt` 的 `waken` 现在先看标志再读目标包名，这条快路成立的前提是：
+     * 只要 flags 里带了 INCLUDE，`needsStoppedPatch` 一定是 false。
+     * 该前提就是它的第一个合取项；这里把 action / target 的取值组合都过一遍钉住，
+     * 将来谁删掉那个合取项，这条会红，而不是让提前返回静默改语义。
+     */
+    @Test
+    fun includeFlagNeverNeedsPatch() {
+        val include = Intent.FLAG_INCLUDE_STOPPED_PACKAGES
+        for (action in listOf("com.google.android.c2dm.intent.RECEIVE",
+                              "com.google.firebase.MESSAGING_EVENT",
+                              "android.intent.action.SCREEN_ON", null)) {
+            for (target in listOf("com.example.app", null, "")) {
+                for (flags in listOf(include, include or 0x10000000, include or 0x10)) {
+                    assertFalse(Push.needsStoppedPatch(action, target, flags),
+                        "带 INCLUDE 时不该需要补标志：action=$action target=$target flags=$flags")
+                }
+            }
+        }
+    }
+
     /** 非推送族一律零介入，哪怕带目标、哪怕没带标志。 */
     @Test
     fun ignoresNonPushBroadcasts() {

@@ -123,6 +123,18 @@ jobs:
             exit 1
           fi
 
+      - name: 报告热路径基线
+        shell: bash
+        run: |
+          # 单测把基线写进 build/bench-hooks.txt（工作目录可能是 app/ 也可能是根），
+          # 这里找出来写进注解：注解永久可查，比翻 job 日志稳。
+          f=$(find . -name 'bench-hooks.txt' | head -1)
+          if [ -z "$f" ]; then
+            echo "::warning::没找到 bench-hooks.txt，热路径基线未产出"
+            exit 0
+          fi
+          echo "::notice::热路径基线（宿主 JVM，非真机）$(tr '\n' ' ' < "$f" | head -c 900)"
+
       - name: 改产物名
         shell: bash
         run: |

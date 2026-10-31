@@ -108,6 +108,12 @@ private fun intentOverloads(clazz: Class<*>, name: String): List<Method> =
 
 /** 补 `FLAG_INCLUDE_STOPPED_PACKAGES` 并解冻目标；判据全在 [Push.needsStoppedPatch]，这里只执行。 */
 private fun waken(intent: Intent, where: String) {
+    // 快路：已带 INCLUDE 的广播直接退出，连 component / package 都不读。
+    // 同一条广播会依次穿过 broadcastIntent / broadcastIntentWithFeature / broadcastIntentLocked，
+    // 第 2、3 次进来时标志已经补好，这里只剩一次位运算。
+    // 这条快路依赖 [Push.needsStoppedPatch] 的第一个合取项（带 INCLUDE 必不需要补），
+    // 该不变量由 PushTest#includeFlagNeverNeedsPatch 钉住，删掉那边这个提前返回就会变语义。
+    if (intent.flags and Intent.FLAG_INCLUDE_STOPPED_PACKAGES != 0) return
     // 目标包名只查一次：判据与日志共用，不为了「可读」多走一遍 component / package 取值
     val target = Push.targetOf(intent) ?: return
     if (!Push.needsStoppedPatch(intent.action, target, intent.flags)) return

@@ -37,6 +37,12 @@
 - 图重出并加标注：共 **13 块**——顶排 5 格（1 参考 108dp 画布带白圈 r=33 与黄圈 r=36，加 4 种遮罩：`CIRCLE r36`／`SQUIRCLE n4 r36`／`ROUNDED c16`／`SQUARE 72`）、中排 4 块（四种遮罩在**真实 48px** 下）、底排 4 块（真实 96/144/192px 圆形遮罩 + 192px 单色层）。每块下方有 3×5 点阵标注（遮罩名与真实像素尺寸），不需要外部字体，换台机器逐字节一致。
 - 上一版图的三处硬伤已改：① 48px 曾把同一张复制 6 份（零对比信息），现四种遮罩各一块且 sha256 互不相同（`129a7716`／`6c4dd41c`／`9f6be0d8`／`d1661137`）；② 48/96/192 三档曾直接缩满幅方块、没走遮罩，现全部先套遮罩再面积平均降采样；③ 全图零标注，现每块带名。
 - 口径更正（上一轮汇报错在两处，记在此）：一、图只给文件名没内联，按规范算未完成；二、"生效点"写成了规范仓 `Sumicya/selfs` 的 main（`96fdd26`），那个 SHA 在本仓不存在（查 422），本仓 `main` 是 **`6281b3d`**（2026-10-28 18:57:21）。以后收尾分两行写：本仓 main、规范仓 selfs 的 GLOBAL.md 提交。
+- 推送热路径快路：`Fixes.kt` 的 `waken` 改成**先看 `FLAG_INCLUDE_STOPPED_PACKAGES` 再读目标包名**。同一条广播会依次穿过 `broadcastIntent` / `broadcastIntentWithFeature` / `broadcastIntentLocked`，第 2、3 次进来时标志已经补好，现在只剩一次位运算，不再走 `component?.packageName ?: getPackage()`。逻辑等价的前提是「带 INCLUDE 的 intent 一定不需要补」，该前提就是 `Push.needsStoppedPatch` 的第一个合取项；新增 `PushTest#includeFlagNeverNeedsPatch` 把 action / target / flags 的组合过一遍钉住，将来谁删掉那个合取项，提前返回会立刻变成红的测试而不是静默改语义。
+- 新增 `HotPathBenchmarkTest`：给 `isPush` / `excludesStopped` / `needsStoppedPatch` 出 ns/op 与 B/op 基线。口径写死在测试头注释里——预热 20 万次、5 批 × 100 万次、ns/op 与分配量都取 5 批中位数、分配量用 `com.sun.management.ThreadMXBean`。结果写 `build/bench-hooks.txt`，CI 新增步骤「报告热路径基线」把它写进运行注解，注解可永久复查。
+- 不测 `Push.targetOf`：它吃 `android.content.Intent`，JVM 单测里是桩对象，量出来的是桩的耗时，与 system_server 无关。真机侧只能看 logcat 毫秒差，命令写在下面。
+- 数只描述量级：宿主 JVM（Linux x86_64）与手机上的 ART 不是一回事，这组数用来判断「纳秒还是微秒」和「每次分配几个字节」，不能当手机耗时。真机读数：`su -c 'logcat -d -v threadtime -s FcmSelf' | head -5`，看 `hook active` 行与第一条 `wake:` 行的毫秒差，重启两次各取一次，差 30% 以上才算有信号。
+- 没新建 `docs/performance.md`：规范「文档目录克制」只允许 README、CHANGELOG 与许可证，所以数写在这里。要单开一个文件，一句话即可。
+- 未验证：这组基线数还没跑出来（沙箱无 JDK，本地起不了 Gradle），本条的数是 CI 首跑后补的。
 - 未验证：真机运行期耗时没有仪器可测（沙箱无设备），本轮用「每次调用是否分配对象」与「快路指令数」作为可核对的替代指标；体积数字取自 APK 文件本身（不再用 artifact 的 `size_in_bytes`），真机未复测。
 
 ## 许可证换 GPL-3 全文、补项目限制与随包许可（2026-10-30）
