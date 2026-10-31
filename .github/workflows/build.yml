@@ -180,6 +180,48 @@ jobs:
           sys.exit(0 if ok else 1)
           PY
 
+      - name: 核验编好的图标层（编译产物为准，不看源码）
+        shell: bash
+        run: |
+          # 一手材料是 APK 里的二进制 AXML 与 resources.arsc，不是源 XML：
+          # 源文件写对了不等于 aapt2 编出来还在、引用还通。这里逐字节比对。
+          python3 - <<'PY'
+          import glob, re, sys, zipfile
+
+          src = open('app/src/main/res/drawable/ic_launcher_monochrome.xml',
+                     encoding='utf-8').read()
+          pathdata = re.findall(r'android:pathData="([^"]+)"', src)
+          assert len(pathdata) == 1, '源文件应只有一条 path'
+
+          def has(blob, s):
+              # AXML 的字符串池可能是 UTF-8 也可能是 UTF-16LE，两种都试
+              return s.encode('utf-8') in blob or s.encode('utf-16-le') in blob
+
+          apk = sorted(glob.glob('app/build/outputs/apk/debug/*.apk'))[0]
+          with zipfile.ZipFile(apk) as z:
+              names = z.namelist()
+              anydpi = sorted(n for n in names if 'mipmap-anydpi-v26' in n)
+              mono = sorted(n for n in names if n.endswith('ic_launcher_monochrome.xml'))
+              layers = {n: (has(z.read(n), 'background'), has(z.read(n), 'foreground'),
+                            has(z.read(n), 'monochrome')) for n in anydpi}
+              blob = z.read(mono[0]) if mono else b''
+              exact = bool(mono) and has(blob, pathdata[0])
+              prefix = bool(mono) and has(blob, pathdata[0][:40])
+              arsc = 'resources.arsc' in names and has(z.read('resources.arsc'),
+                                                       'ic_launcher_monochrome')
+
+          ok = (len(anydpi) == 2 and len(mono) == 1 and all(all(v) for v in layers.values())
+                and prefix and arsc)
+          detail = ('anydpi-v26 条目 %d（%s）；monochrome 层 %d 份，pathData %s；'
+                    'arsc 已登记 ic_launcher_monochrome=%s'
+                    % (len(anydpi), '、'.join(n.split('/')[-1] for n in anydpi), len(mono),
+                       '逐字节相同' if exact else ('前缀相同' if prefix else '不一致'), arsc))
+          for n, v in layers.items():
+              detail += '；%s 三层=%s' % (n.split('/')[-1], ''.join('1' if x else '0' for x in v))
+          print(('::notice::图标层核验通过：' if ok else '::error::图标层核验不通过：') + detail)
+          sys.exit(0 if ok else 1)
+          PY
+
       - name: 上传产物
         uses: actions/upload-artifact@v7
         with:

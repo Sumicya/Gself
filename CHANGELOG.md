@@ -26,6 +26,13 @@
 - 未动：没重画、没换配色、没改包名、没动 CI、没发版；`AndroidManifest.xml` 的 `icon` / `roundIcon` 原样。
 - 规范 2026-10-31 新版（`main` `96fdd26`，282 行）把 `bad/CHANGELOG-history.md` 并入正文并删除，本仓照做：`bad/CHANGELOG-history.md` 的 38 条原样接到 `CHANGELOG.md` 末尾（更早的在后，倒序不变），文件删除，`CHANGELOG.md` 现 43 条、697 行，不再设条数上限；`build.yml` 的 `paths-ignore` 同步去掉 `bad/**`，与规范统一名单一致（`**.md`／`docs/**`／`LICENSE`／`.gitignore`）。
 - `docs/verify-on-device.md` 新增第 2.2 节：`pm path` 必须整条包在 `su -c` 里（普通用户调不了包服务，报错串会被当成文件名喂给 `unzip`，2026-10-31 踩过），给出核图标的两条命令——`unzip -l` 应出现 `mipmap-anydpi-v26` 的两份 xml，`unzip -p` 应看到 background／foreground／monochrome 三层且 monochrome 指向 `@drawable/ic_launcher_monochrome`。这一节把上一轮标「未验证」的装机核对变成一条可复制的命令。
+- 图标审计第二层：把"源 XML 对不对"换成"系统实际怎么合成"。依据 AOSP `AdaptiveIconDrawable`（`aosp-mirror/platform_frameworks_base` main）的常量与算式：`MASK_SIZE = 100f` :89、`SAFEZONE_SCALE = 66f/72f` :94、`EXTRA_INSET_PERCENTAGE = 1/4f` :105、`DEFAULT_VIEW_PORT_SCALE = 2/3` :106；图层按 `insetWidth = w/(2*2/3) = 0.75w` 放大到 1.5 倍画（:355），遮罩路径按 100 单位缩放到 drawable 边界（:366）。由此推出：可见设计区 = 108/1.5 = 72dp 直径，安全圆半径 = 36 × 66/72 = **33dp**——这比"我按 33 算"多了一条可核的出处。
+- 第二层实测（`/home/user/audit/mask_audit*.py`，1080×1080 网格 = 10px/dp，nonzero 扫描线填充）：白图形最大半径 **24.97dp**（10px/dp 采样）／25.05dp（解析顶点），安全圆余 **8.03～7.95dp**；遮罩圆（r=36）余 11.03。四种常见遮罩形状——圆、方圆（superellipse n=4）、圆角方（角半径 16dp）、正方 72dp——裁掉的白像素**均为 0**，即换任何 OEM 遮罩都不缺角。
+- 阴影落地：alpha 总量 25,798.8，其中 **91.9% 落在可见遮罩内**，被裁掉的 8.1% 全是最淡的一段（渐变终点侧）。上一轮写的"48.9% 在圆外"是用 r=48 当边界，与真实遮罩 r=36 不是一个口径，以本轮为准。
+- 眼睛是**洞**不是白点：机器人三条子路径的绕向为 `- + +`，主体与两眼反向，`fillType="nonZero"` 下两眼为镂空，各 11.2dp²、等效直径 **3.78dp**。48px（mdpi）下按面积平均降采样后眼心 RGB 为 (48,166,101)，与白头的对比度约 3.1:1，仍是可分辨的绿点；96/192px 下不受影响。这也说明 monochrome 层虽与前景同几何，主题化后眼睛照样透气。
+- 对比度（外部尺子：WCAG 1.4.11 非文本图形 3:1）：白 `#FFFFFF` / 背景 `#3DDC84` = **1.784:1**；沿白图形边界取 1,570 个像素，**86.4% 低于 3:1**（中位 1.784:1），只有压在阴影最深处的那 13.6% 到 3.08～3.26:1。如实记：这是 Android Studio 模板的原样配色，不是本轮引入，主人已定不重画；数字摆在这里供判定。
+- 新增 CI 步骤「核验编好的图标层」：一手材料是 APK 里的二进制 AXML 与 `resources.arsc`，不是源 XML。断言四件事——`res/mipmap-anydpi-v26/` 恰 2 个条目、每份都能在字符串池里找到 background/foreground/monochrome、`ic_launcher_monochrome` 的 pathData 与源文件前缀逐字节相同（UTF-8 与 UTF-16LE 两种池都试）、`resources.arsc` 已登记 `ic_launcher_monochrome`。结论以 `::notice::` 落进运行注解，永久留在仓外也能复算。
+- 新增 `docs/icon-mask.png`：108dp 画布上的安全圆（白）与遮罩圆（黄）、四种遮罩的实际出形、48/96/192px 三档真实尺寸。
 - 未验证：真机运行期耗时没有仪器可测（沙箱无设备），本轮用「每次调用是否分配对象」与「快路指令数」作为可核对的替代指标；体积数字取自 APK 文件本身（不再用 artifact 的 `size_in_bytes`），真机未复测。
 
 ## 许可证换 GPL-3 全文、补项目限制与随包许可（2026-10-30）
