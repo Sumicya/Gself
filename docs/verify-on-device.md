@@ -474,11 +474,13 @@ tag 原文核读；`startForegroundOrCatch` 函数段引自 Codeberg 代码索�
 ### 设备上一次分清（重启后先不要打开 Monocles）
 
 ```
-adb shell dumpsys deviceidle whitelist | grep de.monocles.chat
-adb shell dumpsys package de.monocles.chat | grep -E "RECORD_AUDIO|CAMERA" -A1
-adb logcat -d | grep -E "Could not start foreground service|ForegroundServiceStartNotAllowed|SystemEventReceiver"
-adb shell dumpsys activity services de.monocles.chat
+su -c "dumpsys deviceidle whitelist | grep de.monocles.chat"
+su -c "dumpsys package de.monocles.chat | grep -E 'RECORD_AUDIO|CAMERA' -A1"
+su -c "logcat -d | grep -E 'Could not start foreground service|ForegroundServiceStartNotAllowed|SystemEventReceiver'"
+su -c "dumpsys activity services de.monocles.chat"
 ```
+
+手机上直接跑，不需要电脑：`su -c` 之后的命令在设备自己的 shell 里执行（本清单别处的命令同此形式）。
 
 - 出现 `Could not start foreground service` 且堆栈含
   ForegroundServiceStartNotAllowedException / microphone ⇒ 上面的应用

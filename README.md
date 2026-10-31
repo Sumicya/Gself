@@ -18,18 +18,39 @@ fcmself（推送修复）、GooglePasswordManagerUnlock（通行密钥解限）�
 
 ## 安装与使用
 
-1. 一条命令拿到最新产物（需要已登录的 `gh`）：解析出最近一次 `Build` 的运行号，下载它的 artifact，解出 `.apk`（debug 签名，可直接安装）。
+全程在手机上（Termux 等带 `gh` 的终端），不需要电脑、不需要 `adb`。
 
-   ```bash
-   run=$(gh run list -R Sumicya/Gself --workflow Build --limit 1 --json databaseId --jq '.[0].databaseId') \
-     && gh run download -R Sumicya/Gself "$run" \
-     && ls -l */*.apk
-   ```
+**1. 下载到固定路径**（`gh` 已登录时可用；只取最近一次 `Build` 的产物）
 
-   `gh run download` 会把 artifact 解开到同名目录，里面就是 `Gself-<版本>.apk`。不想用 `gh` 就在 Actions 的 `Build` 最新一次运行页面底部下载 artifact `Gself-<版本>.zip`。artifact 只留 5 天、每仓最多 5 个，取一次即可。
-2. 装完不用点开（模块没有界面、没有图标入口）。在 LSPosed 管理器里启用「Gself」，作用域勾 `system`、`com.google.android.gms`、Gboard（`scope.list` 已预选），然后重启。
-3. 验收：按 [`docs/verify-on-device.md`](docs/verify-on-device.md) 第 1 节确认模块被加载（日志 tag `FcmSelf`，出现 `推送达标：语义层在｜标志层在` 即两层都在），再按第 2 节把目标应用 `am force-stop` 后用推送唤醒。
-4. 停用或卸载同样要重启一次：`system` 进程里的挂载不会自己退掉。
+```bash
+D=/storage/emulated/0/Download/selfs
+mkdir -p "$D"
+gh run download -R Sumicya/Gself -n "$(gh api repos/Sumicya/Gself/actions/artifacts --jq '.artifacts[0].name')" -D "$D"
+```
+
+**2. 看包在哪**
+
+```bash
+find "$D" -name '*.apk' -printf '%p  %s 字节\n'
+```
+
+**3. 装**（有 root 直接装；没 root 就在文件管理里点开上一步列出的 `.apk`）
+
+```bash
+su -c "pm install -r $(find "$D" -name '*.apk' | head -1)"
+```
+
+**4. 清**
+
+```bash
+rm -rf "$D"
+```
+
+装完不用点开（模块没有界面、没有图标入口）。在 LSPosed 管理器里启用「Gself」，作用域勾 `system`、`com.google.android.gms`、Gboard（`scope.list` 已预选），然后重启——`system` 进程里的挂载只能靠重启生效，停用或卸载同样要重启一次。
+
+验收：按 [`docs/verify-on-device.md`](docs/verify-on-device.md) 第 1 节确认模块被加载（日志 tag `FcmSelf`，出现 `推送达标：语义层在｜标志层在` 即两层都在），再按第 2.1 节那一条命令跑完四项信号。
+
+artifact 只留 5 天、每仓最多 5 个；路径里不带空格，所以第 3 步的 `$(find …)` 可以直接嵌进 `su -c`。
 
 ## 构建
 
