@@ -18,7 +18,15 @@ fcmself（推送修复）、GooglePasswordManagerUnlock（通行密钥解限）�
 
 ## 安装与使用
 
-1. 从 Actions 的 `Build` 最新一次运行里下载 artifact `Gself-<版本>.zip`，解出同名的 `.apk`（debug 签名，可直接安装）。
+1. 一条命令拿到最新产物（需要已登录的 `gh`）：解析出最近一次 `Build` 的运行号，下载它的 artifact，解出 `.apk`（debug 签名，可直接安装）。
+
+   ```bash
+   run=$(gh run list -R Sumicya/Gself --workflow Build --limit 1 --json databaseId --jq '.[0].databaseId') \
+     && gh run download -R Sumicya/Gself "$run" \
+     && ls -l */*.apk
+   ```
+
+   `gh run download` 会把 artifact 解开到同名目录，里面就是 `Gself-<版本>.apk`。不想用 `gh` 就在 Actions 的 `Build` 最新一次运行页面底部下载 artifact `Gself-<版本>.zip`。artifact 只留 5 天、每仓最多 5 个，取一次即可。
 2. 装完不用点开（模块没有界面、没有图标入口）。在 LSPosed 管理器里启用「Gself」，作用域勾 `system`、`com.google.android.gms`、Gboard（`scope.list` 已预选），然后重启。
 3. 验收：按 [`docs/verify-on-device.md`](docs/verify-on-device.md) 第 1 节确认模块被加载（日志 tag `FcmSelf`，出现 `推送达标：语义层在｜标志层在` 即两层都在），再按第 2 节把目标应用 `am force-stop` 后用推送唤醒。
 4. 停用或卸载同样要重启一次：`system` 进程里的挂载不会自己退掉。
@@ -29,7 +37,9 @@ fcmself（推送修复）、GooglePasswordManagerUnlock（通行密钥解限）�
 ./gradlew test assembleDebug   # 产物：app/build/outputs/apk/debug/app-debug.apk
 ```
 
-CI（`Build`）跑单测 + 编译 debug + 校验 R8 入口类，产物 `Gself-<版本>.apk` 走 Actions artifact（滚动清理保留最近 5 个发行包，5 天过期）；不发 Release。真机验证见 [`docs/verify-on-device.md`](docs/verify-on-device.md)。
+CI（`Build`）跑单测 + 编译 debug + 校验 R8 入口类 + 体积分项闸门，产物 `Gself-<版本>.apk` 走 Actions artifact（滚动清理保留最近 5 个发行包，5 天过期）；不发 Release。真机验证见 [`docs/verify-on-device.md`](docs/verify-on-device.md)，其中第 2.1 节是一条命令跑完四项信号的验收块。
+
+体积读数同时写进当轮 CHANGELOG：artifact 会在 5 天后被清理，运行号也会被滚动清掉，只留 ID 等于几轮后就查不到；`CHANGELOG.md` 里那条记着 APK 字节数、dex、原生库、许可全文的体积与出处运行号，几时都能对上。
 
 产物的「对应源码」怎么找：artifact 名第四、五段是版本，第五段等于 `Build` 的 `run_number`，按这个号查该次运行即可拿到 head 提交；那个提交就是可构建的源码，构建命令就是上面这条。
 
