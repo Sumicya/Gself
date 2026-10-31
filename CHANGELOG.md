@@ -20,6 +20,10 @@
 - 手机端实取证据（主人终端原样输出）：`gh run download` 落到 `Gself-26.10.31.13.83/Gself-26.10.31.13.83.apk`，`ls -l` 显示 **452,315 字节**，与运行 83 的 check-run 注解 `APK 452315 字节` 逐字节相同——上一轮标「未验证」的「取到的产物就是 CI 量的那个包」由此实测成立。
 - README「安装与使用」第一条改成一条命令拿到成品：`gh run list -R Sumicya/Gself --workflow Build --limit 1 --json databaseId --jq '.[0].databaseId'` 取运行号后 `gh run download` 直接落出 `Gself-<版本>.apk`，不再要求主人自己去 Actions 页面翻。取运行号这一段在本沙箱实跑过（`run=41156973190`），最后一段的字节下载跑不了——artifact 落在 `*.blob.core.windows.net`，属于本沙箱出网名单之外（`curl` 报 `SSL_ERROR_SYSCALL`），所以「下载成功」这一项标未验证。
 - 「构建」章加一句读数留档约定：artifact 5 天后被清理、运行号会被滚动掉，所以每轮的 APK / dex / 原生库 / 许可全文体积连同出处运行号都写进当轮 CHANGELOG，几轮后仍能对上；ID 只是索引入口，不是证据本体。
+- 应用图标按规范「七、文档 · 应用图标」审计（2026-10-31）。**几何合规，不需要缩放**：把 `ic_launcher_foreground.xml` 两条 path 按 SVG 规范逐命令解析（M/c/l/L/z 与 M/l/c/C/h/z，相对坐标逐段转绝对）后采样，白色机器人 bbox 为 x[31, 77]、y[38.028, 63.928]，离 108 画布中心 (54,54) 最远点 (31, 63.928) 半径 **25.05**，安全半径 33（66dp 直径），余 **7.95**；两只眼睛最远 12.64。所以不加 `<group>`，也没有任何比例改动——按 k 缩到 33 圆要 0.6108 倍，会把 46 宽的白图形压成 28.1，纯属自伤。几何图存 `docs/icon-audit.png`（绿=背景层、白虚线=72dp mask 边界、红虚线=66dp 安全圆、蓝框=白图形 bbox）。
+- 投影（第 1 条 path，渐变 `#44000000 → #00000000`）确实越出安全圆：面积 2,681.6 dp²，圆外 1,310.5 dp²（48.9%），最远半径 54.35。但按不透明度分档看，越界的都是尾部——半径 26 以外最高只剩 16.7%，半径 33 以外最高 11.4%，到渐变终点 (85.85, 92.50) 处恒为 0。它不是「必须可见的内容」，缩它只会让投影跟着缩小、白图形不变，所以不动。
+- **一处最小改动**：`monochrome` 原来直接指向 `ic_launcher_foreground`，投影会被一并带进主题图标层——系统渲染 monochrome 只取 alpha、颜色改由主题给，那条渐变会变成一层最高 26.7% 不透明度的雾压在机器人下面。新建 `res/drawable/ic_launcher_monochrome.xml`，只放白色机器人那条 path（与 foreground 第 2 条 pathData 逐字相同，脚本比对 `True`），`fillColor` 只有 `#FFFFFF`；两份 `mipmap-anydpi-v26` 的 `<monochrome>` 均改指它，`ic_launcher.xml` 里该属性个数仍为 1。效果对比存 `docs/icon-monochrome.png`（左现状、右改后）。
+- 未动：没重画、没换配色、没改包名、没动 CI、没发版；`AndroidManifest.xml` 的 `icon` / `roundIcon` 原样。
 - 未验证：真机运行期耗时没有仪器可测（沙箱无设备），本轮用「每次调用是否分配对象」与「快路指令数」作为可核对的替代指标；体积数字取自 APK 文件本身（不再用 artifact 的 `size_in_bytes`），真机未复测。
 
 ## 许可证换 GPL-3 全文、补项目限制与随包许可（2026-10-30）
