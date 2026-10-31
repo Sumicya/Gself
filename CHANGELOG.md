@@ -42,7 +42,8 @@
 - 不测 `Push.targetOf`：它吃 `android.content.Intent`，JVM 单测里是桩对象，量出来的是桩的耗时，与 system_server 无关。真机侧只能看 logcat 毫秒差，命令写在下面。
 - 数只描述量级：宿主 JVM（Linux x86_64）与手机上的 ART 不是一回事，这组数用来判断「纳秒还是微秒」和「每次分配几个字节」，不能当手机耗时。真机读数：`su -c 'logcat -d -v threadtime -s FcmSelf' | head -5`，看 `hook active` 行与第一条 `wake:` 行的毫秒差，重启两次各取一次，差 30% 以上才算有信号。
 - 没新建 `docs/performance.md`：规范「文档目录克制」只允许 README、CHANGELOG 与许可证，所以数写在这里。要单开一个文件，一句话即可。
-- 未验证：这组基线数还没跑出来（沙箱无 JDK，本地起不了 Gradle），本条的数是 CI 首跑后补的。
+- 热路径基线实测（CI `41204631213`，commit `6ee382e4`，宿主机 OpenJDK 21.0.13 / Linux amd64 / AMD EPYC 9V45）：`isPush` 命中 3.87、未命中 22.66、`excludesStopped` 3.55（false）／2.71（true）、`needsStoppedPatch` 命中 9.57、带 INCLUDE 快路 3.18、非推送 13.68，单位 ns/op；**七项全部 0.0 B/op**。读法：单次运行、共享 runner、没打分位数，只按量级读（个位到几十纳秒）与「零分配」，不按小数点读；「未命中比命中贵 6 倍」这类差在 ±30% 噪声内不能当结论。
+- 快路的代价也量了：APK 453,144 → **453,160** 字节（dex 236,792 → 236,808，+16）。
 - 未验证：真机运行期耗时没有仪器可测（沙箱无设备），本轮用「每次调用是否分配对象」与「快路指令数」作为可核对的替代指标；体积数字取自 APK 文件本身（不再用 artifact 的 `size_in_bytes`），真机未复测。
 
 ## 许可证换 GPL-3 全文、补项目限制与随包许可（2026-10-30）
