@@ -124,6 +124,22 @@ su -c "logcat -d | grep -ci cancelled"                    # 期望 0：没有待
 
 四项全中才算验收通过；本清单不采信模块自述（③ 的日志是模块自己打的），② 与 ④ 都取自平台的进程表与 EventLog。
 
+## 2.2 图标与资源核对（约 10 秒）
+
+`pm path` 必须整条包在 `su -c` 里：普通用户调不了包服务，报错字符串会被当成文件名喂给 `unzip`（2026-10-31 踩过）。
+
+```bash
+su -c 'pm path sumicya.gself'                                     # 先确认路径：期望 package:/data/app/…/base.apk
+su -c 'unzip -l "$(pm path sumicya.gself | sed "s/package://")" | grep mipmap-anydpi-v26'
+```
+
+期望两行：`res/mipmap-anydpi-v26/ic_launcher.xml` 与 `…/ic_launcher_round.xml`；再核主题图标层只有单色：
+
+```bash
+su -c 'unzip -p "$(pm path sumicya.gself | sed "s/package://")" res/mipmap-anydpi-v26/ic_launcher.xml'
+# 期望三行：<background>、<foreground>、<monochrome android:drawable="@drawable/ic_launcher_monochrome" />
+```
+
 ## 3. ColorOS 放行
 
 26.10.1 起原有的四个 ColorOS 后台闸门都是**无条件**放开，不再逐条判「实参里有没有推送」，所以
