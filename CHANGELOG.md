@@ -1,3 +1,9 @@
+## logcat 能抓到模块行；通知拦截首次真机命中（2026-11-01）
+
+- 上一版写的「logcat 只当旁证、5 小时只捞到 1 条」被实例推翻：`-b main` 下 64 秒抓到 5 条 `D Gself`，改回「能抓、窗口只有几分钟」。
+- `-s Gself` 返回 0 行只说明 `logcat -c` 之后这段时间没有新行，不能判模块没加载；加载与否看 LSPosed 日志。
+- `keep notification: fork.risin42.nagramx（reason=10020）` 首次真机命中，ColorOS 自造取消原因 10020 的拦截链路确认生效。
+
 ## 装机命令落点回到 Download 根；日志判读补三条实况（2026-11-01）
 
 - 安装改成 `cd /storage/emulated/0/Download` 直接取，不再建 `Download/selfs` 子目录（规范「落点固定、不建子目录」）。

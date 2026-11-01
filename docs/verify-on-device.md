@@ -258,6 +258,7 @@ su -c "logcat -d | grep -iE '<包名>|c2dm|Background execution|not delivering|s
 | 只做新包（minSdk 36 / 4 参 unfreeze） | **已验证**（2026-10-05 同一份日志）：Android 16 上 `BroadcastController` 存在并挂上，ColorOS 的 `unfreezeIfNeed` 4 参签名可用。**注**：2026-10-30 起推送挂点改为 AMS 入口（见第 2 节），BroadcastController 挂点在当前构建上不再命中 |
 | GMS 通行密钥解限 | **仅装点已验证**：`通行密钥解限 Hook 已安装` 出现两次（GMS 进程重启过）；「非 Chrome 浏览器能用通行密钥」要实际调一次才知道 |
 | Gboard 剪贴板 | **未见日志**（2026-10-05 时点）：日志里没有 `Gboard 剪贴板 Hook 已安装`，也没有 `hook skip`。怎么验：`su -c "settings get secure default_input_method"` 确认是 Gboard，切到 Gboard 打一次字，再 `su -c 'logcat -d -s Gself'`；约 2 分钟 |
+| 通知拦截真机命中 | **已验证**（2026-11-01 22:47:36，Android 16 / ColorOS，`26.11.1.6.94`）：`keep notification: fork.risin42.nagramx（reason=10020）`，即 ColorOS 自造取消原因 10020 被拦下，通知没被撤 |
 | Gself 真机链路 | **已验证**（2026-10-06，OnePlus/ColorOS，`26.10.6.1.128`）：推送唤醒 `wake:` 批量命中（含「长连接断流后重启恢复」场景，见第 10 节）、通知保留 `keep notification` 命中；三组挂载点已在三合一时验过 |
 | 1.0.0 冻结态链路 | 已验通（OnePlus/ColorOS，build `20260926_1edb471`）：载入 / hook 装配 / `shouldProxy bypass` / `No Intercept` / flag / `unfreeze` / `Keep notification` 全命中 |
 | 1.0.0 force-stop 唤醒 | 已验通（2026-09-26，OnePlus/ColorOS，nagramx fork）：`stopped=true` 下推送以新 pid 拉起应用 |
@@ -303,9 +304,24 @@ su -c 'cat /proc/uptime'   # 第一列＝开机秒数，除 3600 得小时
 实测 `18579.94` 秒＝5 小时 09 分，与 `载入 system_server` 那行的时间戳（16:36:13）对得上，
 说明这 5 小时内没有第二次重启——**「重启后再抓」的验证必须先看这个数**，否则抓到的是上一次启动的日志。
 
-**logcat 只当旁证，判读以 LSPosed 日志文件为准**：模块的 `Log.d` 在 system_server 里，实测 5 小时
-1481 条模块日志里，`logcat -d -b all` 只捞到 **1 条**（`D Gself : wake: …`），清空缓冲后 3 分钟内是 **0 条**。
-所以 `logcat -s Gself` 为空**不能**判成「模块没工作」，它只说明这一层的输出没进缓冲。
+**logcat 能抓到模块行，窗口只有几分钟**：模块的 `Log.d` 进 `main` 缓冲、tag 就是 `Gself`。
+2026-11-01 22:47:11–22:48:15（Android 16 / ColorOS，`26.11.1.6.94`）实测 64 秒 5 条：
+
+```
+11-01 22:47:11.177  2655  4057 D Gself   : wake: fork.risin42.nagramx（AMS#broadcastIntentWithFeature）
+11-01 22:47:36.333  2655  2655 D Gself   : keep notification: fork.risin42.nagramx（reason=10020）
+11-01 22:47:52.080  2655  5118 D Gself   : wake: fork.risin42.nagramx（AMS#broadcastIntentWithFeature）
+11-01 22:48:04.126  2655  5124 D Gself   : wake: fork.risin42.nagramx（AMS#broadcastIntentWithFeature）
+11-01 22:48:15.052  2655  4054 D Gself   : wake: fork.risin42.nagramx（AMS#broadcastIntentWithFeature）
+```
+
+**`-s Gself` 抓到 0 行不能判成「模块没工作」**：`logcat -c` 之后缓冲区从零开始，抓到的只是这段时间内的
+新行；「模块有没有加载」只看 `/data/adb/lspd/log/` 里那几行。
+
+```bash
+su -c 'logcat -d -b main -v threadtime -s Gself | tail -20'   # 已有缓冲里的最近几行
+su -c 'timeout 60 logcat -b main -v threadtime -s Gself'      # 实时等一条推送
+```
 
 **第二步：系统侧转长期抓取**（logcat 自带轮转，写到文件，不会因为缓冲被冲掉）
 
