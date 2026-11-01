@@ -3,9 +3,14 @@
 模块没有界面，行为全在日志里。日志 tag 固定 `Gself`，每条同时写进 logcat 与 LSPosed 框架日志：
 
 ```bash
-su -c 'logcat -d -s Gself'
-su -c 'grep -h gself /data/adb/lspd/log/*.log | tail -80'   # 启动那几行会被挤出 logcat 环形缓冲
+# 启动时的判定行：按关键字抓，不要用 tail
+su -c "grep -hE '载入 system_server|hook active|hook skip|推送达标' /data/adb/lspd/log/*.log" | tail -30
+# 运行期最近发生了什么
+su -c 'grep -h gself /data/adb/lspd/log/*.log | tail -20'
 ```
+
+`tail -80` **抓不到启动行**：推送频繁时 80 行只覆盖最近十几二十分钟（实测 23 分 50 秒的 80 行全是 `wake:`），
+启动那几行早在窗口之外。要判「模块有没有加载」只认上面的关键字 grep。
 
 toybox grep **不支持 `\|` 交替**，多关键字用 `-E`：`grep -hE 'wake|keep notification'`。
 
@@ -262,7 +267,14 @@ su -c "logcat -d | grep -iE '<包名>|c2dm|Background execution|not delivering|s
 ```bash
 su -c 'ls -l /data/adb/lspd/log/'
 su -c 'grep -h gself /data/adb/lspd/log/*.log | head -3'    # 最早一行 = 可回溯起点
-su -c 'grep -h gself /data/adb/lspd/log/*.log | tail -80'
+su -c 'grep -h gself /data/adb/lspd/log/*.log | tail -20'
+```
+
+推送密集时 `tail` 的覆盖窗口会被压得很短：先数一下有多密，再判断「这段时间内没等到」算不算失败。
+
+```bash
+su -c "grep -h gself /data/adb/lspd/log/*.log | grep -c 'wake:'"
+su -c "grep -h gself /data/adb/lspd/log/*.log | grep 'wake:' | awk '{print \$2}' | cut -c1-5 | sort | uniq -c | tail -20"
 ```
 
 **第二步：系统侧转长期抓取**（logcat 自带轮转，写到文件，不会因为缓冲被冲掉）
