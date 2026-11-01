@@ -142,7 +142,9 @@ jobs:
             cat "$f"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-          echo "::notice::热路径基线已写入 step summary（全文，含区间判定）；摘要：$(grep -E '^(isPush|needsStoppedPatch)' "$f" | tr '\n' ' ' | head -c 400)"
+          # 注解里必须自带判定句本身：上一版只写摘要，判定句仍在摘要之后被切掉。
+          verdict=$(grep -E '比值区间' "$f" | head -1)
+          echo "::notice::热路径基线（全文见 step summary）：$verdict；$(grep -E '^isPush' "$f" | tr '\n' ' ')"
 
       - name: 改产物名
         shell: bash
