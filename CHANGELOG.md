@@ -55,45 +55,10 @@
 - **按规范 `25f521f`「六·参数、判据与取值」修掉四处按排序位置取值**：`build.yml` 三处、`pr-check.yml` 一处原本写 `sorted(glob(...))[0]`，多个 APK 存在时会静默取第一个；现在先断言 `len(apks) == 1` 再取，不满足直接 `sys.exit` 并打印实际列表。图标核验里的 `mono[0]` 同样先断言恰好 1 份。
 - **数字三件套按新规执行**：本轮及前轮出现过的读数，取样对象与时刻在此统一补一次——`ahead=45` 与 `26 文件` 取自 `compare/main...arena/c2404085-gself`（head `24c80dd`，2026-11-01 08:59:54 UTC+8）；四份构建的 APK/dex 取自各自 run 的 check-run 注解（run `41202735608`／`41204631213`／`41258065222`／`41258832262`，2026-11-01 08:40–08:56 UTC+8 读取）；`0.0 B/op` 与比值区间取自 run `41258924589` 的注解（2026-11-01 09:00 UTC+8 读取）。规范 `GLOBAL.md` 由 `79b172f`（283 行）换为 `25f521f`（292 行）。
 
-- **仓库与模块改名：一次改到底（规范 `6b76f2a`「六·仓库与模块改名」）**。上一版按「四层，只改用户看得见的那两层」处理，规范已把这条重写成「没有『默认不改』这一层」，故本轮连代码身份一起改完。
-  - **对外身份**：仓名、artifact 名 `Gself-*`、`app_name`、`applicationId = "sumicya.gself"`——早已是 `Gself`，本轮未动。
-  - **代码身份（本轮改）**：`namespace` 由 `"sumicya.fcmself"` 改为 `"sumicya.gself"`；源码目录 `app/src/main/kotlin/sumicya/fcmself/` → `…/sumicya/gself/`（`git mv`，`app/src/test/kotlin` 下的单测子树同步搬）；入口类 `sumicya.fcmself.XposedMain` → `sumicya.gself.XposedMain`，四处**同一提交**改完——`app/src/main/resources/META-INF/xposed/java_init.list`、`proguard-rules.pro` 的 keep、`build.yml` 与 `pr-check.yml` 的 dex 断言 `Lsumicya/gself/XposedMain;`（断言留在 CI 里就是为了下一次改错立刻红）。`namespace` 改完没有任何连带资源引用：全仓 `grep -rn "R\.string\|R\.drawable\|import .*\.R$" --include=*.kt .` 为空，本模块零资源引用。
-  - **可观测标识（本轮改）**：logcat tag `FcmSelf` → **`Gself`**（`XposedMain.kt:12`），框架日志前缀 `[fcmself]` → **`[gself]`**（`XposedMain.kt:20`），载入文案改为 `Gself 载入 system_server`（`XposedMain.kt:34`），wakelock owner `FcmSelf` → **`Gself`**（`Fixes.kt:377`，会出现在 `dumpsys power` 与电池统计里）。
-  - **历史归属（保留事实，改写法）**：`module.prop:2` 与 `README.md` 许可证章的「合并自 fcmself」改为「合并自推送修复线（本仓前身，源头 `fcmfix`，旧包名见本文件）」——GPL 归属事实一字未变，只是把旧包名收进本文件这一处。
-  - **验收判据（可整行跑，本轮实跑输出为空）**：`grep -rIl --exclude-dir=.git --exclude=CHANGELOG.md -e fcmself -e FcmSelf .`。旧名从此只出现在本文件的历史条目与下面两段原文里。
-  - **顺手删掉一处死参数**：`build.yml` 传给 Gradle 的 `-Pfcmself.buildNumber` 在改名后已无人读取（`build.gradle.kts` 只读 `versionCode` / `versionName`），删掉后构建行为不变。
-- **历史日志原文（原样搬来，块后标当时叫什么）**：`docs/verify-on-device.md` 里两段真机日志都是改名前的真实输出，按规范只留在本文件，原文件改成指向这里的说明。这两段当时用的是同一套旧名：tag `FcmSelf`、日志前缀 `[fcmself]`、包名 `sumicya.fcmself`。
-  ```
-22:13:34.026 [fcmself] fcmself 载入 system_server（Android 16 / API 36）
-22:13:34.028 [fcmself] hook target: com.android.server.am.BroadcastController#broadcastIntentLocked(25)
-22:13:34.033 [fcmself] OplusAppStartup 自启动闸门已关
-22:13:34.034 [fcmself] OplusProxyBroadcast 代理已全关
-22:13:34.036 [fcmself] Hans GMS 限制已置空
-22:13:34.222 [fcmself] OplusProxyWakeLock instance captured
-```
-
-运行期（7 分钟内）：
-
-```
-22:13:50.129 [fcmself] 通行密钥解限 Hook 已安装        ← GMS 进程
-22:14:12.658 [fcmself] 通行密钥解限 Hook 已安装        ← GMS 又重启了一次
-22:15:03.882 [fcmself] keep notification: com.termux
-22:16:14.331 [fcmself] keep notification: com.android.devicelockcontroller
-22:20:03.971 [fcmself] keep notification: com.termux
-22:20:30.716 [fcmself] keep notification: mark.via
-22:20:31.053 [fcmself] keep notification: com.termux
-22:20:44.214 [fcmself] unfreeze 可用（4 参签名）        ← ColorOS 解冻，只打一次
-22:20:44.215 [fcmself] wake: com.zhiliaoapp.musically   ← 核心修复命中（抖音收到定向推送）
-  ```
-  ```
-  12:29:41.314  FcmSelf: Add FLAG_INCLUDE_STOPPED_PACKAGES: fork.risin42.nagramx
-  12:29:41.316  FcmSelf: unfreeze: fork.risin42.nagramx uid=10323（4 参签名）
-  12:29:41.317  FcmSelf: No Intercept: fork.risin42.nagramx
-  12:29:41.322  ActivityManager: Start proc 24130:fork.risin42.nagramx/u0a323
-                for broadcast {fork.risin42.nagramx/com.google.firebase.iid.FirebaseInstanceIdReceiver}
-  ```
-  上面这段是 `631b9c5` 之前构建的原始日志（当时叫 `FcmSelf`）；现在同一行显示 `Gself: Add FLAG_INCLUDE_STOPPED_PACKAGES: …`。上面第一段是 2026-10-05 22:13 那次（当时叫 `fcmself`）；现在同一行显示 `[gself] Gself 载入 system_server（…）`。
-- **代价如实记**：`631b9c5` 之前构建出的包，日志 tag 仍是旧 tag；手头按旧 tag 抓日志的老命令从此抓不到新包，新命令是 `su -c 'logcat -d -v threadtime -s Gself' | head -5`。旧的 LSPosed 框架日志用 `grep -h gself` 会漏掉，翻历史时按旧前缀 `grep -h '\[fcmself\]'`。
+- **改名一次改到底（规范 `6b76f2a`「六·仓库与模块改名」）**：`namespace`、源码目录、入口类、`java_init.list`、R8 keep、CI dex 断言与全部文档注释一次改到 `sumicya.gself`，因为旧名只允许留在本文件；验收 `grep -rIl --exclude-dir=.git --exclude=CHANGELOG.md -e fcmself -e FcmSelf .` 为空。
+  入口类改名与 `java_init.list`、proguard keep、`build.yml`／`pr-check.yml` 的 dex 断言 `Lsumicya/gself/XposedMain;` 同一提交，改错即红；`namespace` 改完 `grep` 过 `<旧包>.R`，本模块零资源引用。
+  `module.prop` 与 README 许可证章的「合并自 fcmself」保留 GPL 归属事实，改成「合并自推送修复线（本仓前身，源头 `fcmfix`，旧包名见本文件）」；顺手删掉 `build.yml` 里无人读取的 `-Pfcmself.buildNumber`。
+- **改名前的原始 logcat 不进文档**：`docs/verify-on-device.md` 两段真机日志换成指针，原文在 `docs/verify-on-device.md@053d2e9a` 的 git 历史里；`631b9c5` 之前构建的包日志 tag 仍是旧的一套，老命令 `logcat -s <旧tag>` 抓不到新包，新命令是 `su -c 'logcat -d -v threadtime -s Gself' | head -5`。
 
 ## 许可证换 GPL-3 全文、补项目限制与随包许可（2026-10-30）
 

@@ -337,17 +337,17 @@ LSPosed 日志本身会在模块载入时自动记一行，两条路互相兜底
 `No Intercept` 每条推送各打一行，共几百行 —— 26.10.1 把 `unfreeze` 收成一次性、删掉后两条，
 就是冲着这个来的。`stopped=true` 下的关键证据（推送把应用以新 pid 拉起来）：
 
-> 这段原始日志（三条模块日志 + 随后的 `ActivityManager: Start proc`）已整体搬进
-> `CHANGELOG.md` 的「改名一次改到底」条——那里是唯一允许留旧名的地方，块后标了「当时叫 X」。
+> 这段原始日志（三条模块日志 + 随后的 `ActivityManager: Start proc`）是改名前的真实输出，含旧 tag，
+> 按规范不再留在文档里。原文取法：`git show 053d2e9a:docs/verify-on-device.md | sed -n '341,345p'`。
 > 现在同样的三行显示为 `Gself: Add FLAG_INCLUDE_STOPPED_PACKAGES: …`，判读不变。
 
 ### 2026-10-05 22:13（Android 16 / API 36，ColorOS，分支产物 `Gself-dev-*`）
 
 模块载入与三组挂载点（重启后立刻抓）：
 
-> 这一节的逐行原文已移到 `CHANGELOG.md` 的「改名收尾」条：那时 tag、日志前缀与包名都是旧的一套，
-> 规范只允许在 CHANGELOG 里留旧名。现在新包的对应行是 `[gself] Gself 载入 system_server（…）`，
-> 其余行只换了前缀，判读结论不变。
+> 这一节的逐行原文是改名前的真实输出（tag、日志前缀与包名都是旧的一套），按规范不再留在文档里。
+> 原文取法：`git show 053d2e9a:docs/verify-on-device.md | sed -n '353,372p'`。
+> 现在新包的对应行是 `[gself] Gself 载入 system_server（…）`，其余行只换了前缀，判读结论不变。
 
 判读：
 
@@ -401,8 +401,8 @@ su -c 'logcat -c; for i in $(seq 10); do sleep 30; echo "=== 第 $i 个 30 秒 $
 flags@12 / appOp@13，换 ROM 会漂）。本机不需要。
 
 
-> 第 9 节开头那段原始日志（`631b9c5` 之前构建，tag 与包名都是旧的一套）已搬进 `CHANGELOG.md`
-> 同一条，那里保留原样并标了「当时叫 X」；现在新抓的日志里同一行显示 `Gself: …`。
+> 第 9 节开头那段原始日志（`631b9c5` 之前构建，tag 与包名都是旧的一套）按规范不再留在文档里，
+> 取法见本节开头的 `git show` 命令；现在新抓的日志里同一行显示 `Gself: …`。
 ## 10. 真机案例参考（2026-10-06）：消息一夜之间突然滞留，模块是清白的
 
 **症状**：nagramx 消息在前一晚 23:58 前后彻底停更，次日全天无新消息；模块日志里
