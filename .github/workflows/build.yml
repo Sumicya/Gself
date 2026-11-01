@@ -156,9 +156,14 @@ jobs:
         shell: bash
         run: |
           python3 - <<'PY'
-          import glob, os, traceback, zipfile
+          import glob, os, sys, traceback, zipfile
 
-          apk = sorted(glob.glob('app/build/outputs/apk/debug/*.apk'))[0]
+          # 禁按排序位置取值（规范 25f521f「六·参数、判据与取值」）：
+          # 先断言恰好一个，再解包；多个就报错，不静默取第一个。
+          apks = sorted(glob.glob('app/build/outputs/apk/debug/*.apk'))
+          if len(apks) != 1:
+              sys.exit(f'期望恰好 1 个 APK，实际 {len(apks)} 个：{apks}')
+          apk = apks[0]
           apk_size = os.path.getsize(apk)  # 装机的那份文件有多大，这才是体积口径
           with zipfile.ZipFile(apk) as z:
               infos = z.infolist()
@@ -192,7 +197,12 @@ jobs:
         run: |
           python3 - <<'PY'
           import glob, sys, zipfile
-          apk = sorted(glob.glob('app/build/outputs/apk/debug/*.apk'))[0]
+          # 禁按排序位置取值（规范 25f521f「六·参数、判据与取值」）：
+          # 先断言恰好一个，再解包；多个就报错，不静默取第一个。
+          apks = sorted(glob.glob('app/build/outputs/apk/debug/*.apk'))
+          if len(apks) != 1:
+              sys.exit(f'期望恰好 1 个 APK，实际 {len(apks)} 个：{apks}')
+          apk = apks[0]
           with zipfile.ZipFile(apk) as z:
               dex = b''.join(z.read(n) for n in z.namelist()
                              if n.startswith('classes') and n.endswith('.dex'))
@@ -220,11 +230,18 @@ jobs:
               # AXML 的字符串池可能是 UTF-8 也可能是 UTF-16LE，两种都试
               return s.encode('utf-8') in blob or s.encode('utf-16-le') in blob
 
-          apk = sorted(glob.glob('app/build/outputs/apk/debug/*.apk'))[0]
+          # 禁按排序位置取值（规范 25f521f「六·参数、判据与取值」）：
+          # 先断言恰好一个，再解包；多个就报错，不静默取第一个。
+          apks = sorted(glob.glob('app/build/outputs/apk/debug/*.apk'))
+          if len(apks) != 1:
+              sys.exit(f'期望恰好 1 个 APK，实际 {len(apks)} 个：{apks}')
+          apk = apks[0]
           with zipfile.ZipFile(apk) as z:
               names = z.namelist()
               anydpi = sorted(n for n in names if 'mipmap-anydpi-v26' in n)
               mono = sorted(n for n in names if n.endswith('ic_launcher_monochrome.xml'))
+              if len(mono) != 1:
+                  sys.exit(f'期望恰好 1 份 monochrome 层，实际 {len(mono)}：{mono}')
               layers = {n: (has(z.read(n), 'background'), has(z.read(n), 'foreground'),
                             has(z.read(n), 'monochrome')) for n in anydpi}
               blob = z.read(mono[0]) if mono else b''

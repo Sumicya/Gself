@@ -39,7 +39,10 @@ jobs:
         run: |
           python3 - <<'PY'
           import glob, sys, zipfile
-          apk = sorted(glob.glob('app/build/outputs/apk/debug/*.apk'))[0]
+          apks = sorted(glob.glob('app/build/outputs/apk/debug/*.apk'))
+          if len(apks) != 1:
+              sys.exit(f'期望恰好 1 个 APK，实际 {len(apks)} 个：{apks}')
+          apk = apks[0]
           with zipfile.ZipFile(apk) as z:
               dex = b''.join(z.read(n) for n in z.namelist()
                              if n.startswith('classes') and n.endswith('.dex'))
