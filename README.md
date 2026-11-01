@@ -19,30 +19,29 @@
 
 全程在手机上（Termux 等带 `gh` 的终端），不需要电脑、不需要 `adb`。
 
-**1. 下载到固定路径**（`gh` 已登录时可用；只取最近一次 `Build` 的产物）
+**1. 下载到固定路径**（`gh` 已登录时可用；落点就是 `Download` 根，不建子目录）
 
 ```bash
-D=/storage/emulated/0/Download/selfs
-mkdir -p "$D"
-gh run download -R Sumicya/Gself -n "$(gh api repos/Sumicya/Gself/actions/artifacts --jq '.artifacts[0].name')" -D "$D"
+cd /storage/emulated/0/Download
+gh run download -R Sumicya/Gself -n "$(gh api repos/Sumicya/Gself/actions/artifacts --jq '.artifacts[0].name')" -D .
 ```
 
 **2. 看包在哪**
 
 ```bash
-find "$D" -name '*.apk' -printf '%p  %s 字节\n'
+find /storage/emulated/0/Download -maxdepth 2 -name '*.apk' -printf '%p  %s 字节\n'
 ```
 
 **3. 装**（有 root 直接装；没 root 就在文件管理里点开上一步列出的 `.apk`）
 
 ```bash
-su -c "pm install -r $(find "$D" -name '*.apk' | head -1)"
+su -c "pm install -r $(find /storage/emulated/0/Download -maxdepth 2 -name '*.apk' | head -1)"
 ```
 
 **4. 清**
 
 ```bash
-rm -rf "$D"
+rm -f /storage/emulated/0/Download/*.apk
 ```
 
 装完不用点开（模块没有界面、没有图标入口）。在 LSPosed 管理器里启用「Gself」，作用域勾 `system`、`com.google.android.gms`、Gboard（`scope.list` 已预选），然后重启——`system` 进程里的挂载只能靠重启生效，停用或卸载同样要重启一次。
