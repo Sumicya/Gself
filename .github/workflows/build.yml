@@ -133,7 +133,16 @@ jobs:
             echo "::warning::没找到 bench-hooks.txt，热路径基线未产出"
             exit 0
           fi
-          echo "::notice::热路径基线（宿主 JVM，非真机）$(tr '\n' ' ' < "$f" | head -c 900)"
+          # 全文进 step summary（run 页面永久可点、不截断），注解只是指针。
+          # 上一版用 head -c 900 截断，把最后的判定句「不当结论」四个字切掉了，
+          # 于是能点开的那份证据里结论是残的——证据不完整等于没证据。
+          {
+            echo "## 热路径基线（宿主 JVM，非真机）"
+            echo '```'
+            cat "$f"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::notice::热路径基线已写入 step summary（全文，含区间判定）；摘要：$(grep -E '^(isPush|needsStoppedPatch)' "$f" | tr '\n' ' ' | head -c 400)"
 
       - name: 改产物名
         shell: bash
