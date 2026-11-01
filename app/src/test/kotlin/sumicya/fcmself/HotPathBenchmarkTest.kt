@@ -28,12 +28,26 @@ class HotPathBenchmarkTest {
     @Volatile
     private var sink = 0
 
-    private data class Row(val name: String, val nsPerOp: Double, val bytesPerOp: Double)
+    /**
+     * 一批一个数：单批 = 100 万次调用的平均 ns/op。
+     * 单给中位数会被读成「精确值」，所以把 9 批的最小值、最大值一起留着，
+     * 任何人拿这三个数就能判断两行之差是不是落在抖动里。
+     */
+    private data class Row(
+        val name: String,
+        val nsMin: Double,
+        val nsMedian: Double,
+        val nsMax: Double,
+        val bytesPerOp: Double,
+    ) {
+        val nsPerOp: Double get() = nsMedian
+    }
 
     private fun measure(name: String, body: () -> Boolean): Row {
         val warmup = 200_000
         val iterations = 1_000_000
-        val batches = 5
+        // 9 批而不是 5 批：要让「最小/最大」这一对有意义，批数得够取四分位。
+        val batches = 9
         repeat(warmup) { if (body()) sink++ }
         val times = LongArray(batches)
         val allocs = LongArray(batches)
@@ -50,7 +64,8 @@ class HotPathBenchmarkTest {
         }
         times.sort()
         allocs.sort()
-        return Row(name, times[batches / 2].toDouble() / iterations,
+        fun ns(i: Int) = times[i].toDouble() / iterations
+        return Row(name, ns(0), ns(batches / 2), ns(batches - 1),
                    allocs[batches / 2].toDouble() / iterations)
     }
 
@@ -80,10 +95,21 @@ class HotPathBenchmarkTest {
             "/ ${System.getProperty("os.name")} ${System.getProperty("os.arch")} / CPU: $cpu"
 
         val lines = rows.map {
-            java.lang.String.format(java.util.Locale.ROOT, "%-34s %8.2f ns/op %6.1f B/op",
-                it.name, it.nsPerOp, it.bytesPerOp)
+            java.lang.String.format(java.util.Locale.ROOT,
+                "%-34s 中位 %6.2f  [最小 %6.2f, 最大 %6.2f] ns/op  %5.1f B/op",
+                it.name, it.nsMedian, it.nsMin, it.nsMax, it.bytesPerOp)
         }
-        val text = (listOf(head) + lines).joinToString("\n")
+        // 两行之差能不能当结论，只看区间有没有重叠：hit 的最慢批 vs miss 的最快批。
+        val hit = rows.first { it.name == "isPush(hit)" }
+        val miss = rows.first { it.name == "isPush(miss)" }
+        val ratioLow = hit.nsMin / miss.nsMax
+        val ratioHigh = hit.nsMax / miss.nsMin
+        val overlap = hit.nsMax >= miss.nsMin
+        val verdict = java.lang.String.format(java.util.Locale.ROOT,
+            "isPush 未命中/命中 比值区间 [%.2f, %.2f]，批间区间%s重叠 → %s",
+            ratioLow, ratioHigh, if (overlap) "" else "不",
+            if (overlap) "差值落在抖动内，不当结论" else "差值超出批间抖动，可当结论")
+        val text = (listOf(head) + lines + verdict).joinToString("\n")
         println(text)
         File(System.getProperty("user.dir"), "build").mkdirs()
         File(System.getProperty("user.dir"), "build/bench-hooks.txt").writeText(text + "\n")
