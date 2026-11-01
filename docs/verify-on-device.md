@@ -12,6 +12,14 @@ su -c 'grep -h gself /data/adb/lspd/log/*.log | tail -20'
 `tail -80` **抓不到启动行**：推送频繁时 80 行只覆盖最近十几二十分钟（实测 23 分 50 秒的 80 行全是 `wake:`），
 启动那几行早在窗口之外。要判「模块有没有加载」只认上面的关键字 grep。
 
+**`/data/adb/lspd/log/` 目录里通常有多个 `.log`，同一行会在多个文件里各出现一次**（时间戳与序号完全相同，
+例如 `…-2-b` 连出两条）。所以凡是要**计数**的命令都必须先去重，否则得到的是重复计数：
+
+```bash
+su -c 'ls -l /data/adb/lspd/log/'                         # 先看有几个文件
+su -c "grep -h gself /data/adb/lspd/log/*.log | sort -u | wc -l"   # 去重后的总行数
+```
+
 toybox grep **不支持 `\|` 交替**，多关键字用 `-E`：`grep -hE 'wake|keep notification'`。
 
 ## 0. 准备
@@ -114,7 +122,7 @@ su -c "logcat -c"
 # 这里推一条 FCM 消息，等 60 秒
 sleep 60
 su -c "pidof $PKG"                                       # ③ 期望有新的 pid
-su -c "logcat -d -s Gself"                             # 期望含 wake: $PKG（AMS#…）
+su -c "logcat -d -s Gself | tail -20"                  # 期望含 wake: $PKG（AMS#…）；用 tail，head 取的是最旧的
 su -c "logcat -b events -d | grep -E 'am_proc_start' | grep -E 'c2dm|firebase'"   # ④ 期望 callingAction=c2dm RECEIVE
 su -c "dumpsys notification --noredact | grep -i $PKG"    # 通知已入队
 su -c "logcat -d | grep -ci cancelled"                    # 期望 0：没有待投递消息被取消
@@ -273,9 +281,12 @@ su -c 'grep -h gself /data/adb/lspd/log/*.log | tail -20'
 推送密集时 `tail` 的覆盖窗口会被压得很短：先数一下有多密，再判断「这段时间内没等到」算不算失败。
 
 ```bash
-su -c "grep -h gself /data/adb/lspd/log/*.log | grep -c 'wake:'"
-su -c "grep -h gself /data/adb/lspd/log/*.log | grep 'wake:' | awk '{print \$2}' | cut -c1-5 | sort | uniq -c | tail -20"
+# 计数一律先 sort -u：同一行会在多个日志文件里各出现一次
+su -c "grep -h gself /data/adb/lspd/log/*.log | grep 'wake:' | sort -u | wc -l"
+su -c "grep -h gself /data/adb/lspd/log/*.log | grep 'wake:' | sort -u | awk '{print \$2}' | cut -c1-13 | sort | uniq -c"
 ```
+
+按小时看要写全 `cut -c1-13`（到小时），`-c1-5` 只截到年，会把全部行压进一个桶。
 
 **第二步：系统侧转长期抓取**（logcat 自带轮转，写到文件，不会因为缓冲被冲掉）
 
