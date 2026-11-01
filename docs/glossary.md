@@ -15,7 +15,7 @@
 | Gboard | `com.google.android.inputmethod.latin`，Google 输入法；剪贴板改写在这组 |
 | libxposed API | LSPosed 的模块 API；本仓库按 102 编译，最低要求 101（102 是纯增量） |
 | Protective 模式 | `module.prop` 的 `exceptionMode`：模块自身抛的异常被框架记录并按「没有 hook」处理，不拖垮 system_server |
-| 入口类 | `sumicya.fcmself.XposedMain`，写在 `java_init.list` 里，必须原样保留（R8 改名会导致模块静默不加载） |
+| 入口类 | `sumicya.gself.XposedMain`，写在 `java_init.list` 里，必须原样保留（R8 改名会导致模块静默不加载） |
 | R8 | Android 的压缩 / 混淆器；本仓库 debug 与 release 都开 `minify`，出口由 `proguard-rules.pro` 保住 |
 | DexKit | 运行期按字符串搜 dex 的库；通行密钥解限与 Gboard 剪贴板用它定位混淆后的目标方法 |
 

@@ -1,4 +1,4 @@
-package sumicya.fcmself
+package sumicya.gself
 
 import java.lang.management.ManagementFactory
 

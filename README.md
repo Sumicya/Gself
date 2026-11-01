@@ -1,7 +1,6 @@
 # Gself
 
-基于 LSPosed 的纯 Hook 模块，把 Google 在国产 ROM 上被砍掉的语义补回来。合并自三个项目：
-fcmself（推送修复）、GooglePasswordManagerUnlock（通行密钥解限）、GboardHook（剪贴板）。
+基于 LSPosed 的纯 Hook 模块，把 Google 在国产 ROM 上被砍掉的语义补回来。合并自三条线：推送修复（本仓前身，其上上游是 `fcmfix`，旧包名见 CHANGELOG「身份迁移」条）、GooglePasswordManagerUnlock（通行密钥解限）、GboardHook（剪贴板）。
 无界面、无配置、不写文件——装上、勾作用域、重启。
 
 ## 要求
@@ -69,14 +68,14 @@ CI（`Build`）跑单测 + 编译 debug + 校验 R8 入口类 + 体积分项闸�
 - **不支持锁 bootloader / 未解锁的 User Product 设备**：本模块按「可侧载」前提出包，不承诺在禁止安装修改版系统的设备上能装（GPL-3 §6 的安装信息义务因此不由本仓承担）。
 - 只在 Android 16（API 36）+ ColorOS 的一台真机上验证过；其它 ROM 上 `hooks.install` 各自 `hook skip`，推送唤醒之外的功能可能不生效。
 - 模块没有界面、没有配置、不写文件；日志是唯一观测手段（logcat tag `Gself`，框架日志前缀 `[gself]`）。
-- **内部标识不跟着对外名字改**：`namespace`、源码目录与入口类仍是 `sumicya.fcmself.XposedMain`——入口类名被 `META-INF/xposed/java_init.list`、`proguard-rules.pro`、CI 的 dex 断言三处锁死，改它要五处同步且会让已装用户在 LSPosed 里的模块记录对不上，收益为零（用户看不见 namespace）。对外身份（仓名、artifact 名、`app_name`、`applicationId`）是 `Gself`。
+- **名字只有一套**：仓名、artifact 名、`app_name`、`applicationId`、`namespace`、源码目录、入口类全部是 `Gself` / `sumicya.gself`（入口类 `sumicya.gself.XposedMain`）。入口类名被三处同时锁死——`META-INF/xposed/java_init.list`、`proguard-rules.pro` 的 keep、CI 的 dex 断言 `Lsumicya/gself/XposedMain;`——下一次改名必须四处同一提交，靠 CI 断言兜底（改错即红）。
 - 通行密钥解限与 Gboard 剪贴板依赖 DexKit 在运行期按字符串定位混淆方法，GMS / Gboard 改版后可能定位失败（届时各自打一条 `hook skip`，不影响推送唤醒）。
 
 ## 许可证
 
 GNU General Public License v3.0 or later（`LICENSE` 为 GPL-3.0 全文，35149 字节；APK 内 `assets/LICENSE` 随包附同一份全文）。
 
-选这个许可的原因：本仓合并自 fcmself、GooglePasswordManagerUnlock、GboardHook，其中 chenyue404/GboardHook 以 GPL-3.0 发布，合并作品须同证。上游归属：fcmself（本仓前身）、yangFenTuoZi/GooglePasswordManagerUnlock（通行密钥解限，GPL-3.0）、chenyue404/GboardHook（Gboard 剪贴板，GPL-3.0）。
+选这个许可的原因：本仓合并自推送修复线（本仓前身，源头是 `fcmfix`，包名变迁见 CHANGELOG「身份迁移」条）、GooglePasswordManagerUnlock、GboardHook，其中 chenyue404/GboardHook 以 GPL-3.0 发布，合并作品须同证。上游归属：本仓前身的推送修复线（源头 `fcmfix`）、yangFenTuoZi/GooglePasswordManagerUnlock（通行密钥解限，GPL-3.0）、chenyue404/GboardHook（Gboard 剪贴板，GPL-3.0）。
 
 模块没有可点的「关于」页（本仓无界面），署名与无担保声明以本节与随包的 `LICENSE` 呈现；若将来加了界面，在界面里放许可全文入口。
 

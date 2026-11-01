@@ -42,7 +42,7 @@ toybox grep **不支持 `\|` 交替**，多关键字用 `-E`：`grep -hE 'wake|k
 **必须没有的一行**（出现说明核心挂载点没找到，模块整体不工作）：
 
 ```
-hook skip 推送入口（AMS）: sumicya.fcmself.Hook$Missing: com.android.server.am.ActivityManagerService
+hook skip 推送入口（AMS）: sumicya.gself.Hook$Missing: com.android.server.am.ActivityManagerService
 ```
 
 ## 2. 核心：唤醒已停止的应用
@@ -153,7 +153,7 @@ su -c 'unzip -p "$(pm path sumicya.gself | sed "s/package://")" res/mipmap-anydp
 | `OplusStartupStrategy#isGoogleRestricInfoOn` → false | 同上（同一组） |
 | `OplusBgSceneManager` 两个 GMS 限制方法置空 | 没有 `hook skip Hans GMS 限制` |
 
-非 ColorOS 机器上这四处是 `hook skip <组名>: sumicya.fcmself.Hook$Missing: <类名>`，**属正常**。
+非 ColorOS 机器上这四处是 `hook skip <组名>: sumicya.gself.Hook$Missing: <类名>`，**属正常**。
 
 ### 首次解锁后 GMS 一直未连接
 
@@ -337,40 +337,17 @@ LSPosed 日志本身会在模块载入时自动记一行，两条路互相兜底
 `No Intercept` 每条推送各打一行，共几百行 —— 26.10.1 把 `unfreeze` 收成一次性、删掉后两条，
 就是冲着这个来的。`stopped=true` 下的关键证据（推送把应用以新 pid 拉起来）：
 
-```
-12:29:41.314  FcmSelf: Add FLAG_INCLUDE_STOPPED_PACKAGES: fork.risin42.nagramx
-12:29:41.316  FcmSelf: unfreeze: fork.risin42.nagramx uid=10323（4 参签名）
-12:29:41.317  FcmSelf: No Intercept: fork.risin42.nagramx
-12:29:41.322  ActivityManager: Start proc 24130:fork.risin42.nagramx/u0a323
-              for broadcast {fork.risin42.nagramx/com.google.firebase.iid.FirebaseInstanceIdReceiver}
-```
+> 这段原始日志（三条模块日志 + 随后的 `ActivityManager: Start proc`）已整体搬进
+> `CHANGELOG.md` 的「改名一次改到底」条——那里是唯一允许留旧名的地方，块后标了「当时叫 X」。
+> 现在同样的三行显示为 `Gself: Add FLAG_INCLUDE_STOPPED_PACKAGES: …`，判读不变。
 
 ### 2026-10-05 22:13（Android 16 / API 36，ColorOS，分支产物 `Gself-dev-*`）
 
 模块载入与三组挂载点（重启后立刻抓）：
 
-```
-22:13:34.026 [fcmself] fcmself 载入 system_server（Android 16 / API 36）
-22:13:34.028 [fcmself] hook target: com.android.server.am.BroadcastController#broadcastIntentLocked(25)
-22:13:34.033 [fcmself] OplusAppStartup 自启动闸门已关
-22:13:34.034 [fcmself] OplusProxyBroadcast 代理已全关
-22:13:34.036 [fcmself] Hans GMS 限制已置空
-22:13:34.222 [fcmself] OplusProxyWakeLock instance captured
-```
-
-运行期（7 分钟内）：
-
-```
-22:13:50.129 [fcmself] 通行密钥解限 Hook 已安装        ← GMS 进程
-22:14:12.658 [fcmself] 通行密钥解限 Hook 已安装        ← GMS 又重启了一次
-22:15:03.882 [fcmself] keep notification: com.termux
-22:16:14.331 [fcmself] keep notification: com.android.devicelockcontroller
-22:20:03.971 [fcmself] keep notification: com.termux
-22:20:30.716 [fcmself] keep notification: mark.via
-22:20:31.053 [fcmself] keep notification: com.termux
-22:20:44.214 [fcmself] unfreeze 可用（4 参签名）        ← ColorOS 解冻，只打一次
-22:20:44.215 [fcmself] wake: com.zhiliaoapp.musically   ← 核心修复命中（抖音收到定向推送）
-```
+> 这一节的逐行原文已移到 `CHANGELOG.md` 的「改名收尾」条：那时 tag、日志前缀与包名都是旧的一套，
+> 规范只允许在 CHANGELOG 里留旧名。现在新包的对应行是 `[gself] Gself 载入 system_server（…）`，
+> 其余行只换了前缀，判读结论不变。
 
 判读：
 
@@ -424,8 +401,8 @@ su -c 'logcat -c; for i in $(seq 10); do sleep 30; echo "=== 第 $i 个 30 秒 $
 flags@12 / appOp@13，换 ROM 会漂）。本机不需要。
 
 
-> 上面三行是 `631b9c5` 之前构建的原始日志（tag 当时叫 `FcmSelf`），保留原样当证据；
-> 现在的 tag 是 `Gself`，新抓的日志里同一行会显示 `Gself: Add FLAG_INCLUDE_STOPPED_PACKAGES: …`。
+> 第 9 节开头那段原始日志（`631b9c5` 之前构建，tag 与包名都是旧的一套）已搬进 `CHANGELOG.md`
+> 同一条，那里保留原样并标了「当时叫 X」；现在新抓的日志里同一行显示 `Gself: …`。
 ## 10. 真机案例参考（2026-10-06）：消息一夜之间突然滞留，模块是清白的
 
 **症状**：nagramx 消息在前一晚 23:58 前后彻底停更，次日全天无新消息；模块日志里

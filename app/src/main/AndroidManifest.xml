@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
     Gself 是纯 Hook 模块：没有设置界面、没有白名单，安装后在 LSPosed 里勾选作用域即可生效。
-    （内部包名与入口类仍是 sumicya.fcmself / sumicya.fcmself.XposedMain，见 build.gradle.kts 的注释。）
+    （包名与入口类同为 sumicya.gself / sumicya.gself.XposedMain。）
     这里不声明任何组件，也不申请任何权限：
     - 模块代码运行在被 Hook 的宿主进程内（system_server / GMS / Gboard），
       行为只走宿主进程自己的 context 与权限，模块自身不需要额外权限；

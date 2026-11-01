@@ -3,11 +3,12 @@ plugins {
 }
 
 android {
-    namespace = "sumicya.fcmself"
+    namespace = "sumicya.gself"
     compileSdk = 36
 
     defaultConfig {
-        // 对外身份是 Gself；内部包名（namespace / 入口类）不变，CI 的 R8 入口校验仍查 sumicya/fcmself/XposedMain
+        // 对外身份与代码身份都是 Gself：namespace 与入口类同为 sumicya.gself，
+        // CI 的 R8 入口校验查 Lsumicya/gself/XposedMain; ——改名必须与 java_init.list、proguard keep 同一提交
         applicationId = "sumicya.gself"
         // 只做新包（项目约定）：广播出口只实现 Android 16+ 的 AMS 广播入口，
         // 旧版本不做兼容，安装时由 minSdk 明确拒绝。

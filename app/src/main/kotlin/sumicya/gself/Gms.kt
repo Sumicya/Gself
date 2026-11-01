@@ -1,4 +1,4 @@
-package sumicya.fcmself
+package sumicya.gself
 
 import org.luckypray.dexkit.DexKitBridge
 import org.luckypray.dexkit.query.FindMethod

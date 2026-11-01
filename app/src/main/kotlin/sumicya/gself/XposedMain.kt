@@ -1,4 +1,4 @@
-package sumicya.fcmself
+package sumicya.gself
 
 import android.os.Build
 import android.util.Log
@@ -21,7 +21,7 @@ fun trace(text: String) {
 }
 
 /**
- * Gself 入口（内部包名仍是 sumicya.fcmself，见 build.gradle.kts 的注释）。全部 Hook 都在 system_server 里，所以只有一个进程入口。
+ * Gself 入口（包名 sumicya.gself，入口类名由 java_init.list 与 proguard keep 同时锁死）。全部 Hook 都在 system_server 里，所以只有一个进程入口。
  *
  * 没有开机闸门、没有配置、不写文件、没有界面：装上、作用域勾 `system`、重启。
  * 三组挂载点按顺序各自独立安装，任何一组挂不上只影响它自己。
