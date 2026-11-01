@@ -55,6 +55,15 @@
 - **按规范 `25f521f`「六·参数、判据与取值」修掉四处按排序位置取值**：`build.yml` 三处、`pr-check.yml` 一处原本写 `sorted(glob(...))[0]`，多个 APK 存在时会静默取第一个；现在先断言 `len(apks) == 1` 再取，不满足直接 `sys.exit` 并打印实际列表。图标核验里的 `mono[0]` 同样先断言恰好 1 份。
 - **数字三件套按新规执行**：本轮及前轮出现过的读数，取样对象与时刻在此统一补一次——`ahead=45` 与 `26 文件` 取自 `compare/main...arena/c2404085-gself`（head `24c80dd`，2026-11-01 08:59:54 UTC+8）；四份构建的 APK/dex 取自各自 run 的 check-run 注解（run `41202735608`／`41204631213`／`41258065222`／`41258832262`，2026-11-01 08:40–08:56 UTC+8 读取）；`0.0 B/op` 与比值区间取自 run `41258924589` 的注解（2026-11-01 09:00 UTC+8 读取）。规范 `GLOBAL.md` 由 `79b172f`（283 行）换为 `25f521f`（292 行）。
 
+- **仓库与模块改名后的残留清理（规范 `36d6e04`「六·仓库与模块改名」）**。改名分四层，只改动「用户看得见且改了不牵动别处」的那两层，其余逐条列明不改的理由：
+  - **对外身份**：仓名、artifact 名 `Gself-*`、`app_name`、`applicationId = "sumicya.gself"`——早已是 `Gself`，本轮不动。
+  - **可观测标识（本轮改）**：logcat tag `FcmSelf` → **`Gself`**（`XposedMain.kt:12`），框架日志前缀 `[fcmself]` → **`[gself]`**（`XposedMain.kt:20`），载入文案 `fcmself 载入 system_server` → `Gself 载入 system_server`（`XposedMain.kt:34`），wakelock owner `FcmSelf` → **`Gself`**（`Fixes.kt:377`，会出现在 `dumpsys power` 与电池统计里）。文档同轮全换：`README.md` 2 处、`docs/verify-on-device.md` 12 行命令与期望输出。**判据**：`grep -rIo FcmSelf --exclude-dir=.git .` 从 21 处降到只剩历史证据（见下一条）。
+  - **代码身份（不改）**：`namespace = "sumicya.fcmself"`、源码目录 `app/src/main/kotlin/sumicya/fcmself/`、入口类 `sumicya.fcmself.XposedMain`。入口类名被四处锁死——`META-INF/xposed/java_init.list:1`、`proguard-rules.pro`、`build.yml` 与 `pr-check.yml` 的 dex 断言 `Lsumicya/fcmself/XposedMain;`——改要同步五处，且会让已装用户在 LSPosed 里的模块记录与桌面图标归属对不上，用户看不见 namespace，收益为零。
+  - **历史归属（不改）**：`module.prop:2`、`README.md` 许可证章的「合并自 fcmself」是 GPL 归属，写错来源就是许可问题。
+  - **保留的历史证据**：`docs/verify-on-device.md` 第 9 节 2026-10-05 那段原始 logcat 仍是 `[fcmself]`（当时的真实输出），原样留着并在块后加了一句说明；`CHANGELOG.md` 旧条目里的 `FcmSelf` 同理不改。
+  - **改名顺手删掉一处死参数**：`build.yml` 传给 Gradle 的 `-Pfcmself.buildNumber` 在改名后已无人读取（`build.gradle.kts` 只读 `versionCode` / `versionName`），删掉后构建行为不变，命令见同文件「测试与构建」一步。
+- **代价如实记**：`631b9c5` 之前构建出的包，日志 tag 仍是 `FcmSelf`；手头旧的 `logcat -s FcmSelf` 命令从此抓不到新包的东西，新命令是 `su -c 'logcat -d -v threadtime -s Gself' | head -5`。旧的 LSPosed 框架日志用 `grep -h gself` 会漏掉，翻历史时改用 `grep -h '\[fcmself\]'`。
+
 ## 许可证换 GPL-3 全文、补项目限制与随包许可（2026-10-30）
 
 - `LICENSE` 由自写的 569 字节说明换成 GPL-3.0 全文（35149 字节，与 Qself 同源）；GitHub 的许可识别只看默认分支，合并进 `main` 前接口仍返回 `NOASSERTION`（2026-10-30 21:00 UTC+8 实测），合并后才会识别为 GPL-3.0。「为什么用 GPL-3」与三个上游归属写进 README「许可证」章，不写进 `LICENSE`。

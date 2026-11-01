@@ -1,10 +1,10 @@
 # 真机验证清单
 
-模块没有界面，行为全在日志里。日志 tag 固定 `FcmSelf`，每条同时写进 logcat 与 LSPosed 框架日志：
+模块没有界面，行为全在日志里。日志 tag 固定 `Gself`，每条同时写进 logcat 与 LSPosed 框架日志：
 
 ```bash
-su -c 'logcat -d -s FcmSelf'
-su -c 'grep -h fcmself /data/adb/lspd/log/*.log | tail -80'   # 启动那几行会被挤出 logcat 环形缓冲
+su -c 'logcat -d -s Gself'
+su -c 'grep -h gself /data/adb/lspd/log/*.log | tail -80'   # 启动那几行会被挤出 logcat 环形缓冲
 ```
 
 toybox grep **不支持 `\|` 交替**，多关键字用 `-E`：`grep -hE 'wake|keep notification'`。
@@ -20,14 +20,14 @@ toybox grep **不支持 `\|` 交替**，多关键字用 `-E`：`grep -hE 'wake|k
 ## 1. 模块有没有被加载
 
 ```
-[fcmself] fcmself 载入 system_server（Android 16 / API 36）
-[fcmself] 停止态决策已接管：Intent#isExcludingStopped   ← 语义层：AOSP 判定「要不要排除停止态应用」的唯一枢轴
-[fcmself] 推送达标：语义层在｜标志层在                     ← 一句话汇总哪层活着；出现「缺」说明那一层没挂上
-[fcmself] hook active: AMS 广播入口 N 个重载            ← 标志层：ActivityManagerService 上所有带 Intent 参数的
+[gself] Gself 载入 system_server（Android 16 / API 36）
+[gself] 停止态决策已接管：Intent#isExcludingStopped   ← 语义层：AOSP 判定「要不要排除停止态应用」的唯一枢轴
+[gself] 推送达标：语义层在｜标志层在                     ← 一句话汇总哪层活着；出现「缺」说明那一层没挂上
+[gself] hook active: AMS 广播入口 N 个重载            ← 标志层：ActivityManagerService 上所有带 Intent 参数的
                                                         broadcastIntent / broadcastIntentWithFeature / broadcastIntentLocked
                                                         重载；N 随 ROM 而变
-[fcmself] OplusProxyWakeLock instance captured        ← 仅 ColorOS
-[fcmself] unfreeze 可用（4 参签名）                    ← 仅 ColorOS，只打一次
+[gself] OplusProxyWakeLock instance captured        ← 仅 ColorOS
+[gself] unfreeze 可用（4 参签名）                    ← 仅 ColorOS，只打一次
 ```
 
 - 什么都没有 → LSPosed 没加载模块：查启用状态、作用域、是否重启过（改作用域必须重启）
@@ -35,7 +35,7 @@ toybox grep **不支持 `\|` 交替**，多关键字用 `-E`：`grep -hE 'wake|k
 - 26.10.1 起**没有开机闸门**：`Boot Complete` 那行不会再出现，载入即介入
 - 三组进程各有一条安装日志：system 侧是上面的行，GMS 侧是
   `通行密钥解限 Hook 已安装`，Gboard 侧是 `Gboard 剪贴板 Hook 已安装`（后两条在各自应用的进程里，
-  用 `su -c 'logcat -d -s FcmSelf'` 同样能看到）。**Gboard 那条只有在 Gboard 作为当前输入法被加载过之后才会出现**；
+  用 `su -c 'logcat -d -s Gself'` 同样能看到）。**Gboard 那条只有在 Gboard 作为当前输入法被加载过之后才会出现**；
   一次都没看到就先确认当前输入法：`su -c "settings get secure default_input_method"`
 - `hook active:` 那行只在 system_server 载入时打一次；`keep notification` / `wake` 是运行期日志，按需出现
 
@@ -51,7 +51,7 @@ hook skip 推送入口（AMS）: sumicya.fcmself.Hook$Missing: com.android.serve
 （`dumpsys package <包名> | grep stopped=` 应为 `stopped=true`）。然后推一条 FCM 消息：
 
 ```
-[fcmself] wake: <包名>（AMS#broadcastIntentWithFeature）
+[gself] wake: <包名>（AMS#broadcastIntentWithFeature）
 ```
 
 出现这行且通知弹出 = 核心生效。（这是给正在发送的那条广播补 `FLAG_INCLUDE_STOPPED_PACKAGES`，
@@ -109,7 +109,7 @@ su -c "logcat -c"
 # 这里推一条 FCM 消息，等 60 秒
 sleep 60
 su -c "pidof $PKG"                                       # ③ 期望有新的 pid
-su -c "logcat -d -s FcmSelf"                             # 期望含 wake: $PKG（AMS#…）
+su -c "logcat -d -s Gself"                             # 期望含 wake: $PKG（AMS#…）
 su -c "logcat -b events -d | grep -E 'am_proc_start' | grep -E 'c2dm|firebase'"   # ④ 期望 callingAction=c2dm RECEIVE
 su -c "dumpsys notification --noredact | grep -i $PKG"    # 通知已入队
 su -c "logcat -d | grep -ci cancelled"                    # 期望 0：没有待投递消息被取消
@@ -119,7 +119,7 @@ su -c "logcat -d | grep -ci cancelled"                    # 期望 0：没有待
 | --- | --- | --- |
 | ① 停止态 | `stopped=true` | 前态没造出来：先划掉最近任务再 `am force-stop`，否则这条链路根本没被触发（见第 2 节「冻结 ≠ 停止」） |
 | ② 前态进程 | `pidof` 为空 | 同上，进程还在就测不到推送拉起 |
-| ③ 拉起 | 有新 pid，且 `FcmSelf` 日志里有 `wake: <包名>` | 先看第 1 节三层日志，再按第 2 节「两层挂载与判读」分辨哪层在干活 |
+| ③ 拉起 | 有新 pid，且 `Gself` 日志里有 `wake: <包名>` | 先看第 1 节三层日志，再按第 2 节「两层挂载与判读」分辨哪层在干活 |
 | ④ 平台旁证 | `am_proc_start` 带 `callingAction=c2dm RECEIVE` | 说明是推送广播拉起的；没有则推送没到设备，按第 5 节三段归因查 ① |
 
 四项全中才算验收通过；本清单不采信模块自述（③ 的日志是模块自己打的），② 与 ④ 都取自平台的进程表与 EventLog。
@@ -164,15 +164,15 @@ ColorOS 电池组件的 Google 连通性探测可能已对 GMS 等核心包下�
 重启后检查：
 
 ```
-[fcmself] Oplus Google network firewall hook 已安装
-[fcmself] Oplus Google restrict broadcast hook active: ...
+[gself] Oplus Google network firewall hook 已安装
+[gself] Oplus Google restrict broadcast hook active: ...
 ```
 
 实际拦下拒绝规则和清除限制广播时分别会有：
 
 ```
-[fcmself] Oplus Google network reject dropped: uid=..., type=...
-[fcmself] Oplus Google restrict broadcast cleared in system_server
+[gself] Oplus Google network reject dropped: uid=..., type=...
+[gself] Oplus Google restrict broadcast cleared in system_server
 ```
 
 `hook active` 只代表挂点存在；没有 `reject dropped` 可能是 ROM 未声明上述元数据、该规则没有发生，或问题在网络路由。尤其 VPN 下若日志显示
@@ -185,7 +185,7 @@ Play Integrity 的 `Labels: []` 与这两个 Hook 是否加载没有直接关系
 `REASON_PACKAGE_CHANGED`(5) 或 ColorOS 的 10020 / 10021 时忽略这次取消：
 
 ```
-[fcmself] keep notification: <包名>（reason=5）
+[gself] keep notification: <包名>（reason=5）
 ```
 
 这是**故意偏离原生**的一处：AOSP 的 `NotificationManagerService#mPackageIntentReceiver` 自己就会在包变化
@@ -244,12 +244,12 @@ su -c "logcat -d | grep -iE '<包名>|c2dm|Background execution|not delivering|s
 | ColorOS 首次解锁后的 Google 联网保护 | **代码新增，待真机验证**：按 `IgnoreGmsUserSet` 元数据及 Google appId 窄范围处理拒绝规则，并清除 Oplus 限制广播；新增纯 JVM 策略测试。新挂点是否匹配用户固件、FCM 是否恢复仍须在设备验证。怎么验：第 3 节末「首次解锁后 GMS 一直未连接」的日志窗口（重启后看 FCM Diagnostics 的 `Close err` 与 `dumpsys batterystats`）；约 10 分钟 |
 | 只做新包（minSdk 36 / 4 参 unfreeze） | **已验证**（2026-10-05 同一份日志）：Android 16 上 `BroadcastController` 存在并挂上，ColorOS 的 `unfreezeIfNeed` 4 参签名可用。**注**：2026-10-30 起推送挂点改为 AMS 入口（见第 2 节），BroadcastController 挂点在当前构建上不再命中 |
 | GMS 通行密钥解限 | **仅装点已验证**：`通行密钥解限 Hook 已安装` 出现两次（GMS 进程重启过）；「非 Chrome 浏览器能用通行密钥」要实际调一次才知道 |
-| Gboard 剪贴板 | **未见日志**（2026-10-05 时点）：日志里没有 `Gboard 剪贴板 Hook 已安装`，也没有 `hook skip`。怎么验：`su -c "settings get secure default_input_method"` 确认是 Gboard，切到 Gboard 打一次字，再 `su -c 'logcat -d -s FcmSelf'`；约 2 分钟 |
+| Gboard 剪贴板 | **未见日志**（2026-10-05 时点）：日志里没有 `Gboard 剪贴板 Hook 已安装`，也没有 `hook skip`。怎么验：`su -c "settings get secure default_input_method"` 确认是 Gboard，切到 Gboard 打一次字，再 `su -c 'logcat -d -s Gself'`；约 2 分钟 |
 | Gself 真机链路 | **已验证**（2026-10-06，OnePlus/ColorOS，`26.10.6.1.128`）：推送唤醒 `wake:` 批量命中（含「长连接断流后重启恢复」场景，见第 10 节）、通知保留 `keep notification` 命中；三组挂载点已在三合一时验过 |
 | 1.0.0 冻结态链路 | 已验通（OnePlus/ColorOS，build `20260926_1edb471`）：载入 / hook 装配 / `shouldProxy bypass` / `No Intercept` / flag / `unfreeze` / `Keep notification` 全命中 |
 | 1.0.0 force-stop 唤醒 | 已验通（2026-09-26，OnePlus/ColorOS，nagramx fork）：`stopped=true` 下推送以新 pid 拉起应用 |
 | 介入判据（`Push.needsStoppedPatch`） | 单测覆盖（`PushTest`）：判据是纯函数（action / 目标包名 / flags），整张表在 JVM 里验 |
-| 语义层 `Intent#isExcludingStopped` | **未真机验证**（2026-10-30 本轮新增）：只经 CI 编译，未在设备上确认该挂点命中；载入日志出现 `停止态决策已接管` 只证明挂上。怎么验：第 2.1 节的命令块，同时看 `logcat -d -s FcmSelf` 里有没有 `决策入口兜底`（没有=标志层已覆盖全部入口，语义层只是保险）；约 3 分钟 |
+| 语义层 `Intent#isExcludingStopped` | **未真机验证**（2026-10-30 本轮新增）：只经 CI 编译，未在设备上确认该挂点命中；载入日志出现 `停止态决策已接管` 只证明挂上。怎么验：第 2.1 节的命令块，同时看 `logcat -d -s Gself` 里有没有 `决策入口兜底`（没有=标志层已覆盖全部入口，语义层只是保险）；约 3 分钟 |
 | 参数按类型/按值识别 | **未验证**：无 JVM 单测（要真 Intent / 真 ROM 类）。怎么验：第 2.1 节的命令块，`wake:` 打出来即说明 `chain.args[idx]` 取对了；约 3 分钟 |
 | release（R8）产物 | **未验证**：CI 只出 debug 包，release 变体只在本地产出、没人装上验过。怎么验：`./gradlew assembleRelease`（需 JDK 21 + Android SDK）→ `tools/sign-apk.sh` 签名 → 装机跑第 2.1 节；约 15 分钟 |
 
@@ -261,8 +261,8 @@ su -c "logcat -d | grep -iE '<包名>|c2dm|Background execution|not delivering|s
 
 ```bash
 su -c 'ls -l /data/adb/lspd/log/'
-su -c 'grep -h fcmself /data/adb/lspd/log/*.log | head -3'    # 最早一行 = 可回溯起点
-su -c 'grep -h fcmself /data/adb/lspd/log/*.log | tail -80'
+su -c 'grep -h gself /data/adb/lspd/log/*.log | head -3'    # 最早一行 = 可回溯起点
+su -c 'grep -h gself /data/adb/lspd/log/*.log | tail -80'
 ```
 
 **第二步：系统侧转长期抓取**（logcat 自带轮转，写到文件，不会因为缓冲被冲掉）
@@ -276,7 +276,7 @@ su -c 'ls -l /data/local/tmp/gself.log*'   # 确认在写；6 个文件各 8 MB�
 复现后取回（先筛关键行，再决定要不要整段）：
 
 ```bash
-su -c 'grep -hE "FcmSelf|c2dm|firebase|MESSAGING_EVENT|NotificationManager|BroadcastQueue|ActivityManager" \
+su -c 'grep -hE "Gself|c2dm|firebase|MESSAGING_EVENT|NotificationManager|BroadcastQueue|ActivityManager" \
   /data/local/tmp/gself.log*' | tail -200
 su -c 'cp /data/local/tmp/gself.log* /sdcard/Download/'   # 整段带回来
 ```
@@ -284,7 +284,7 @@ su -c 'cp /data/local/tmp/gself.log* /sdcard/Download/'   # 整段带回来
 **把窗口缩到某个包**（`<包名>` 换成出问题的应用；nagramx 是 `fork.risin42.nagramx`）
 
 ```bash
-su -c 'grep -hE "<包名>|FcmSelf|c2dm|firebase|MESSAGING_EVENT|Start proc|DeviceIdle|doze" /data/local/tmp/gself.log*' | tail -300
+su -c 'grep -hE "<包名>|Gself|c2dm|firebase|MESSAGING_EVENT|Start proc|DeviceIdle|doze" /data/local/tmp/gself.log*' | tail -300
 ```
 
 **复现时抓这些状态快照**（模块日志只能证明「广播从 AMS 发出去了」，不能证明当时应用是不是停止态——快照负责补这一块）
@@ -327,7 +327,7 @@ LSPosed 日志本身会在模块载入时自动记一行，两条路互相兜底
 
 ## 8. 反馈问题时请附上
 
-- 从重启开始的完整 `FcmSelf` 日志（尤其 `hook active:` 与所有 `hook skip` 行）
+- 从重启开始的完整 `Gself` 日志（尤其 `hook active:` 与所有 `hook skip` 行）
 - 产物版本号（artifact 名 `Gself-<版本>`）、ROM 名称与版本、GMS 版本号、LSPosed 版本、Android 版本
 - 目标应用包名 + 「杀掉应用 → 推送」的复现步骤
 
@@ -412,17 +412,20 @@ LSPosed 日志本身会在模块载入时自动记一行，两条路互相兜底
 ```bash
 su -c 'logcat -c; for i in $(seq 10); do sleep 30; echo "=== 第 $i 个 30 秒 $(date +%H:%M:%S) ===";
   echo -n "c2dm/firebase 计数: "; logcat -d | grep -icE "c2dm|firebase|MESSAGING_EVENT";
-  logcat -d -s FcmSelf | tail -3; dumpsys package <目标包名> | grep -m1 -o "stopped=[a-z]*";
+  logcat -d -s Gself | tail -3; dumpsys package <目标包名> | grep -m1 -o "stopped=[a-z]*";
   logcat -c; done'
 ```
 
 计数为 0 只表示「这会儿还没到」；判失败要看 5 分钟后 `stopped=` 是否仍为 true、
-且 `FcmSelf` 一行都没有。
+且 `Gself` 一行都没有。
 
 备忘：若将来某台机器确实需要写 appOp，取值用「紧跟 `Bundle bOptions` 之前的那个 int」，
 不要用 0.9.0 的硬编码下标 13（`intent@3` 之后依次是 requestCode@7 / userId@11 /
 flags@12 / appOp@13，换 ROM 会漂）。本机不需要。
 
+
+> 上面三行是 `631b9c5` 之前构建的原始日志（tag 当时叫 `FcmSelf`），保留原样当证据；
+> 现在的 tag 是 `Gself`，新抓的日志里同一行会显示 `Gself: Add FLAG_INCLUDE_STOPPED_PACKAGES: …`。
 ## 10. 真机案例参考（2026-10-06）：消息一夜之间突然滞留，模块是清白的
 
 **症状**：nagramx 消息在前一晚 23:58 前后彻底停更，次日全天无新消息；模块日志里
@@ -447,7 +450,7 @@ flags@12 / appOp@13，换 ROM 会漂）。本机不需要。
 `su -c 'am force-stop com.google.android.gms'` 等 5 分钟（本机当时未恢复，但比重启便宜，
 值得先试）。**若此形态频繁复发，就是重新考虑捡回重连修复的依据。**
 
-**判读捷径**：消息突然停更，先 `grep -h fcmself /data/adb/lspd/log/*.log | grep 'wake:'`
+**判读捷径**：消息突然停更，先 `grep -h gself /data/adb/lspd/log/*.log | grep 'wake:'`
 ——全天为零时别先怀疑钩子，按本节顺序把第①段排掉。
 
 ## 11. Monocles Chat 重启后不恢复：候选已定位（2026-10-15，源码侧）

@@ -374,4 +374,4 @@ private val GOOGLE_NETWORK_PACKAGES = listOf(
     "com.google.android.configupdater",
 )
 private const val WAKELOCK_TAG = "FCMXX"
-private const val WAKELOCK_OWNER = "FcmSelf"
+private const val WAKELOCK_OWNER = "Gself"

@@ -118,7 +118,7 @@ jobs:
           # 构建失败时把 build.log 末尾写进注解：编译错误、单测失败、R8 报错都在里面，
           # 注解可见即可定位，不必依赖下载 job 日志。
           # 同上：不靠 trap ERR（实测不触发），显式 if ! 接管并把 build.log 末尾写进注解。
-          if ! ./gradlew -Pfcmself.buildNumber="${{ env.VERSION_CODE }}" -PversionName="${{ env.VERSION_NAME }}" -PversionCode="${{ env.VERSION_CODE }}" test assembleDebug 2>&1 | tee build.log; then
+          if ! ./gradlew -PversionName="${{ env.VERSION_NAME }}" -PversionCode="${{ env.VERSION_CODE }}" test assembleDebug 2>&1 | tee build.log; then
             echo "::error::构建失败；build.log 末尾：$(tail -8 build.log 2>/dev/null | tr '\n' ' ' | head -c 800)"
             exit 1
           fi

@@ -48,7 +48,7 @@ rm -rf "$D"
 
 装完不用点开（模块没有界面、没有图标入口）。在 LSPosed 管理器里启用「Gself」，作用域勾 `system`、`com.google.android.gms`、Gboard（`scope.list` 已预选），然后重启——`system` 进程里的挂载只能靠重启生效，停用或卸载同样要重启一次。
 
-验收：按 [`docs/verify-on-device.md`](docs/verify-on-device.md) 第 1 节确认模块被加载（日志 tag `FcmSelf`，出现 `推送达标：语义层在｜标志层在` 即两层都在），再按第 2.1 节那一条命令跑完四项信号。
+验收：按 [`docs/verify-on-device.md`](docs/verify-on-device.md) 第 1 节确认模块被加载（日志 tag `Gself`，出现 `推送达标：语义层在｜标志层在` 即两层都在），再按第 2.1 节那一条命令跑完四项信号。
 
 artifact 只留 5 天、每仓最多 5 个；路径里不带空格，所以第 3 步的 `$(find …)` 可以直接嵌进 `su -c`。
 
@@ -68,7 +68,8 @@ CI（`Build`）跑单测 + 编译 debug + 校验 R8 入口类 + 体积分项闸�
 
 - **不支持锁 bootloader / 未解锁的 User Product 设备**：本模块按「可侧载」前提出包，不承诺在禁止安装修改版系统的设备上能装（GPL-3 §6 的安装信息义务因此不由本仓承担）。
 - 只在 Android 16（API 36）+ ColorOS 的一台真机上验证过；其它 ROM 上 `hooks.install` 各自 `hook skip`，推送唤醒之外的功能可能不生效。
-- 模块没有界面、没有配置、不写文件；日志是唯一观测手段（tag `FcmSelf`）。
+- 模块没有界面、没有配置、不写文件；日志是唯一观测手段（logcat tag `Gself`，框架日志前缀 `[gself]`）。
+- **内部标识不跟着对外名字改**：`namespace`、源码目录与入口类仍是 `sumicya.fcmself.XposedMain`——入口类名被 `META-INF/xposed/java_init.list`、`proguard-rules.pro`、CI 的 dex 断言三处锁死，改它要五处同步且会让已装用户在 LSPosed 里的模块记录对不上，收益为零（用户看不见 namespace）。对外身份（仓名、artifact 名、`app_name`、`applicationId`）是 `Gself`。
 - 通行密钥解限与 Gboard 剪贴板依赖 DexKit 在运行期按字符串定位混淆方法，GMS / Gboard 改版后可能定位失败（届时各自打一条 `hook skip`，不影响推送唤醒）。
 
 ## 许可证
