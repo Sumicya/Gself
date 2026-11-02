@@ -256,14 +256,14 @@ su -c "logcat -d | grep -iE '<包名>|c2dm|Background execution|not delivering|s
 | 推送唤醒标志层（AMS 入口） | **已验证**（2026-10-30 12:39，ColorOS / Android 16，nagramx）：`am force-stop` 后 `wake:` 命中，进程由 c2dm 广播以新 pid 拉起，GMS 侧 `CANCELLED` 计数 0，通知入队 |
 | ColorOS 首次解锁后的 Google 联网保护 | **代码新增，待真机验证**：按 `IgnoreGmsUserSet` 元数据及 Google appId 窄范围处理拒绝规则，并清除 Oplus 限制广播；新增纯 JVM 策略测试。新挂点是否匹配用户固件、FCM 是否恢复仍须在设备验证。怎么验：第 3 节末「首次解锁后 GMS 一直未连接」的日志窗口（重启后看 FCM Diagnostics 的 `Close err` 与 `dumpsys batterystats`）；约 10 分钟 |
 | 只做新包（minSdk 36 / 4 参 unfreeze） | **已验证**（2026-10-05 同一份日志）：Android 16 上 `BroadcastController` 存在并挂上，ColorOS 的 `unfreezeIfNeed` 4 参签名可用。**注**：2026-10-30 起推送挂点改为 AMS 入口（见第 2 节），BroadcastController 挂点在当前构建上不再命中 |
-| GMS 通行密钥解限 | **仅装点已验证**：`通行密钥解限 Hook 已安装` 出现两次（GMS 进程重启过）；「非 Chrome 浏览器能用通行密钥」要实际调一次才知道 |
+| GMS 通行密钥解限 | **主人 2026-11-01 口头实测通过**：非 Chrome 浏览器可用通行密钥（本会话未拿到该次 `logcat` 原样，标「他会话读数，未复算」）；装点日志 `通行密钥解限 Hook 已安装` 仍在。改前状态：仅装点已验证，功能未调过一次。作废原文：**仅装点已验证**：`通行密钥解限 Hook 已安装` 出现两次（GMS 进程重启过）；「非 Chrome 浏览器能用通行密钥」要实际调一次才知道 |
 | Gboard 剪贴板 | **未见日志**（2026-10-05 时点）：日志里没有 `Gboard 剪贴板 Hook 已安装`，也没有 `hook skip`。怎么验：`su -c "settings get secure default_input_method"` 确认是 Gboard，切到 Gboard 打一次字，再 `su -c 'logcat -d -s Gself'`；约 2 分钟 |
 | 通知拦截真机命中 | **已验证**（2026-11-01 22:47:36，Android 16 / ColorOS，`26.11.1.6.94`）：`keep notification: fork.risin42.nagramx（reason=10020）`，即 ColorOS 自造取消原因 10020 被拦下，通知没被撤 |
 | Gself 真机链路 | **已验证**（2026-10-06，OnePlus/ColorOS，`26.10.6.1.128`）：推送唤醒 `wake:` 批量命中（含「长连接断流后重启恢复」场景，见第 10 节）、通知保留 `keep notification` 命中；三组挂载点已在三合一时验过 |
 | 1.0.0 冻结态链路 | 已验通（OnePlus/ColorOS，build `20260926_1edb471`）：载入 / hook 装配 / `shouldProxy bypass` / `No Intercept` / flag / `unfreeze` / `Keep notification` 全命中 |
 | 1.0.0 force-stop 唤醒 | 已验通（2026-09-26，OnePlus/ColorOS，nagramx fork）：`stopped=true` 下推送以新 pid 拉起应用 |
 | 介入判据（`Push.needsStoppedPatch`） | 单测覆盖（`PushTest`）：判据是纯函数（action / 目标包名 / flags），整张表在 JVM 里验 |
-| 语义层 `Intent#isExcludingStopped` | **未真机验证**（2026-10-30 本轮新增）：只经 CI 编译，未在设备上确认该挂点命中；载入日志出现 `停止态决策已接管` 只证明挂上。怎么验：第 2.1 节的命令块，同时看 `logcat -d -s Gself` 里有没有 `决策入口兜底`（没有=标志层已覆盖全部入口，语义层只是保险）；约 3 分钟 |
+| 语义层 `Intent#isExcludingStopped` | **未真机验证**（2026-10-30 本轮新增；2026-11-01 主人跑了计数命令，输出 `grep: 0）: No such file or directory`＝中文括号被终端吃进路径，未取到数）：只经 CI 编译，未在设备上确认该挂点命中；载入日志出现 `停止态决策已接管` 只证明挂上。怎么验：第 2.1 节的命令块，同时看 `logcat -d -s Gself` 里有没有 `决策入口兜底`（没有=标志层已覆盖全部入口，语义层只是保险）；约 3 分钟 |
 | 参数按类型/按值识别 | **未验证**：无 JVM 单测（要真 Intent / 真 ROM 类）。怎么验：第 2.1 节的命令块，`wake:` 打出来即说明 `chain.args[idx]` 取对了；约 3 分钟 |
 | release（R8）产物 | **未验证**：CI 只出 debug 包，release 变体只在本地产出、没人装上验过。怎么验：`./gradlew assembleRelease`（需 JDK 21 + Android SDK）→ `tools/sign-apk.sh` 签名 → 装机跑第 2.1 节；约 15 分钟 |
 
@@ -320,6 +320,9 @@ su -c 'cat /proc/uptime'   # 第一列＝开机秒数，除 3600 得小时
 
 ```bash
 su -c 'logcat -d -b main -v threadtime -s Gself | tail -20'   # 已有缓冲里的最近几行
+
+**贴命令时不要把注释写在引号后面**：`su -c "… | grep -c '决策入口兜底'"（期望 0）` 里的中文括号会被
+终端当成路径的一部分，报 `grep: 0）: No such file or directory`，计数根本没跑。注释单独放一行。
 su -c 'timeout 60 logcat -b main -v threadtime -s Gself'      # 实时等一条推送
 ```
 
