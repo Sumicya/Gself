@@ -256,8 +256,8 @@ su -c "logcat -d | grep -iE '<包名>|c2dm|Background execution|not delivering|s
 | 推送唤醒标志层（AMS 入口） | **已验证**（2026-10-30 12:39，ColorOS / Android 16，nagramx）：`am force-stop` 后 `wake:` 命中，进程由 c2dm 广播以新 pid 拉起，GMS 侧 `CANCELLED` 计数 0，通知入队 |
 | ColorOS 首次解锁后的 Google 联网保护 | **代码新增，待真机验证**：按 `IgnoreGmsUserSet` 元数据及 Google appId 窄范围处理拒绝规则，并清除 Oplus 限制广播；新增纯 JVM 策略测试。新挂点是否匹配用户固件、FCM 是否恢复仍须在设备验证。怎么验：第 3 节末「首次解锁后 GMS 一直未连接」的日志窗口（重启后看 FCM Diagnostics 的 `Close err` 与 `dumpsys batterystats`）；约 10 分钟 |
 | 只做新包（minSdk 36 / 4 参 unfreeze） | **已验证**（2026-10-05 同一份日志）：Android 16 上 `BroadcastController` 存在并挂上，ColorOS 的 `unfreezeIfNeed` 4 参签名可用。**注**：2026-10-30 起推送挂点改为 AMS 入口（见第 2 节），BroadcastController 挂点在当前构建上不再命中 |
-| GMS 通行密钥解限 | **主人 2026-11-01 口头实测通过**：非 Chrome 浏览器可用通行密钥（本会话未拿到该次 `logcat` 原样，标「他会话读数，未复算」）；装点日志 `通行密钥解限 Hook 已安装` 仍在。改前状态：仅装点已验证，功能未调过一次。作废原文：**仅装点已验证**：`通行密钥解限 Hook 已安装` 出现两次（GMS 进程重启过）；「非 Chrome 浏览器能用通行密钥」要实际调一次才知道 |
-| Gboard 剪贴板 | **未见日志**（2026-10-05 时点）：日志里没有 `Gboard 剪贴板 Hook 已安装`，也没有 `hook skip`。怎么验：`su -c "settings get secure default_input_method"` 确认是 Gboard，切到 Gboard 打一次字，再 `su -c 'logcat -d -s Gself'`；约 2 分钟 |
+| GMS 通行密钥解限 | **主人 2026-11-01 口头实测通过**：非 Chrome 浏览器可用通行密钥（本会话未拿到该次 `logcat` 原样，标「他会话读数，未复算」）；装点日志 `通行密钥解限 Hook 已安装` 是 GMS 进程启动时打的（`Gms.kt:53`），事后 `su -c "grep -h gself /data/adb/lspd/log/*.log | grep 通行密钥"` 即可，不必在弹窗时敲命令。改前状态：仅装点已验证，功能未调过一次。作废原文：**仅装点已验证**：`通行密钥解限 Hook 已安装` 出现两次（GMS 进程重启过）；「非 Chrome 浏览器能用通行密钥」要实际调一次才知道 |
+| Gboard 剪贴板 | **未见日志**（2026-10-05 / 2026-11-01 两次时点）：没有 `Gboard 剪贴板 Hook 已安装`，也没有 `hook skip`。**判读不需要在弹出剪贴板面板时敲命令**——这行是 Gboard 进程启动时打的（`XposedMain.kt:41` 的 `onPackageLoaded` → `Gboard.kt:61`），事后 grep 历史即可：`su -c "grep -h gself /data/adb/lspd/log/*.log | grep -E 'Gboard|剪贴板'"`。没有这行先看进程在不在：`su -c "pidof com.google.android.inputmethod.latin"`（空＝自重启后 Gboard 进程没起过，所以没打） |
 | 通知拦截真机命中 | **已验证**（2026-11-01 22:47:36，Android 16 / ColorOS，`26.11.1.6.94`）：`keep notification: fork.risin42.nagramx（reason=10020）`，即 ColorOS 自造取消原因 10020 被拦下，通知没被撤 |
 | Gself 真机链路 | **已验证**（2026-10-06，OnePlus/ColorOS，`26.10.6.1.128`）：推送唤醒 `wake:` 批量命中（含「长连接断流后重启恢复」场景，见第 10 节）、通知保留 `keep notification` 命中；三组挂载点已在三合一时验过 |
 | 1.0.0 冻结态链路 | 已验通（OnePlus/ColorOS，build `20260926_1edb471`）：载入 / hook 装配 / `shouldProxy bypass` / `No Intercept` / flag / `unfreeze` / `Keep notification` 全命中 |
@@ -418,7 +418,8 @@ LSPosed 日志本身会在模块载入时自动记一行，两条路互相兜底
   拦的是「取消原因为 5 / 10020 / 10021 的整包取消」，对所有包生效、没有白名单；
   自 26.10.5.1 起日志带原因值（`keep notification: <包名>（reason=10020）`），据此判断是不是误拦——
   这些多是 ColorOS 空闲清理或包变化触发的取消。要判断有没有误拦，按第 6 节第 3 条验。
-- 没有任何 `hook skip`，也没有 `Gboard 剪贴板 Hook 已安装`：Gboard 那组只在 Gboard 被加载过之后才打日志，
+- 没有任何 `hook skip`，也没有 `Gboard 剪贴板 Hook 已安装`：Gboard 那组只在 Gboard 进程被加载过之后才打日志
+  （进程启动时，不是弹出剪贴板面板时），所以这一行有没有直接等价于「重启后 Gboard 进程起没起过」，用 `pidof` 验证即可，不需要任何操作配合；
   先确认当前输入法（见第 1 节）；若 Gboard 就是当前输入法却仍无日志，把
   `su -c 'logcat -d | grep -iE "gboard|clipboard"' | head -40` 的结果贴回来。
 
