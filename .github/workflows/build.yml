@@ -23,6 +23,9 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    concurrency:
+      group: gself-build
+      cancel-in-progress: false
     permissions:
       contents: read
       actions: read
@@ -311,7 +314,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     concurrency:
-      group: gself-cleanup
+      group: gself-build
       cancel-in-progress: false
     permissions:
       actions: write
@@ -332,7 +335,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     concurrency:
-      group: gself-cleanup
+      group: gself-build
       cancel-in-progress: false
     permissions:
       contents: write
