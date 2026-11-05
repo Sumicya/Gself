@@ -1,3 +1,154 @@
+## README 收窄成三章；build 与两个清理 job 同一并发组（2026-11-05）
+
+- 按规范 §16「README 只写是什么、从哪下、怎么装怎么删」删「要求／功能／构建」三章：三条作用域各做什么并进简介，Android 16+ 与 root/LSPosed 前提并进「安装与使用」开头。
+- 保留「项目限制」「许可证」两章；「构建」章里 GPL-3 §6(d) 的对应源码指向折成一句留在安装章（artifact 第五段＝`run_number`→head 提交即源码）。
+- `build.yml` 的 `build` job 补 `concurrency: group: gself-build`，两个清理 job 的组由 `gself-cleanup` 改成同组，满足 §12「清理 job 与 build 同 concurrency」。
+
+## 规范换成单文件 22 条；证据图移进 docs/evidence/（2026-11-05）
+
+- 生效点 `5b323dc`（47 行，GLOBAL＋CHECK 两份）→ `1d2212e`（36 行，单文件），`CHECK.md` 已删，条号改为 1–22；新增「三份上游必读含 morluto/rea」「证据图放 `docs/evidence/` 带日期」「文件字节只许减不许增」「收尾末尾三行、欠账表取消」。
+- 证据图 `docs/icon-{audit,mask,monochrome}.png` → `docs/evidence/2026-10-31/`，`tools/icon_figure.py` 输出路径同步；重跑后 `icon-mask.png` 与入库版本逐字节相同（sha256 `c6c20445…`）。
+- 此前各条里写的 `docs/icon-mask.png` 是搬迁前路径，以本条为准。
+
+## 判读一律事后看历史，不要求对着弹窗敲命令（2026-11-02）
+
+- 改前：Gboard 一条写「切到 Gboard 打字再 grep」、通行密钥写「打开站点再 grep」——弹窗／剪贴板面板出现时没法敲命令，这条建议不成立。
+- 两行日志都在进程启动时打（`XposedMain.kt:41` → `Gboard.kt:61` / `Gms.kt:53`），改后只给事后 grep；Gboard 行缺失时用 `pidof` 判进程有没有起过。
+
+## 规范换成 GLOBAL＋CHECK 两份；README 写明包只从 Actions 取（2026-11-02）
+
+- 生效点由 `f330709`（48 行）换成 `5b323dc`（47 行）＋新增 `CHECK.md`（1005 字节），补「黑历史不删、更正加新记录」「事实不足必查」「交前按 CHECK 逐条过」。
+- README 安装章补一句：不发 Release、不打 tag，包只从 Actions artifact 取（改前只在命令里体现，正文没说）。
+
+## 通行密钥状态改判；贴命令不要尾随中文注释（2026-11-01）
+
+- 通行密钥解限从「仅装点已验证」改为「主人实测通过」，按规范标他会话读数、本会话未复算。
+- 语义层计数命令那次的输出是 `grep: 0）: No such file or directory`——中文括号被当成路径，计数没跑；文档补这条坑。
+
+## logcat 能抓到模块行；通知拦截首次真机命中（2026-11-01）
+
+- 上一版写的「logcat 只当旁证、5 小时只捞到 1 条」被实例推翻：`-b main` 下 64 秒抓到 5 条 `D Gself`，改回「能抓、窗口只有几分钟」。
+- `-s Gself` 返回 0 行只说明 `logcat -c` 之后这段时间没有新行，不能判模块没加载；加载与否看 LSPosed 日志。
+- `keep notification: fork.risin42.nagramx（reason=10020）` 首次真机命中，ColorOS 自造取消原因 10020 的拦截链路确认生效。
+
+## 装机命令落点回到 Download 根；日志判读补三条实况（2026-11-01）
+
+- 安装改成 `cd /storage/emulated/0/Download` 直接取，不再建 `Download/selfs` 子目录（规范「落点固定、不建子目录」）。
+- 补 LSPosed 日志目录实况：只有 `kmsg.log` / `modules_*.log` / `verbose_*.log` 三个 `.log`，模块行两处都写，不去重就数两遍。
+- 实测同上批数据：未去重 `122/464/506/810/608/428`，`sort -u` 后 `61/232/253/405/304/226`，合计 1481（5 小时 9 分钟）。
+- 补 `cat /proc/uptime` 核开机时刻；并写明 logcat 只当旁证（1481 条模块日志里 logcat 只捞到 1 条）。
+
+## 真机日志判读两处修正：跨文件重复计数、logcat 用 tail（2026-11-01）
+
+- LSPosed 日志目录里同一行会在多个 `.log` 各出现一次（同时间戳同序号），判读时改成 `sort -u` 再计数，否则密度被放大数倍。
+- 按小时统计的 `cut -c1-5` 只截到年，全部行压进一个桶，改成 `cut -c1-13`。
+- `logcat -d -s Gself` 后接 `head` 取的是最旧几行，启动行早在环形缓冲之外；要看最新改用 `tail`。
+
+## 真机验证清单：启动行改用关键字 grep（2026-11-01）
+
+- 起因：按清单里的 `grep -h gself … | tail -80` 抓日志，80 行全是 `wake:`（23 分 50 秒窗口），启动行被挤出窗口，被误读成「模块没加载」。
+- 两处命令改成 `grep -hE '载入 system_server|hook active|hook skip|推送达标'`，`tail -80` 降到 `tail -20` 只用于看运行期。
+- 新增推送密度两行命令（`grep -c 'wake:'` 与按分钟计数），用来判断「覆盖窗口够不够长」而不是靠猜。
+
+## 推送热路径零分配、打包去白装并加体积预算闸门（2026-10-31）
+
+- 语义层快路：`Intent#isExcludingStopped` 每次 intent 解析都会进来，先只做一次掩码比较——只有原生答案本来是 true（带 `0x10` 且不带 `0x20`）才继续走字符串判据，其余直接 `proceed()`。返回值与原方法逐位相同（AOSP `Intent.java:10023`），单测用真值表钉住。
+- 挂载点去分配：AMS 广播入口与 ColorOS 受限广播两处，`Intent` 的实参下标在装挂载点时按类型算好（`ActivityManagerService.java:14391`/`:14402`、`BroadcastController.java:710` 的单 `Intent` 参数签名），运行期 `chain.args[idx]` 直取；`filterIsInstance` 每次调用都会新建一个 ArrayList，而这里每次系统广播都要进来一次。通知 Hook 原来两次 `filterIsInstance` 也改成一次索引遍历。
+- 判据去分配：`Push.isPush` 从「列表 + `any` + lambda」展开成两次 `String.contains`；`waken` 只取一次目标包名（原来判据与日志各取一次）；`Push.needsStoppedPatch` 按代价排序（位运算 → `contains` → 目标包名）。
+- 「热路径不分配对象」从注释升级成可执行的断言：新增 `HotPathTest`，用 `com.sun.management.ThreadMXBean#getCurrentThreadAllocatedBytes` 量当前线程累计分配字节——预热 2 万次后跑 20 万次调用，分配量必须 ≤ 8 KB（等于每次 < 0.05 字节），谁在哪天给判据里加了一个 `filterIsInstance`、一个 `listOf` 或一个装箱，CI 当场红。不用 `assumeTrue` 跳过：CI 用 Temurin 21，计数不可用就直接红——跳过在 CI 里看不出来，等于把「量过了」变成「可能没量」。
+- 上面这条测试带**阳性对照**：同一个计量器同一台机器上故意分配 2 万个小对象，必须量到 500,000 字节以上，否则判「计量器没在工作」，零分配结论作废。按 `prove-it` 的标准（把错放回去、检查必须报错）补的：一个从来没报过错的检查等于没加。
+- 规范 2026-10-31（`selfs` 分支 `arena/d037db35-selfs` head `278bf9b1`）对齐：版本号改为整数拼接 `f"{年%100}.{月}.{日}"`，不用 `%m/%d`（会补零）也不用 `%-m/%-d`（非 glibc 平台不生效），并在取号脚本里按规范给的正则 `^\d{2}\.(1[0-2]|[1-9])\.(3[01]|[12][0-9]|[1-9])\.([1-9]\d*)\.([1-9]\d*)$` 断言，不匹配即退出；`cleanup.py` 的五条判据里，「命名口径」加一条：出现 `26.11.01` 这类补零段按不合规产物删除并打印。
+- 删掉两处 `trap … ERR`：运行 74 已实测它在这个步骤外壳里不触发，改成 `if ! ./gradlew … ; then echo "::error::…"; exit 1; fi` 与取号步的显式 `if ! python3 …`，注解由分支自己打，不再留一个不会响的警报器。
+- 单测新增两条：`excludesStopped` 的真值表（4 种 flags 组合 + 带高位标志），以及 `Intent.FLAG_EXCLUDE_STOPPED_PACKAGES == 0x10` / `FLAG_INCLUDE_STOPPED_PACKAGES == 0x20` 的常量守卫（值漂了单元测试当场红，而不是真机静默失效）。
+- 体积：`packaging.resources.excludes` 剔掉 `kotlin/**`、`META-INF/*.kotlin_module`、`META-INF/*.version`、`META-INF/com/**`、`DebugProbesKt.bin`（运行期不需要：模块不用 kotlin-reflect）；`proguard-rules.pro` 加 `-allowaccessmodification`（本模块没有对外 API，唯一的对外名字已由 `-keepnames` 保住）。`.so` 压缩开关的量法纠正（一次自我打脸）：曾据「`libdexkit.so` 的 `compress_size` 等于 `file_size`」判定 `useLegacyPackaging = true` 没生效并把它删掉，下一轮 CI 直接推翻——同一份代码只差这三行，APK 由 452,315 涨到 651,327 字节（运行记录 41107064782），`libdexkit.so` 由 190,746 变 381,024。真相是 190,746 本来就是**压缩后**的字节（deflate 对 stripped 的 .so 约省 50%），开关一直是有效的，删掉它等于白白多背 190,278 字节（+46%）。已恢复该项配置，并把「增删这两处的实测差值」写进注释，防止下一个人（含我自己）再凭一次读数把它删掉。教训是：读一次 `compress_size` 推断「是否生效」不成立，只有增删变量重跑一遍、看 APK 文件大小的差值才算证据。
+- CI 体积闸门拆成两步：`报告产物体积构成` 打印 APK 文件字节、条目压缩后/解压后合计、dex 合计、`lib/` 下 ABI 与前 8 大条目，并用一行 `::notice::` 把结论带出（Actions 的 job 日志要另开页面，注解在 `check-runs/<id>/annotations` 一取就有）；`校验体积预算` 放到 `上传产物` 之后，超预算照样红，但红的是指标、不连产物一起扣掉。校验不止看总数：报告步把 dex、原生库、ABI 写进 `apk-parts.txt`，校验步对 APK ≤ 500,000、dex ≤ 250,000、原生库 ≤ 200,000 三个上限分别报错，并要求 ABI 精确等于 `arm64-v8a`——哪一部分长大了，看注解就知道，不用再从总数里猜。
+- 体积口径纠正：预算原先按 artifact 的 `size_in_bytes`（APK 再压一遍得到的 305–320 KB 的 zip）定成 360,000，而闸门量的是 APK，于是同一条构建既「通过」又「超标」。现在统一为 **APK 文件自身的字节数**，预算按实测重定为 500,000。实测（`Gself-26.10.31.8.78`，运行记录 41107375745）：APK 452,315 字节 = 条目压缩后合计 446,265 + 6,050 字节 zip 头与中央目录；其中 `classes.dex` 236,792（52.3%）、`lib/arm64-v8a/libdexkit.so` 190,746（42.2%，deflate 后）、`assets/LICENSE` 14,203（3.1%）、其余合计 10,574，ABI 只有 `arm64-v8a` 一份——dex 加 DexKit 原生库占 94.5%，我们自己那 683 行代码不在体积里。顺带记一笔：上一轮那个「446,265」是条目合计、不是文件大小，正是同一类口径混淆。
+- 载入期汇总：`install` 改为返回这一组是否整组装上，`wakeStoppedApps` 收尾打一行 `推送达标：语义层在｜标志层在`（任一层缺、两层全缺各有措辞），排查时不用在两条日志里拼。
+- 出包健壮性（含两次自伤与修复）：取号步的两个 `gh api` 调用加了 5 次重试，失败时把 `gh` 原始输出写成 `::error::` 注解。改 heredoc 时把终止符 `PY` 写在第 0 列，整份工作流变成非法 YAML（运行记录 72 零 job 秒失败），已按 10 列缩进修正并用 `bash -n` 逐块校验全部 `run:` 块；接着想用 `trap on_err ERR` 把构建失败的尾巴写成注解，运行记录 74 证明它在本仓库的步骤外壳里不触发（只报 `Process completed with exit code 1`），改成在 python 里 `except BaseException` 捕获并自己 `::error::`，运行记录 75 才第一次读到真实的超标字节数。——2026-10-30 18:00 UTC+8 前后 Actions 接口连续抖动，第 68、69 两轮都卡在 `repos/…/artifacts` 那行 502 直接红掉，与代码无关；重试不改变取号结果。
+- README 补上原本缺失的「安装与使用」章（规范章节顺序里的这一节此前一直省略）：下载 artifact、装完在 LSPosed 勾作用域后重启、按 `docs/verify-on-device.md` 第 1、2 节验收、停用也要重启一次。纯文档提交命中 `paths-ignore`，不占号。
+- 真机验收从「散在七节里的命令」收敛成一条可复制的块：`docs/verify-on-device.md` 新增第 2.1 节，`PKG=<包名>` 之后依次跑 force-stop → `dumpsys package … stopped=` → `pidof` → 等 60 秒 → `pidof` → `logcat -s Gself` → EventLog `am_proc_start` → `dumpsys notification` → `grep -ci cancelled`，四项信号（停止态、前态无进程、新 pid 且 `wake:`、平台侧 `callingAction=c2dm RECEIVE`）全中才算通过，每项缺了直接指向该查的节。约 3 分钟跑完，其中两项取自平台的进程表与 EventLog，不采信模块自述。
+- 同一文件「当前验证状态」表里五条未验证项各补「怎么验 + 预计耗时」：语义层挂点与参数下标（3 分钟，第 2.1 节）、release 产物（`assembleRelease` + `tools/sign-apk.sh` + 装机，15 分钟）、ColorOS 首次解锁后的 Google 联网保护（10 分钟，第 3 节日志窗口）、Gboard 剪贴板（2 分钟，先确认默认输入法）。状态行不再只是一句「未验证」。
+- 安装步骤改成全手机端四条命令，删掉一切需要电脑的说法：`D=/storage/emulated/0/Download/selfs` + `mkdir -p` → `gh run download -R Sumicya/Gself -n "$(gh api repos/Sumicya/Gself/actions/artifacts --jq '.artifacts[0].name')" -D "$D"` → `find` 看包 → `su -c "pm install -r $(find "$D" -name '*.apk' | head -1)"`（无 root 就在文件管理器点开）→ `rm -rf "$D"`。原因：主人手上只有手机，上一版写的取包方式默认了电脑。`docs/verify-on-device.md` 里残留的四行 `adb shell …` 一并改成 `su -c "…"`，全仓 `grep "adb "` 现为空。
+- 手机端实取证据（主人终端原样输出）：`gh run download` 落到 `Gself-26.10.31.13.83/Gself-26.10.31.13.83.apk`，`ls -l` 显示 **452,315 字节**，与运行 83 的 check-run 注解 `APK 452315 字节` 逐字节相同——上一轮标「未验证」的「取到的产物就是 CI 量的那个包」由此实测成立。
+- README「安装与使用」第一条改成一条命令拿到成品：`gh run list -R Sumicya/Gself --workflow Build --limit 1 --json databaseId --jq '.[0].databaseId'` 取运行号后 `gh run download` 直接落出 `Gself-<版本>.apk`，不再要求主人自己去 Actions 页面翻。取运行号这一段在本沙箱实跑过（`run=41156973190`），最后一段的字节下载跑不了——artifact 落在 `*.blob.core.windows.net`，属于本沙箱出网名单之外（`curl` 报 `SSL_ERROR_SYSCALL`），所以「下载成功」这一项标未验证。
+- 「构建」章加一句读数留档约定：artifact 5 天后被清理、运行号会被滚动掉，所以每轮的 APK / dex / 原生库 / 许可全文体积连同出处运行号都写进当轮 CHANGELOG，几轮后仍能对上；ID 只是索引入口，不是证据本体。
+- 应用图标按规范「七、文档 · 应用图标」审计（2026-10-31）。**几何合规，不需要缩放**：把 `ic_launcher_foreground.xml` 两条 path 按 SVG 规范逐命令解析（M/c/l/L/z 与 M/l/c/C/h/z，相对坐标逐段转绝对）后采样，白色机器人 bbox 为 x[31, 77]、y[38.028, 63.928]，离 108 画布中心 (54,54) 最远点 (31, 63.928) 半径 **25.05**，安全半径 33（66dp 直径），余 **7.95**；两只眼睛最远 12.64。所以不加 `<group>`，也没有任何比例改动——按 k 缩到 33 圆要 0.6108 倍，会把 46 宽的白图形压成 28.1，纯属自伤。几何图存 `docs/icon-audit.png`（绿=背景层、白虚线=72dp mask 边界、红虚线=66dp 安全圆、蓝框=白图形 bbox）。
+- 投影（第 1 条 path，渐变 `#44000000 → #00000000`）确实越出安全圆：面积 2,681.6 dp²，圆外 1,310.5 dp²（48.9%），最远半径 54.35。但按不透明度分档看，越界的都是尾部——半径 26 以外最高只剩 16.7%，半径 33 以外最高 11.4%，到渐变终点 (85.85, 92.50) 处恒为 0。它不是「必须可见的内容」，缩它只会让投影跟着缩小、白图形不变，所以不动。
+- **一处最小改动**：`monochrome` 原来直接指向 `ic_launcher_foreground`，投影会被一并带进主题图标层——系统渲染 monochrome 只取 alpha、颜色改由主题给，那条渐变会变成一层最高 26.7% 不透明度的雾压在机器人下面。新建 `res/drawable/ic_launcher_monochrome.xml`，只放白色机器人那条 path（与 foreground 第 2 条 pathData 逐字相同，脚本比对 `True`），`fillColor` 只有 `#FFFFFF`；两份 `mipmap-anydpi-v26` 的 `<monochrome>` 均改指它，`ic_launcher.xml` 里该属性个数仍为 1。效果对比存 `docs/icon-monochrome.png`（左现状、右改后）。
+- 未动：没重画、没换配色、没改包名、没动 CI、没发版；`AndroidManifest.xml` 的 `icon` / `roundIcon` 原样。
+- 规范 2026-10-31 新版（`main` `96fdd26`，282 行）把 `bad/CHANGELOG-history.md` 并入正文并删除，本仓照做：`bad/CHANGELOG-history.md` 的 38 条原样接到 `CHANGELOG.md` 末尾（更早的在后，倒序不变），文件删除，`CHANGELOG.md` 现 43 条、697 行，不再设条数上限；`build.yml` 的 `paths-ignore` 同步去掉 `bad/**`，与规范统一名单一致（`**.md`／`docs/**`／`LICENSE`／`.gitignore`）。
+- `docs/verify-on-device.md` 新增第 2.2 节：`pm path` 必须整条包在 `su -c` 里（普通用户调不了包服务，报错串会被当成文件名喂给 `unzip`，2026-10-31 踩过），给出核图标的两条命令——`unzip -l` 应出现 `mipmap-anydpi-v26` 的两份 xml，`unzip -p` 应看到 background／foreground／monochrome 三层且 monochrome 指向 `@drawable/ic_launcher_monochrome`。这一节把上一轮标「未验证」的装机核对变成一条可复制的命令。
+- 图标审计第二层：把"源 XML 对不对"换成"系统实际怎么合成"。依据 AOSP `AdaptiveIconDrawable`（`aosp-mirror/platform_frameworks_base` main）的常量与算式：`MASK_SIZE = 100f` :89、`SAFEZONE_SCALE = 66f/72f` :94、`EXTRA_INSET_PERCENTAGE = 1/4f` :105、`DEFAULT_VIEW_PORT_SCALE = 2/3` :106；图层按 `insetWidth = w/(2*2/3) = 0.75w` 放大到 1.5 倍画（:355），遮罩路径按 100 单位缩放到 drawable 边界（:366）。由此推出：可见设计区 = 108/1.5 = 72dp 直径，安全圆半径 = 36 × 66/72 = **33dp**——这比"我按 33 算"多了一条可核的出处。
+- 第二层实测（`/home/user/audit/mask_audit*.py`，1080×1080 网格 = 10px/dp，nonzero 扫描线填充）：白图形最大半径 **24.97dp**（10px/dp 采样）／25.05dp（解析顶点），安全圆余 **8.03～7.95dp**；遮罩圆（r=36）余 11.03。四种常见遮罩形状——圆、方圆（superellipse n=4）、圆角方（角半径 16dp）、正方 72dp——裁掉的白像素**均为 0**，即换任何 OEM 遮罩都不缺角。
+- 阴影落地：alpha 总量 25,798.8，其中 **91.9% 落在可见遮罩内**，被裁掉的 8.1% 全是最淡的一段（渐变终点侧）。上一轮写的"48.9% 在圆外"是用 r=48 当边界，与真实遮罩 r=36 不是一个口径，以本轮为准。
+- 眼睛是**洞**不是白点：机器人三条子路径的绕向为 `- + +`，主体与两眼反向，`fillType="nonZero"` 下两眼为镂空，各 11.2dp²、等效直径 **3.78dp**。48px（mdpi）下按面积平均降采样后眼心 RGB 为 (48,166,101)，与白头的对比度约 3.1:1，仍是可分辨的绿点；96/192px 下不受影响。这也说明 monochrome 层虽与前景同几何，主题化后眼睛照样透气。
+- 对比度（外部尺子：WCAG 1.4.11 非文本图形 3:1）：白 `#FFFFFF` / 背景 `#3DDC84` = **1.784:1**；沿白图形边界取 1,570 个像素，**86.4% 低于 3:1**（中位 1.784:1），只有压在阴影最深处的那 13.6% 到 3.08～3.26:1。如实记：这是 Android Studio 模板的原样配色，不是本轮引入，主人已定不重画；数字摆在这里供判定。
+- 新增 CI 步骤「核验编好的图标层」：一手材料是 APK 里的二进制 AXML 与 `resources.arsc`，不是源 XML。断言四件事——`res/mipmap-anydpi-v26/` 恰 2 个条目、每份都能在字符串池里找到 background/foreground/monochrome、`ic_launcher_monochrome` 的 pathData 与源文件前缀逐字节相同（UTF-8 与 UTF-16LE 两种池都试）、`resources.arsc` 已登记 `ic_launcher_monochrome`。结论以 `::notice::` 落进运行注解，永久留在仓外也能复算。
+- 新增 `docs/icon-mask.png`：108dp 画布上的安全圆（白）与遮罩圆（黄）、四种遮罩的实际出形、48/96/192px 三档真实尺寸。
+- 出图器入库：`tools/icon_figure.py`，零第三方依赖（只用标准库），`python3 tools/icon_figure.py` 一条命令重算全部指标并重写 `docs/icon-mask.png`。口径写在文件头：108dp→1080px 网格（10px/dp）、三次贝塞尔 64 段折线化后按 nonzero 扫描线填充、线性渐变 alpha=A0×(1−clamp(t))、遮罩 36dp/安全圆 33dp、降采样为面积平均。源在仓内，第三个人不必碰任何沙箱路径。
+- 图重出并加标注：共 **13 块**——顶排 5 格（1 参考 108dp 画布带白圈 r=33 与黄圈 r=36，加 4 种遮罩：`CIRCLE r36`／`SQUIRCLE n4 r36`／`ROUNDED c16`／`SQUARE 72`）、中排 4 块（四种遮罩在**真实 48px** 下）、底排 4 块（真实 96/144/192px 圆形遮罩 + 192px 单色层）。每块下方有 3×5 点阵标注（遮罩名与真实像素尺寸），不需要外部字体，换台机器逐字节一致。
+- 上一版图的三处硬伤已改：① 48px 曾把同一张复制 6 份（零对比信息），现四种遮罩各一块且 sha256 互不相同（`129a7716`／`6c4dd41c`／`9f6be0d8`／`d1661137`）；② 48/96/192 三档曾直接缩满幅方块、没走遮罩，现全部先套遮罩再面积平均降采样；③ 全图零标注，现每块带名。
+- 口径更正（上一轮汇报错在两处，记在此）：一、图只给文件名没内联，按规范算未完成；二、"生效点"写成了规范仓 `Sumicya/selfs` 的 main（`96fdd26`），那个 SHA 在本仓不存在（查 422），本仓 `main` 是 **`6281b3d`**（2026-10-28 18:57:21）。以后收尾分两行写：本仓 main、规范仓 selfs 的 GLOBAL.md 提交。
+- 推送热路径快路：`Fixes.kt` 的 `waken` 改成**先看 `FLAG_INCLUDE_STOPPED_PACKAGES` 再读目标包名**。同一条广播会依次穿过 `broadcastIntent` / `broadcastIntentWithFeature` / `broadcastIntentLocked`，第 2、3 次进来时标志已经补好，现在只剩一次位运算，不再走 `component?.packageName ?: getPackage()`。逻辑等价的前提是「带 INCLUDE 的 intent 一定不需要补」，该前提就是 `Push.needsStoppedPatch` 的第一个合取项；新增 `PushTest#includeFlagNeverNeedsPatch` 把 action / target / flags 的组合过一遍钉住，将来谁删掉那个合取项，提前返回会立刻变成红的测试而不是静默改语义。
+- 新增 `HotPathBenchmarkTest`：给 `isPush` / `excludesStopped` / `needsStoppedPatch` 出 ns/op 与 B/op 基线。口径写死在测试头注释里——预热 20 万次、5 批 × 100 万次、ns/op 与分配量都取 5 批中位数、分配量用 `com.sun.management.ThreadMXBean`。结果写 `build/bench-hooks.txt`，CI 新增步骤「报告热路径基线」把它写进运行注解，注解可永久复查。
+- 不测 `Push.targetOf`：它吃 `android.content.Intent`，JVM 单测里是桩对象，量出来的是桩的耗时，与 system_server 无关。真机侧只能看 logcat 毫秒差，命令写在下面。
+- 数只描述量级：宿主 JVM（Linux x86_64）与手机上的 ART 不是一回事，这组数用来判断「纳秒还是微秒」和「每次分配几个字节」，不能当手机耗时。真机读数：`su -c 'logcat -d -v threadtime -s Gself' | head -5`，看 `hook active` 行与第一条 `wake:` 行的毫秒差，重启两次各取一次，差 30% 以上才算有信号。
+- 没新建 `docs/performance.md`：规范「文档目录克制」只允许 README、CHANGELOG 与许可证，所以数写在这里。要单开一个文件，一句话即可。
+- 热路径基线实测（CI `41204631213`，commit `6ee382e4`，宿主机 OpenJDK 21.0.13 / Linux amd64 / AMD EPYC 9V45）：`isPush` 命中 3.87、未命中 22.66、`excludesStopped` 3.55（false）／2.71（true）、`needsStoppedPatch` 命中 9.57、带 INCLUDE 快路 3.18、非推送 13.68，单位 ns/op；**七项全部 0.0 B/op**。读法改硬（这条数基于 5 批，已被下面的 9 批替掉）：上一版写了「未命中比命中贵 6 倍」，紧接着又说「这类差在 ±30% 噪声内不能当结论」——6 倍不等于 ±30%，同一段里既下结论又撤回，是自相矛盾，撤掉。现在批数 5 → **9 批**，逐批 ns/op 全部保留，输出**中位数与 [最小, 最大]**，两行能不能比由基准自己判：`hit 的最大批` 与 `miss 的最快批` 一比，区间重叠就打印「差值落在抖动内，不当结论」，不重叠才打印「可当结论」。比值不再由我口算。
+- 9 批重跑（CI `41258065222`，commit `2f685772`，AMD EPYC 7763）：`isPush` 命中中位 **12.34**［6.46, 33.34］、未命中 **37.57**［17.89, 74.70］、`excludesStopped(false)` 13.47［7.71, 76.78］、`(true)` 15.30［10.37, 26.59］、`needsStoppedPatch` 命中 14.58［13.41, 18.72］、带 INCLUDE **8.70**［8.12, 17.34］、非推送 25.69［24.20, 29.79］，七项仍全部 **0.0 B/op**。基准自己给出的判定：`isPush` 未命中/命中 比值区间 **[0.09, 1.86]**，**批间区间重叠 → 差值落在抖动内，不当结论**。也就是说「未命中比命中贵 6 倍」在 9 批口径下不成立，撤得对。
+- 第三次运行（run `41258924589`，dex 同为 236,808）：`isPush(hit)` 中位 17.79［15.30, 48.15］、`miss` 33.53［17.80, 73.06］，比值区间 **[0.21, 2.71]**，仍判「批间区间重叠 → 不当结论」。三次运行的比值区间分别 [0.09, 1.86]、[0.21, 2.71]，一次都没能排除 1.0——「未命中比命中贵」这句话在任何一次里都不成立。
+- 同一台机器上两次运行也不可比：上一轮 EPYC 9V45 的 `isPush(hit)` 中位 3.87，这一轮 EPYC 7763 是 12.34，差 3 倍多。所以这组数的用途只有两个：**「零分配」**（两轮七项全 0，最硬的一条）和**同一次运行内**的相对量级；跨运行、跨机器、跨 JVM 都不比。
+- 真机仍是空白：以上全部是宿主 JVM（CI 的 Linux x86_64）数，**不是手机 ART**。手机上唯一能取的是 logcat 毫秒差，命令在 `docs/verify-on-device.md`；拿到那份读数之前，「性能」只有「热路径零分配」这一条是硬的，其余都是宿主侧参考。
+- 快路的代价，按口径分开记，不混成一个数：**dex 236,792 → 236,808，+16 字节，这是硬的**。而 **APK 453,144 → 453,160 这个 +16 不作数**——紧接着的第三次构建（run `41258065222`，dex 同样是 236,808）测得 APK **453,152**，同一份 dex 在两次构建间差 8 字节，说明 APK 总量里有构建抖动（zip 时间戳、对齐填充）。第四次构建（run `41258832262`，dex 仍是 236,808）测得 **453,156**——四个数 453,144 / 453,160 / 453,152 / 453,156 在 16 字节区间内浮动，后三个 dex 完全相同。没有多次构建的分布之前，「APK +16」与抖动分不开，按「读数不构成因果」只报 dex。
+- 注解截断修正：上一版 CI 用 `head -c 900` 把基线写进注解，把最后那句判定切成「差值落在抖动内，」——结论四个字被切掉，能点开的证据是残的。改为全文写进 `$GITHUB_STEP_SUMMARY`（run 页面永久可读、不截断），注解只留指针与前 400 字摘要。
+- 未验证：真机运行期耗时没有仪器可测（沙箱无设备），本轮用「每次调用是否分配对象」与「快路指令数」作为可核对的替代指标；体积数字取自 APK 文件本身（不再用 artifact 的 `size_in_bytes`），真机未复测。
+
+- **包与提交的对应关系写错过一次，记在这里**：我上一轮把 artifact `13064152257`（`Gself-26.11.1.3.91`，308,281 B，创建 2026-11-01 08:57:00 UTC+8）当成 PR head `24c80dd` 的产物。现取 `actions/artifacts/13064152257` → `run_head=2d7563ed`，而 `24c80dd` 只改 `CHANGELOG.md`（+1 −0）。那份包对应的是 `2d7563e`，比 PR head 少一个纯文档提交。往后报包必须写「artifact id + 它的 `workflow_run.head_sha`」，不写「本轮 head 的产物」。
+- **按规范 `25f521f`「六·参数、判据与取值」修掉四处按排序位置取值**：`build.yml` 三处、`pr-check.yml` 一处原本写 `sorted(glob(...))[0]`，多个 APK 存在时会静默取第一个；现在先断言 `len(apks) == 1` 再取，不满足直接 `sys.exit` 并打印实际列表。图标核验里的 `mono[0]` 同样先断言恰好 1 份。
+- **数字三件套按新规执行**：本轮及前轮出现过的读数，取样对象与时刻在此统一补一次——`ahead=45` 与 `26 文件` 取自 `compare/main...arena/c2404085-gself`（head `24c80dd`，2026-11-01 08:59:54 UTC+8）；四份构建的 APK/dex 取自各自 run 的 check-run 注解（run `41202735608`／`41204631213`／`41258065222`／`41258832262`，2026-11-01 08:40–08:56 UTC+8 读取）；`0.0 B/op` 与比值区间取自 run `41258924589` 的注解（2026-11-01 09:00 UTC+8 读取）。规范 `GLOBAL.md` 由 `79b172f`（283 行）换为 `25f521f`（292 行）。
+
+- **改名一次改到底（规范 `6b76f2a`「六·仓库与模块改名」）**：`namespace`、源码目录、入口类、`java_init.list`、R8 keep、CI dex 断言与全部文档注释一次改到 `sumicya.gself`，因为旧名只允许留在本文件；验收 `grep -rIl --exclude-dir=.git --exclude=CHANGELOG.md -e fcmself -e FcmSelf .` 为空。
+  入口类改名与 `java_init.list`、proguard keep、`build.yml`／`pr-check.yml` 的 dex 断言 `Lsumicya/gself/XposedMain;` 同一提交，改错即红；`namespace` 改完 `grep` 过 `<旧包>.R`，本模块零资源引用。
+  `module.prop` 与 README 许可证章的「合并自 fcmself」保留 GPL 归属事实，改成「合并自推送修复线（本仓前身，源头 `fcmfix`，旧包名见本文件）」；顺手删掉 `build.yml` 里无人读取的 `-Pfcmself.buildNumber`。
+- **改名前的原始 logcat 不进文档**：`docs/verify-on-device.md` 两段真机日志换成指针，原文在 `docs/verify-on-device.md@053d2e9a` 的 git 历史里；`631b9c5` 之前构建的包日志 tag 仍是旧的一套，老命令 `logcat -s <旧tag>` 抓不到新包，新命令是 `su -c 'logcat -d -v threadtime -s Gself' | head -5`。
+
+## 许可证换 GPL-3 全文、补项目限制与随包许可（2026-10-30）
+
+- `LICENSE` 由自写的 569 字节说明换成 GPL-3.0 全文（35149 字节，与 Qself 同源）；GitHub 的许可识别只看默认分支，合并进 `main` 前接口仍返回 `NOASSERTION`（2026-10-30 21:00 UTC+8 实测），合并后才会识别为 GPL-3.0。「为什么用 GPL-3」与三个上游归属写进 README「许可证」章，不写进 `LICENSE`。
+- APK 随包附同一份全文（`app/src/main/assets/LICENSE`），对应 GPL-3 §4「二进制发布随附许可全文」；本模块没有界面，§5(d) 的「可点的关于页」无法提供，以 README 许可证章 + 随包 `LICENSE` 呈现，写明若将来加界面再补入口。
+- README 新增「项目限制」：不支持锁 bootloader 的 User Product、只在 Android 16 + ColorOS 真机验证、无界面无配置、DexKit 两组功能可能因宿主改版失效。构建章补「产物 ↔ 对应源码」的查法（artifact 第五段 = `run_number`）。
+- `README` 功能章按两层挂载改写推送一条，原「补 `FLAG_INCLUDE_STOPPED_PACKAGES`」不再完整。
+- 未验证：`assets/LICENSE` 是否被完整打进 APK 由 CI 的「打印产物体积构成」步骤体现，本轮未装机核对。
+
+## 模块安装包瘦身：只留 arm64 与压缩 .so（2026-10-30）
+
+- 起因：用户只要收消息，却看到一个近 1 MB 的模块。资源目录只有 17 KB 矢量图，业务代码不足 30 KB，体积不在我们写的代码上。
+- 定位：`app/build.gradle.kts` 既没有 `abiFilters` 也没有 `packaging` 配置，于是依赖（DexKit）自带的 `armeabi-v7a` / `arm64-v8a` / `x86` / `x86_64` 四份 `libdexkit.so` 全部打进包；同时 AGP 4.2 起 `useLegacyPackaging` 默认 false，`.so` 在 APK 里按 store 存（不压缩、4 KB 对齐），原生库字节一分不少地计入体积。
+- 改动：`defaultConfig.ndk.abiFilters` 只留 `arm64-v8a`（Android 16 设备全部 64 位，模块只在本机跑）；`packaging.jniLibs.useLegacyPackaging = true`，`.so` 改为安装时解压、APK 内 deflate 存储。两项都不删功能，推送唤醒路径无原生依赖。
+- `build.yml` 新增「打印产物体积构成」步骤：打印压缩后/解压后总字节与体积最大的 15 个条目，体积构成在 Actions 日志里可直接核对，不靠自述。
+- 第二刀（dex 侧）：`app/proguard-rules.pro` 里手写的 `-keep class org.luckypray.dexkit.** { *; }` 把整个 DexKit API 面钉进 dex；DexKit 2.2.0 自己的 AAR 已用 `consumerProguardFiles` 声明了只保 native 方法的窄规则（源码 `dexkit-android/build.gradle:77` → `dexkit-android/proguard-rules.pro`），AGP 会自动应用，故删除手写宽规则；DexKit 不反射自身（全仓唯一 `Class.forName` 在 `DexKitBridge.kt:653`，查的是平台类 `dalvik.system.BaseDexClassLoader`）。
+- 实测（GitHub API 的 artifact `size_in_bytes`，同一套构建）：`26.10.30.4.64` 974,533 字节 → `26.10.30.5.65` 460,962 字节（只留一个 ABI + 压缩 `.so`）→ `26.10.30.6.66` 305,649 字节（再删 DexKit 宽 keep），合计 −68.6%。
+- 未验证：`useLegacyPackaging` 下 `System.loadLibrary("dexkit")` 由安装时解压出的库加载；R8 缩小 DexKit 后，通行密钥解限与 Gboard 剪贴板两组仍需真机复测（若 JNI 保名规则未生效，会在各自进程打一条 `hook skip`，不影响推送）。
+
+## 推送唤醒改为「语义层 + 标志层」两层，判据抽成纯函数（2026-10-30）
+
+- 新增语义层：Hook `Intent#isExcludingStopped()`，对定向推送答 false。这是 AOSP 判定「要不要排除停止态应用」的唯一枢轴（`IntentResolver.java:729` 取值、`:749` 据此跳过过滤器；`BroadcastSkipPolicy` 无第二处停止态判断），因此不依赖哪个 AMS 重载进来，也不受 ROM 改签名影响。
+- 保留标志层：在 `ActivityManagerService` 所有带 `Intent` 参数的 `broadcastIntent` / `broadcastIntentWithFeature` / `broadcastIntentLocked` 重载上补 `FLAG_INCLUDE_STOPPED_PACKAGES`。补标志必须赶在 `BroadcastController#broadcastIntentLocked` 复制 intent（`:896`）之前，因为系统随后给副本补 `FLAG_EXCLUDE_STOPPED_PACKAGES`（`:922`，原文「By default broadcasts do not go to stopped apps」）；这正是此前挂在 BC 从不命中的同一处机制。
+- 判据抽成纯函数 `Push.needsStoppedPatch(action, target, flags)`：两个挂载点只拆 `Intent`，判据表（推送族、定向、已带 `0x20` 不重复补）由 JVM 单测覆盖，补了「已带标志不再补」「无目标不动」「非推送零介入」三条。
+- 新增两层自证日志：`决策入口兜底：<包名>（… 未带 0x20，第 N 次）` 表示标志层漏了这条、语义层兜住，同时是「还有没挂上的 AMS 入口」的信号；`停止态决策未被调用：3 条推送已补标志…` 表示枢轴没被调用（可能被内联）。前 3 次逐条、之后每 100 次一条，不刷屏。
+- 删除诊断行 `push seen@AMS`（定位已完成），`wake:` 保留挂点名；`XposedMain` 去掉与组内 `install` 重复的外层包裹；广播重载查找抽成 `intentOverloads` 供两层与 ColorOS 受限广播共用；`unfreeze` 去掉候选列表循环。
+- 真机验收（2026-10-30 12:39，nagramx，上一版挂点）：`am force-stop` 后由 GMS 的 c2dm 广播以新 pid 拉起，`wake:` 命中，GMS 侧 `CANCELLED` 计数 0，通知入队。
+- 真机对照（shell 广播，仅有无 `--include-stopped-packages`）：不带 `0x20` 不投递，带 `0x20` 投递成功。
+- 文档纠错：通知分组原写「原生 AOSP 不会因包变化取消通知」不成立——`NotificationManagerService#mPackageIntentReceiver` 在包移除 / 禁用时以 `REASON_PACKAGE_CHANGED`(5) 取消（`:2199`、`:2281`）；本模块拦它是故意偏离，代价（卸载 / 禁用后通知可能滞留）与「不在此处回调 PackageManager 以免锁序反转」的理由已写进代码注释与 `docs/verify-on-device.md` 第 4 节。同时修正 `app/build.gradle.kts`、`gradle.properties` 的号源注释（run_number），`docs/glossary.md` 6 行过期口径，`docs/verify-on-device.md` 第 1 / 2 / 7 / 8 节的挂点与日志示例，`cleanup.py` 注释里的 `qself-cleanup`。
+- `build.yml` 的 `push` 补上规范 C2 要求的 `paths-ignore` 名单：纯文档推送不再占用 `run_number`、不出包。
+- 未验证：语义层挂点是本轮新增，只经 CI 编译与 JVM 单测，未在真机确认命中；两层在真机上的分工要按 `docs/verify-on-device.md` 第 2 节的三条日志判读。
+
+## 推送唤醒加入命中诊断日志，修正通知取消原因值（2026-10-29）
+
+- 推送唤醒出口入口新增诊断行 `push seen`（action、flags、目标包名），并在 `ActivityManagerService#broadcastIntentWithFeature` 上加同样的诊断行 `push seen@AMS`，用于判断推送广播是否经过 `BroadcastController#broadcastIntentLocked`；定位完成后删除。
+- 文档与注释里 `REASON_PACKAGE_CHANGED` 的值由 8 改为 5（AOSP `NotificationListenerService` 源码为 5，8 是 `REASON_APP_CANCEL`）。代码引用的是常量，行为不变。
+- 未验证：本次只经过 CI 编译，未在真机运行。
+
 ## 号源改 run_number 原值并对齐双工作流清理结构（2026-10-28）
 
 - 号源从 git rev-list 提交数改为 github.run_number 原值，当日序号按差值锚定（当日现存运行最小 run_number 与现存合规产物反推值取小），取号打印 HEAD SHA、run_id、run_number、R_first、当日序号与最终版本，取不到即退出。
@@ -17,11 +168,13 @@
 - README 删除第 3 行 Build 徽章；`## 功能（按进程分发）` 改名为 `## 功能` 并移到 `## 要求` 之后（S1）。
 - 同一提交更新本变更记录（S4）。
 
+按规范 S4 从 CHANGELOG.md 移出的较早条目，原文未改。
+
 ## 规范同步 —— 按 selfs 最新规范整理 README 与变更记录（2026-10-16）
 
 - 依据 selfs `GLOBAL.md` 最新规范提交 `662e72d8256728d08f4cefde672b27bf58b0428b`（按「仓库类型」表属有产物仓）。
 - README 末行补规范指针（S1）。
-- CHANGELOG 只留最新 5 条（S4），较早 31 条原样移入 `bad/CHANGELOG-history.md`。
+- CHANGELOG 只留最新 5 条（S4），较早 31 条原样移入 `bad/CHANGELOG-history.md`。（该历史文件已于 2026-10-31 按新规范并回本文件并删除，此条只记当时的做法。）
 - 源码与文档里「GLOBAL.md 第十七版」的注释和术语表条目改为「项目约定」：规范已不带版次，「只做新包」本身是本项目的约定，内容不变；`build.yml` 头注释改指现行条文名。均为注释与文档，未改功能代码，未改清理脚本与工作流逻辑。
 - 未验证：本次没有在 GitHub Actions 上运行；注释改动不影响编译，但没有本地构建。
 
@@ -31,3 +184,600 @@
 - Gself 是 Android Hook 模块，DexSQL 仅在需要对 APK/DEX 做静态检索或排查入口、调用关系时作为可选分析工具；当前 CI 已有 R8 入口类检查，因此本次不新增依赖、不改构建或 Hook 代码，也不表示已安装或运行 DexSQL。
 - 外部项目与 `https://t.me/xinyuanai` 只作为发现线索，不视为安全或质量背书。候选项目须独立核对上游、维护状态、许可证、权限及数据流向后，才可按具体需求引入；未验证内容不得记为已验证。
 - Gself 没有单独复制全局规范，继续以 selfs 最新 `GLOBAL.md` 为准；本条记录项目侧适用性与本次不改代码的决定。
+## 并入 main 并行线并给图标加 Monet 单色层（2026-10-15）
+
+- 按主人指示将 main 的 8 个提交（所有者并行落地：删 AGENTS/spec-
+  check/android.yml、自建 build/pr-check）整体并入本分支（合并提交
+  9596c51，共同祖先 d2bf70a）。冲突只在 build.yml、pr-check.yml 两
+  文件，按现行规范（selfs 12b0bff）取本侧：单脚本 cleanup.py、全仓
+  artifact 最新 5、每工作流 run 硬上限 5；main 侧的每序列 KEEP 口径
+  与内联清理被取代，其取号 TZ=UTC-8 与本侧 +08:00 等价。其余文件自
+  动合并，无内容丢失。
+- 图标加 Monet：ic_launcher 与 ic_launcher_round 的 adaptive-icon 各
+  加一层 monochrome（复用现有 foreground 矢量），Android 13+ 主题图
+  标随壁纸取色；原图标仍是模板机器人图，本次只加单色层不换图。
+
+## Monocles Chat 重启不恢复：源码侧定位（2026-10-15）
+
+- docs/verify-on-device.md 新增第 11 节：按 Experimental14-v2.3.1
+  （f7803c2）源码核到候选机制——开机广播经 Compatibility.startService
+  以 startForegroundService 拉起 XmppConnectionService，升前台时按
+  权限选 MICROPHONE/CAMERA 类型，命中 Android 15「BOOT_COMPLETED 不
+  得拉起受限前台服务类型」，异常被 startForegroundOrCatch 吞掉只记
+  日志，服务随后被系统收掉。附设备判定命令与白名单绕法；设备日志
+  签名未取，坐实程度标未验证。
+
+## 全文逐条核对 —— 清理失败文案补端点（2026-10-15）
+
+- 按现行全文（selfs main `12b0bff972ec08dd42d534a9c21a8c7c1ec5e3c4`，
+  https://github.com/Sumicya/selfs/commit/12b0bff972ec08dd42d534a9c21a8c7c1ec5e3c4）
+  逐条核本仓实现，唯一不符：清理失败的 403 warning 只写了对象与返回码，
+  没写端点。`cleanup.py` 的 delete 与 cancel 两处文案补齐「端点
+  `DELETE|POST repos/<repo>/actions/...`、返回码、对象」三项；非 403 的
+  error 行同样带端点。build.yml 清理步名去掉已过时的 per-sequence 措辞。
+- 其余各条核对通过（两工作流与触发、SEGMENTS/CLEANUP_APPLY 同值、
+  fetch-depth: 0、提交数取号、五判据与硬上限、分支判据），证据见当轮
+  汇报。
+
+## 规范同步 —— 运行记录改硬上限、上限优先（selfs 4f748b5 / 12b0bff）
+
+- selfs main 定版：每个工作流最多保留最新 5 条运行记录，含当天、不设
+  例外，任何关联关系不豁免；运行记录上限优先于 artifact 保留——保留
+  某 artifact 会让其工作流留第 6 条 run 的，删该 artifact 并同步校正
+  留存清单。本仓上一版「承载保留产物不占上限」就此撤销（当时 Build
+  序列 6 条里第 6 条即此例）。
+- `cleanup.py` 重构判定顺序：先算每工作流 run 保留集（最新 5 条），
+  再算 artifact 五判据与全仓 5 个，最后按 run 上限校正 artifact 留存；
+  超限已完成 run 删除（逐个列出其产物，超限产物已先删），超限未完成
+  先取消较旧者，本次运行不取消不删。
+- 收尾自检改按 selfs 新清单（7 项）汇报。
+
+## 规范同步 —— 清理上限重设（selfs f4091e3 / 49a99e3）
+
+- selfs main「重设全局规范」（GLOBAL.md 9288B）。本仓清理两处改：
+  artifact 上限由每工作流序列 5 个改为**全仓最新 5 个**（按 created_at
+  从新到旧）；run 仍每工作流 5 条，处置改按新条文：承载保留产物的 run
+  不删、超限已完成的删（其不在保留范围的产物已先删、删前逐个列出对象
+  及产物）、超限未完成的先取消较旧者（新增 cancel 调用，失败同 delete
+  分 403 与非 403 两路）、本次运行不取消不删。
+- `cleanup.py` 相应重写数量与 run 两段，启动行与摘要同步。判据其余四条
+  （命名口径、来源、重复当日序号、号源口径）不变。
+
+## 规范同步 —— 当日豁免撤销、每序列各 5 个（selfs 790bf82 / eb676eb）
+
+- selfs main 新增两提交（`790bf82` 撤当日豁免、`eb676eb` 重写四原则），
+  GLOBAL.md 7364B。本仓唯一实现差异：数量判据的当日豁免。
+- `cleanup.py`：artifact 与 run 的数量判据不再分当日与否，每条工作流
+  序列保留最近 5 个（五条判据均不豁免）；run 的「当日豁免」分支与话术
+  删除，承载保留产物、未完成、当前运行三项保护不变；无用函数 `d8`
+  删除。号源已是提交数，删当日 run 不再抽计数基准，豁免失去依据。
+- 本次推送后清理按新规收口：artifact 由 6 件压到 5 件（删最旧的
+  `Gself-26.10.15.1.325` 一件，名单以运行实测为准）。
+
+## AGENTS.md 删除（2026-10-15，主人提交 5afaa06）
+
+- 主人在本会话分支提交 `5afaa06` 删除 AGENTS.md（与 selfs `716e864`
+  删自家 AGENTS.md 同一决定）。本文件与各工作流不再指向 AGENTS.md；
+  项目口径以 selfs GLOBAL.md 与本 CHANGELOG 的真数字记录为准。
+- 上条「规范载体变更」里记的 AGENTS 依据行同步已被该删除覆盖。
+
+## 规范载体变更 —— selfs PR #6 已合，指针回默认分支（2026-10-15）
+
+- 取证：selfs PR #6 已合入 main（merge `aedf88d`），会话分支
+  `arena/2d001a47-selfs` 已删；main 的 GLOBAL.md（11654B）与提交
+  `2f8c419` 版逐字一致——条文无新增，本仓实现无需改。
+- AGENTS 依据行同步：原指向已删会话分支，改为记「已随 PR #6 合入
+  selfs 默认分支 main」。selfs 同轮删了它自己的 AGENTS.md，那是无产物
+  仓的本地决定；本仓 AGENTS.md 记项目事实与依据行，按规范保留。
+- 同期事实（GitHub 侧，取值 2026-10-15T01:24Z 起）：默认分支 main 被
+  直接推入 6 个提交（head `00f685c`），文件树已含 build.yml 与
+  pr-check.yml，并在 main 上出包 `Gself-26.10.15.4.299`（run 38664400309）、
+  `Gself-26.10.15.5.300`（run 38665267835）；另有旧 Android CI 口径产物
+  `Gself-26.10.15.1.2`（run 38664141929，main，sha 5d515e1）。本会话分支
+  与 main 为 diverged（ahead 33、behind 6），未被继承，按判据保留；
+  PR #14 仍 OPEN。
+
+## 规范同步 —— 五判据定名、依据改引 2f8c419（selfs 129a292 / 2f8c419）
+
+- 判据正式定为五条：命名口径、来源、重复当日序号、号源口径、数量。
+  本仓清理实现上轮已含号源核验，本轮把 AGENTS、工作流步骤名、脚本
+  docstring 与摘要标题的「四判据」统一改「五判据」；`cleanup.py` 启动行
+  补打印号源核验的两条 git 命令原文。
+- AGENTS 依据行同步到 selfs 提交 `2f8c419f63ca6d2e540184b4f29161ff7e8c293b`；
+  「号源分界点」「版本分界点」两个标题改成带日期的事实记录（规范禁以
+  「基线」「分界点」代称数字，记录里的 run 号、artifact 名与 id 不变）。
+
+## 规范同步 —— 号源改 git 提交数、工作流统一改名（selfs 240a214 / c5ac12d）
+
+> 号源挂在 run 上时 PR 运行吃号、改文件名号从 1 回头、双触发与重试靠
+> 条文层层堵；号源挂到提交上一起消失，同一提交重跑同号（天然幂等）。
+
+- 取号改 git 提交数：总序号 `git rev-list --count HEAD`、当日序号
+  `git rev-list --count --since=<当日0点 UTC+8> HEAD`；`build.yml` 的
+  checkout 加 `fetch-depth: 0`，取号启动行打印 head sha、两个数与命令
+  原文，取不到即失败退出，不再退化四段；重试复用逻辑删除（同提交同号）。
+  `-Pfcmself.buildNumber` 改传 VERSION_CODE，全仓不再用 run_number。
+- 工作流统一改名：`android.yml` → `build.yml`、`name: Android CI` → `Build`
+  （属基线跳变，AGENTS 记一行事实）；`pr-check.yml` 的 `pull_request`
+  去掉 branches 过滤；其 cleanup job 补 `contents: read` 与
+  `fetch-depth: 0`；build.yml 顶部补 `env: CLEANUP_APPLY: 'true'`。
+- `cleanup.py` 口径判据加号源核验：名义序号与来源 run 的 head sha 提交数
+  不符的按旧口径删；无一合规时暂留最新一个旧口径产物，等新口径包出成
+  再删（不许出现无包可装的状态）。重复当日序号改按 `run_started_at`
+  删旧留新（不按总序号大小）；启动行补打印 `CLEANUP_APPLY`；跑完打印
+  各序列剩余数。本次推送先出新口径包，旧口径 `.3.149`、`.2.148` 在
+  新包出成后由清理删，真数字记入 AGENTS。
+- 实测（2026-10-15T00:16Z）：Build run 38658709163 出新口径首包
+  `Gself-26.10.15.1.325`（id 11937379087；head `ab96706`，API 核
+  `commits?sha` 总数 325、当日 1，与产物名逐字一致）；清理已删旧口径
+  `.3.149`、`.2.148`，artifact 只剩新口径首包，无无包窗口。
+
+## 规范同步 —— 出包不限分支、清理失败分级（selfs a8787a8 / 358120a）
+
+> 撤回口径：会话分支不出包、默认分支 ref 守卫一类禁令砍掉了唯一的验证
+> 手段（PR 校验不上传产物，拿不出可装可跑的包），本轮按新口径改。
+
+- `android.yml` 去掉 `push` 的 `branches: [ "main" ]` 限定：会话分支推送
+  同样触发出包用于验证，与默认分支共用同一命名口径、同一条 `run_number`
+  序列；仍不接 `pull_request`，不加 `github.ref` 守卫。当日序号计数把
+  会话分支运行一并计入（脚本原已按事件过滤、不分分支，无需改）。
+- `cleanup.py` 删除失败分级：403 权限类 `::warning::` 降级不红 job；403
+  以外 `::error::` 点名（对象与返回码）并让 job 当轮红。AGENTS 清理节与
+  工作流口径同步（PR 校验原写「不清理」一并修正）。
+- AGENTS 头部去掉 head 短哈希戳，改为依据 selfs 提交
+  `a8787a8b4b6becf2be142732593a105a0a2672c2`（附链接）。
+
+## 真删首次落地 —— PR 校验 cleanup job 删除两件存量（2026-10-14）
+
+- [PR check run 38564494224](https://github.com/Sumicya/Gself/actions/runs/38564494224)
+  的 cleanup job（`actions: write` + `CLEANUP_APPLY: 'true'`）删除
+  `Gself-26.10.14.4.145`（来源 pull_request）与 `Gself-26.10.14.2.147`
+  （重复当日序号）；验收命令实测 artifact 只剩 `Gself-26.10.14.2.148`。
+- 首次真删前一跑（run 38563957488）cleanup 红：`delete()` 定义被同文件
+  并行编辑丢掉，NameError。修复提交 b8b3a57 补回定义并本地复现降级路径
+  （沙箱 403 → `::warning::` 降级、退出码 0）后推送，次跑即删成。
+
+## 规范同步 —— 真删改挂 PR 校验工作流（selfs b0594d3：清理不再永久挂起）
+
+> 根因：真删原先只挂出包工作流，而出包只在默认分支 push 与 workflow_dispatch
+> 触发，会话两侧都够不着——「待出包工作流首次运行」在会话侧永远不会来。
+
+- `pr-check.yml` 的清理 job 由只读预演改为真删：`cleanup-preview`→`cleanup`，
+  `actions: read`→`actions: write`，`CLEANUP_APPLY: 'false'`→`'true'`，步骤名
+  改「按四条判据清理（真删）」；与 android.yml 的 build job 同挂
+  `concurrency` group `gself-cleanup` 串行。PR 校验工作流文件头注释同步
+  （原写「不清理」已与实现矛盾）。
+- `cleanup.py` 的 DELETE 改降级式：失败（fork PR 只读令牌 403 等）打
+  `::warning::` 本次降级为预演并继续，不红 job、不再 SystemExit；只读预演
+  降为备用形态，预演名单不作清理已做的证据。
+- 存量待删状态改记「待下一次 PR 校验运行」：`.4.145`（来源）、`.2.147`
+  （重复当日序号）。本提交的 PR 校验运行即首次真删，验收看 artifact 名单。
+
+## 规范同步 —— 启动参数打印与号源已知风险（selfs 4e9effb 复查清单）
+
+- `cleanup.py` 启动行补 `PREFIX=Gself-`：预演日志可独立核对脚本读到的参数
+  （SEGMENTS、CLEANUP_APPLY、KEEP、日期、前缀）。
+- AGENTS.md 号源分界点后加「已知风险（号源）」一行：默认分支 android.yml
+  仍含 pull_request 触发，旧分支 arena/01a10a49-gself 若新开 PR 会吃一个
+  总序号；风险存续到本次交付进入默认分支为止，期间不向非本会话的开放
+  PR 分支推送、不做关闭 PR 的动作。
+
+## 存量补证 —— 分界点删除前名单（selfs 补洞：分界点只引可核对象）
+
+- AGENTS.md 号源分界点补一行：删除前名单原文（取值 2026-10-14T03:17Z）四条
+  产物各注来源 run id——已删的 `.1.144`、`.3.144` 不再光引名字，改为可核的
+  run 号与删除前名单；现注册表只剩 android.yml 与 pr-check.yml 两条序列。
+
+## 规范同步 —— selfs 条文补洞（清理单脚本预演、重复当日序号判据、run 承载耦合）
+
+> 条文实测撞墙点：清理只挂出包工作流，而出包只在默认分支 push 与
+> workflow_dispatch 触发、沙箱令牌 actions 写 403——清理写好了跑不到真删。
+> 本轮按补洞条文落地到本仓。
+
+### 改的
+
+- 清理逻辑抽成单脚本 `.github/scripts/cleanup.py`，`CLEANUP_APPLY` 开关：
+  出包工作流 `'true'` 真删，`pr-check.yml` 新增 `cleanup-preview` job
+  （`actions: read` + `'false'`）只打印将删名单与判据理由。真删仍只一处
+  实现，逻辑不许两份；会话侧真机证据取预演日志。
+- 新增第四判据「重复当日序号」：同日同序列相同当日序号只留总序号最大者。
+  本地预演干跑（只读）结果：`Gself-26.10.14.4.145` 命中来源判据、
+  `Gself-26.10.14.2.147` 命中重复判据、`.2.148` 保留，run 0 条将删——
+  两件存量违规均记「待出包工作流首次运行」由清理 job 删除。
+- run 上限与 artifact 承载关系写死：承载保留产物的 run 不删、不计入上限；
+  判定顺序固定 artifact（口径→来源→重复→数量）先、run（承载→数量）后；
+  排序按来源 run 的 `run_started_at`，id 只作 tiebreak；日志逐对象打印
+  判据结论与豁免原因。
+- AGENTS.md 版本节补分界点一行：2026-10-14 当日序号 2 曾重复，分界点之前
+  的当日序号不可信，`.2.147` 按重复判据删。
+
+# 更新日志
+
+> 本仓库由 fcmfix 迁移而来。0.9.0 及以前压缩为要点，完整历史见 `git log`。
+
+## 规范同步 —— selfs 规范更新（清理三判据、责任固定、交接三件）
+
+> 实测依据：沙箱令牌在**本仓**删 artifact、触发 rerun 同样 403——能力按权限类
+> 分（actions 写无、contents/refs 写有），不按仓库分。本轮按新条文落地到本仓。
+
+### 改的
+
+- 清理 job 改三判据：① 口径——版本段数 ≠ 工作流顶部 `SEGMENTS` 声明值（新增
+  `env: SEGMENTS: "5"`）的删；② 来源——`workflow_run` 事件为 `pull_request`
+  的 artifact 一律删；③ 数量——当日之外每条工作流序列 artifact/run 各留 5。
+  口径与来源不豁免当日；数量判据当日不删（防当日序号计数基准被抽走）。
+  本地干跑验证：存量 `Gself-26.10.14.4.145`（PR 运行来源）命中来源判据，
+  `.2.147`/`.2.148` 保留，分类无误（实删待下个出包运行）。
+- runs 清理改按工作流分组计数（Android CI 与 PR check 各一条序列）；清理仍
+  只挂出包工作流，PR 校验的超量 run 由它一并删。
+- 当日序号排序改按 `run_started_at` 升序取位次（原按 run id 近似）。
+- 文档按禁句式核对：AGENTS.md、CHANGELOG、本文件、工作流注释中责任外推类
+  责任外推句式 grep 为 0 处；阻塞改按三件报（端点与返回码、完整命令、验证
+  命令与预期输出）。
+
+## 规范同步补正 —— 当日 run 清理保护（防当日序号被清理吃掉）
+
+> 实测：`Gself-26.10.14.2.148` 当日序号为 2 而非 3——当日首个出包运行
+> （run 143，push main）的记录已在上一次出包运行的 runs 清理中作为最旧记录
+> 被删，后续运行数当日出包运行少计一位，与 `.2.147` 当日序号重复。
+
+### 改的
+
+- runs 清理加当日保护：当日（UTC+8）创建的 run 不删，留到明日再收；当日序号
+  依赖当日运行记录完整，盘中 run 数可超 5，次日出包运行压回 5。
+- AGENTS.md 分界点补记 `.2.147` 与 `.2.148` 当日序号重复的成因；Build 旧口径
+  产物 `.1.144` 已由主人删除，分界点转为历史记录。
+
+## 规范同步 —— selfs 规范更新（拆分出包与 PR 校验工作流）
+
+> 实测根因：`run_number` 在运行创建时按工作流分配，步骤级 `if` 只挡上传、
+> 挡不住 PR 运行取号；且两个注册工作流各有一条 run_number 序列，本仓已出现
+> 总序同为 144 的两次不同运行。本轮按新规拆分，模块代码零改动。
+
+### 改的
+
+- `android.yml` 改为纯出包工作流：触发只留 push(main) 与 `workflow_dispatch`，
+  删掉 `pull_request` 触发、版本步内的 PR 占位回落与三处事件 `if`（工作流级
+  隔离后不再需要）；当日序号改数本工作流当日运行（全部为出包运行）。
+- 新增 `pr-check.yml`：只接 `pull_request`，只跑测试、编译、R8 入口校验；
+  独立 run_number 序列永不参与版本号，不取号、不上传、不清理。
+- AGENTS.md 记双工作流口径与号源分界点：总序 144 的两个产物中只有
+  `Gself-26.10.14.3.144`（Android CI）是正规出包；Build 的
+  `Gself-26.10.14.1.144` 为旧口径产物待删（沙箱令牌删产物 403，命令已交接）。
+
+## 规范同步 —— selfs 规范更新（堵版本号刷号漏洞）
+
+> 背景实测：双触发（push + pull_request）让同一提交吃两个总序号，Gself 同仓
+> 并存总序 1 与 144/145 两套号。本轮按新规堵漏，模块代码零改动。
+
+### 改的
+
+- 出包运行只认 push（main）与 `workflow_dispatch`：`pull_request` 运行只跑校验
+  （测试、编译、R8 入口校验），版本步内回落占位版本 `0.0.0.0.pr`，不取号；
+  Rename、Upload、Cleanup 三步加 `if: github.event_name != 'pull_request'`。
+- 当日序号改为当日该仓出包运行的序号（android.yml 的 push / workflow_dispatch
+  按开始时间递增取位次，PR 不计入）；禁止按 head 提交位次取数（并发竞态，
+  实测当日序号重复、乱序）。取不到仍退化四段并 `::warning` 写明。
+- 号源单一化：本仓出包只走 android.yml；遗留 Build 工作流（仅存在于
+  `arena/01a10a49-gself` 分支）的注册禁用被接口 403 挡（沙箱令牌无 Actions
+  管理权），处置命令已在当轮汇报交接。
+- 总序号维持 run_number 原值（上一轮已改，本轮核对无残留减基线表述）。
+
+## 规范同步 —— selfs 规范更新（取消版本号与同步戳）
+
+> 规范按主人指示取自 Sumicya/selfs 会话分支 `arena/2d001a47-selfs`（PR #6，
+> head a9fc529，尚未合入默认分支）。规范本体取消版本号，本仓文档同步去掉
+> 版本号与同步戳。模块代码零改动。
+
+### 改的
+
+- 总序号改为本次 run 的 `run_number` 原值：本仓 workflow 未重建、未记录基线，
+  旧口径「run_number − 3」停用；总序由 139 跳至下一 run 的 run_number 原值，仍递增。
+- 当日序号取不到时退化四段 `yy.m.d.总序号`，CI 日志以 `::warning` 写明原因；
+  `created_at`、`run_number` 缺失仍立即停包。
+- `AGENTS.md` 整份精简：只记项目事实、必要限制与规范指针，不复制全局规则、
+  不带版本号或同步戳；计数与清理两节只留本仓实现口径。
+- 分支删除唯一判据改为 compare `ahead_by=0`：上轮按旧规则删掉的
+  `arena/01a10a49-gself`（PR #13 已关闭未合并）已以其头提交 `958ed97` 恢复，
+  compare diverged、ahead_by=25，按新规保留并报主人。
+- 核对无误、无需改动：action 钉主版本（`@v7`/`@v6`）、具体镜像
+  `ubuntu-24.04`、无 `@main`/`@latest` 浮动标签；本仓无孤立 tag、无 Release。
+
+## 规范同步 —— GLOBAL.md 第0版修订
+
+> 对齐 Sumicya/selfs 会话分支 `arena/7a7f3552-selfs`@1984b03a 的第0版修订
+> （2026-10-13，尚未合入 selfs 默认分支，按主人指示先行同步）。模块代码零改动。
+
+### 改的
+
+- 计数改锚（修订核心）：当日序号 = 本次 run 的 head 提交在当日（UTC+8）提交
+  序列中的位次（本仓实现：数 head 祖先链当日提交数，含 head）；总序号 = 本次
+  run 的 `run_number` − 基线 **3**（定死：run 38407093039 的 run_number 140 ↔
+  总序 137）。旧锚（历史成功数、现存 artifact 最大号）停用；run 记录删除后
+  run_number 不复用，删 run 不再影响序号。
+- runs 清理随之去掉「今日 run 延到明日再收」的保护（计数已不依赖 run 历史），
+  严格保留最近 5 条；当前 run 与未完成 run 不删。
+- 新增分支保留 **0 个**：PR 合并或关闭后删对应会话分支，分支清理只由会话
+  执行、不进 CI。本轮已删 `arena/01a10a49-gself`（PR #13 关闭后收尾）。
+- `AGENTS.md` 版本戳更新为第0版修订，并注明规范来源分支。
+
+## 规范同步 —— GLOBAL.md 第0版
+
+> 对齐 Sumicya/selfs/GLOBAL.md 第0版（2026-10-13，全文重写为简版）。模块代码零改动。
+
+### 改的
+
+- 新增运行记录保留：workflow runs 只留最近 **5 条**。清理在 artifact 清理之后
+  执行，只删已完成、非今日（UTC+8）的旧 run；今日 run 留到明日再收（防当日序号
+  位次被删坏），当前 run 不删；删前打印保留 + 删除清单，失败只报错。
+- 总序号改锚：运行记录只留 5 条后，历史成功 run 数不可再作计数锚。总序号 =
+  现存 artifact 最大总序 + 1，下限基数 136（切换时最新总序，见 AGENTS.md 衔接）；
+  失败运行不上传、不占总序；attempt > 1 复用首定版本不变。当日序号位次法不变。
+- `AGENTS.md` 版本戳更新为第0版；清理权限表述同步（`actions: write` 只删本项目
+  artifact 与 run，禁 `contents: write`）。
+
+### 核对结果（无需改动项）
+
+- 五段格式、文件名 `<项目名>-<五段版本>`、取数锚定本次 run、缺失即失败、
+  Release 1 个 / artifact 5 个、CI 出包 ≠ 发版、runner 具体镜像：均与现行实现一致。
+
+## 规范同步 —— GLOBAL.md 第二十五版修订
+
+> 对齐 Sumicya/selfs/GLOBAL.md 第二十五版修订（2026-10-13）。修订点只有清理权限
+> 一处，其余条款经核对不变。模块代码零改动。
+
+### 改的
+
+- 清理权限按修订口径重做：取消独立 cleanup job 和「仅默认分支 push 才清理」；
+  清理并入构建 job，在本 run 上传成功后立即执行（任意触发事件，含 PR）。权限只给
+  最小 `actions: write`（仅删本项目 artifact），禁止 `contents: write`；构建与检查
+  保持 `contents: read`。
+- 清理脚本写死归属核验：名称前缀仅作初筛，逐个 artifact 追其 `workflow_run` 的
+  workflow 路径（须为 `.github/workflows/android.yml`）确认属于本项目；未核验对象
+  不计入保留窗口、不删，只列出报告。删前打印完整保留 + 删除清单；删除失败只报错，
+  不回滚新产物、不删保留窗口内对象，清理后复核已核验数量 ≤ 5。
+- `AGENTS.md` 版本戳更新为第二十五版修订，数量清理与 CI 权限原则两节同步新口径。
+
+### 影响
+
+- 自本次提交的 PR 运行起，清理在分支上即时生效：新产物上传后总数超 5 时，当次运行
+  即删最旧的已核验 artifact，不再等合并后 main 运行。
+- 实测记录：首跑（run 38402503506）清理步骤失败——新脚本 DELETE 调用漏了一个
+  `]`，Python 编译期即挂，清理实际未执行（产物涨到 6 个）；补诊断定位、修复后
+  run 38403199408 成功，清理打印「保留 5 删除 4 未核验 0」，台账压回 5 个。
+  诊断脚手架（分阶段标记）已在验证后撤除，只保留 DELETE 失败的 `::error::` 输出。
+
+## 规范同步 —— GLOBAL.md 第二十五版
+
+> 对齐 Sumicya/selfs/GLOBAL.md 第二十五版（2026-10-12）。模块代码零改动。版本计数
+> 口径经核对不变：当日序号 = 当日全部已触发运行（含失败）按触发先后排号（位次法，
+> 并发不抢号）；总序号 = 历史成功出包构建数 + 衔接常数 22；attempt > 1 复用首定版本。
+
+### 改的
+
+- `android.yml`、`AGENTS.md`：清理表述同步第二十五版——「清理默认启用，不再逐仓
+  询问」「已有积压属于落实范围，不能只写代码留待以后」；PR 出包不是放弃数量清理
+  的理由，也不是给 PR 写权限的理由；积压当场清，main 运行只做常态数量清理。
+- 本条目与第二十四版条目移至 Gboard 条目之上，恢复新在前的时序。
+
+### 第二十五版核对结果（无需改动项）
+
+- `runs-on: ubuntu-24.04`（未用 ubuntu-latest）；`actions/checkout@v7`、
+  `actions/setup-java@v6`、`actions/upload-artifact@v7`，均非弃用档。
+- `retention-days: 5`（时间兜底）、`if-no-files-found: error`、
+  `overwrite: true`（仅重试复用同版本名时生效，不覆盖不同内容）。
+
+### 当场清账（2026-10-13，不等合并）
+
+- 关闭 PR #13（另一会话的第十五版旧口径同步，与本 PR 改同一批文件，已被本 PR 取代）。
+- 冗余工作流处置：`spec-check` 随本 PR 合并删除文件即消亡；#13 分支遗留的 `Build`
+  随该分支处置消亡。当场禁用尝试对接口 403（沙箱 token 无工作流管理权限），如实
+  报告；可行路径：仓库 Actions 页面手动禁用。
+- 改名前遗留 artifact（空名 `Gself-`、`Gself-dev-26.10.6.5.127`、
+  `Gself-dev-26.10.6.1.128`）经核对已不在仓库；现存 4 个 artifact 经 workflow_run
+  归属核验均属本项目，未超保留上限 5；仓库无 Release，无清理对象。
+
+## 规范同步 —— GLOBAL.md 第二十四版
+
+> 对齐 Sumicya/selfs/GLOBAL.md 第二十四版（2026-10-10）。模块代码零改动。
+
+### 换上的
+
+- 版本取数改按第二十四版通用步骤：输入锚定本次运行的 created_at / run_id /
+  run_attempt；当日序号改为「本次运行在当日全部已触发运行（含失败）中的位次」
+  （按 run id 排位，并发不抢号）；总序号只计历史成功出包构建数，失败运行不增加总序号。
+- 衔接规则：总序号 = 历史成功数 + 22（切换前历史最大总序号 131 − 成功数 110 + 1），
+  自 2026-10-10 本次提交起生效，保证计数不回退。
+- run_attempt > 1 时复用首次 attempt 已确定的版本（从本运行产物名取得），不重新加号。
+- 清理 job 写权限收窄到默认分支构建运行（`contents: write` + `actions: write`），
+  同仓 PR 不再执行清理，积压由合入后的 main 运行收。
+- AGENTS.md 版本戳更新为第二十四版。
+
+## Gboard 剪贴板：过期过滤改「无下限」
+
+> 消除代码与文档的口径不一致：代码一直是「实际不限时长」，README 却写「3 天」。
+
+### 换上的
+
+- `Gboard.kt`：`timestamp >= ?` 的实参从「当前时间减 100 年」（算出来已是负 epoch 的魔数）
+  改为 `Long.MIN_VALUE` 哨兵值，行为不变（全部保留）。改法不变：仍替换实参，不改写
+  selection 字符串（不动占位符结构，最小侵入）。
+- README：剪贴板过期描述由「3 天」更正为「实际不限时长」。
+
+## 规范同步 —— GLOBAL.md 第二十二版
+
+> 对齐 Sumicya/selfs/GLOBAL.md 第二十二版（2026-10-06）。模块代码零改动，只动
+> `AGENTS.md` 与 CI。
+
+### 删掉的
+
+- `spec-check.yml` 整条工作流：第二十二版简单性要求 CI 围绕实际构建与清理安排，
+  不设规范检查工作流，规范由 agent 在会话中核对。AGENTS.md 第十五版「应有只读规范
+  检查」的条目与之冲突，按全局规范优先处理。
+
+### 换上的
+
+- `AGENTS.md` 按第二十二版格式重写：只记项目事实、版本计数口径、数量清理与必要限制，
+  版本戳更新为「上次同步 = 第二十二版」。
+- runner `ubuntu-latest` → `ubuntu-24.04`（第二十二版：用具体、受支持的镜像）。
+- 版本计数统一五段 `yy.m.d.当日序号.总序号`：push 与 PR 同一序号池（此前 PR 固定
+  `yy.m.d.0.0`、versionCode=1）；序号来自 android.yml 的真实运行记录并锚定本次运行，
+  失败运行同样计数，同次重试复用版本。取数失败或校验不过立即停止出包与上传
+  （此前有版本为空的运行照样上传了 `Gself-` 空名产物）。
+- `upload-artifact` 补 `if-no-files-found: error`。
+
+### 新增
+
+- `cleanup` job：上传成功后保留最近 **5 个** artifact（跨分支、跨触发事件，含改名前
+  遗留名），完整分页、按创建时间排序，删除前在 job summary 列出保留与删除清单；
+  最小写权限 `actions: write`；fork PR 无写权限不执行，由后续 push 运行补清。
+  当前 23 个积压产物会在下一次出包运行收到尾。
+
+## Gself —— 三合一 + 换 GPL-3.0
+
+> 把三个项目合成一个 libxposed 模块：fcmself（推送/通知/ColorOS，system_server）、
+> GooglePasswordManagerUnlock（通行密钥解限，GMS 进程）、GboardHook（剪贴板，Gboard 进程）。
+> 对外改名 Gself（applicationId `sumicya.gself`），内部包名与入口类 `sumicya.fcmself.XposedMain`
+> 当时不变，CI 的 R8 入口校验照旧。（当时如此：后续已「一次改到底」，包名与入口类同为 `sumicya.gself`，见本文件「改名：一次改到底」条。）整仓改用 **GPL-3.0-or-later**（并入的 GboardHook 是 GPL-3.0，合并作品须同证）。
+
+### 新增
+
+- `onPackageLoaded` 按包名分发：`com.google.android.gms` → 通行密钥解限；Gboard → 剪贴板。
+- `Gms.kt` 移植通行密钥解限：DexKit 稳定字符串定位来源解析器，**唯一候选才 Hook**（保留其安全边界），
+  来源构造函数记录 origin、解析器据其改写。加 `org.luckypray:dexkit:2.2.0` 依赖。
+- `Gboard.kt` 移植剪贴板：改写 `ClipboardContentProvider#query` 的时间下限与 `limit 5`（默认 10 条 / 3 天），
+  并写死 `enable_clipboard_entity_extraction` / `enable_clipboard_query_refactoring` 两个开关。
+- `scope.list` 加 GMS 与 Gboard 两个包；`module.prop` 注释同步。
+
+### 真机验证（ColorOS / OnePlus，Android 16 / API 36）
+
+- 三组 Hook 全部确认挂载：`wake: <pkg>` + `unfreeze 可用（4 参签名）`（推送）、
+  `keep notification: …`（通知）、`通行密钥解限 Hook 已安装`（GMS）、`Gboard 剪贴板 Hook 已安装`（Gboard）。
+- 编译仍由 CI 校验（本环境无 JDK/SDK）。
+
+## 26.10.1 —— 按真机证据再砍一半
+
+> 1.0.0 的 553 行 → **303 行主代码**（4 文件 1 包不变）。依据是真机两组事实：
+> `service list` 里没有 `powerkeeper` / `millet` / `smartpower`（MIUI 那套反射目标从未命中），
+> `dumpsys deviceidle whitelist` 里 `com.google.android.gms` 已在 `system-excidle`
+> （电池白名单原生已覆盖，不需要 hook）。规范仍是 ponytail ultra。
+
+### 删掉的
+
+- **开机闸门整组**（`bootGate` / `bootLater` / `finishBooting` hook / `AtomicBoolean` / 后台线程 /
+  `booted` 标志，约 30 行）：代价是开机头 60 秒不介入，而刚开机正是积压推送集中到达的时候。
+  现在载入即介入
+- **MIUI / HyperOS / PowerKeeper 全部挂载点**（约 110 行）：`miuiFixes`（MilletConfig /
+  `gms_control` / MilletPolicy 名单）、MIUI 本地通知限制、`shouldInterceptService`、
+  `ALLOW_AUTOSTART` / `NO_INTERCEPT` 两张表与 `gate()` 循环。这台设备上全是 `hook skip`
+- **实参启发式扫描**：`Push.intentIn` / `intentFieldOf` / `actionIn` / `packageIn` 与包名正则
+  （约 40 行）。`shouldProxy` 改成一律 `NOT_INCLUDE` 之后，不再需要从散字符串实参里认 action 和包名
+- **bypass 日志全局节流**（`lastBypassLog` / `suppressedBypass` / `BYPASS_LOG_INTERVAL`，约 26 行）
+- **`FIXES` 清单表**：只剩三组，直接三次 `install()` 调用
+- **日志噪声**：真机 3 小时刷出几百行，把粘贴都挤爆了。`unfreeze` 改为只记「找到可用签名」那一次，
+  `No Intercept` 与 `shouldProxy bypass` 两条逐次日志删掉（信息与 `wake:` 重复），
+  `Add FLAG_INCLUDE_STOPPED_PACKAGES: <pkg>` 缩成 `wake: <pkg>`
+
+### 换上的
+
+- **判据放宽成子串**：`c2dm` / `firebase` 两个词取代五个 action 的全等表。更短，且 GMS / ROM
+  改 action 名不再静默漏掉整条推送（`PushTest` 钉住这一点）
+- **版本号改成 `26.10.1.<构建数>`，`versionCode` = 构建数**：构建数 = CI 的 `github.run_number`
+  （第几次 CI 构建），由 workflow 用 `-Pfcmself.buildNumber` 注入，`build.gradle.kts` 拿它同时当
+  versionCode 与版本名第四段；本地构建回落到 `gradle.properties` 的默认值。这样 vc 跟着 CI 单调
+  递增、不会漂，也天然大于设备上旧版的 versionCode，普通升级即可。CI 不再注入「日期_短SHA」，
+  并删掉 workflow 里设了没人用的 `VERSION_CODE` 一步
+
+### 刻意砍掉的角（新增）
+
+| 砍掉的角 | 位置 | 一句话代价 |
+| --- | --- | --- |
+| `shouldProxy` 一律 `NOT_INCLUDE` | `Fixes.kt` `oplusFixes` | 所有广播都不再走 ColorOS 代理合批，功耗回到系统自己身上；待机耗电明显上升就把判据加回来 |
+
+沿用 1.0.0 的四条（不改 appOp、不补调 `checkAbnormalBroadcastInQueueLocked`、取消原因按值认、
+`intent` 字段不缓存）——其中 `intent` 字段那条随 `intentFieldOf` 一起消失了。
+
+## 1.0.0 —— 推倒重写
+
+> 上一轮（0.9.0）的产物整体删除：`git rm` 掉 2501 行 Kotlin（含 559 行测试）后从零重写。
+> 新实现 **548 行主代码 + 56 行测试，4 个文件，1 个包**（原来 17 个文件、4 层包）。
+> 规范：[ponytail](https://github.com/DietrichGebert/ponytail) ultra——
+> 最好的代码是没写的代码，删除优先于新增，刻意砍掉的角用 `ponytail:` 注释标明代价与加回条件。
+> 本轮允许行为调整，不保证与 0.9.0 逐点一致。
+
+### 删掉的（2501 → 548 行）
+
+- **`ReconnectManagerFix`（275 行）**：GMS 心跳/重连倒计时修复，全仓库最复杂的一块
+  （自动发现 timer 类、反射改倒计时、诊断日志转发），也是唯一跑在 GMS 进程里的 Hook 组。
+  删掉后模块**只 hook system_server**，作用域从 `system` + `com.google.android.gms` 收窄为 `system`
+- **`hook/Reflect`(243) + `Signatures`(69) + `MethodArgs`(59) + `Hooks`(82)** 四层反射基建
+  → 一个 `Hook.kt`（80 行）：`classOf` / `classIfExists` / `find` / `ctor` / `field` / `hook` / `install`
+- **before/after 两套拦截原语** → 一个 `hook(target) { chain -> … }`：要不要 `proceed()`、
+  跑完改不改返回值，全由 lambda 自己决定，`AfterHook` / `hookAfter` / `hookMethodAfter` 全删
+- **`ProcessEnv`(240)**：静态实例表、`onReady` 回调排队与去重、两次握手、
+  `ContextWrapper.attachBaseContext` 守株待兔、USER_UNLOCKED 接收器、自卸载监听、
+  旧通知渠道清理、诊断日志广播 sink → 一个 `@Volatile var booted` + 一个 `fun trace()`。
+  system Context 改为用时 `ActivityThread.currentActivityThread().getSystemContext()` 懒取（零 Hook）
+- **`FcmselfModule` 基类 + `mods/PushArgs`** → `Hook.install("组名") { … }` 与 `Push.intentIn`
+- **`core/hook/mods` 三层包** → 单包 `sumicya.fcmself`，模块内零 import
+- **按 SDK_INT 铺开的参数下标候选表**（`amsCandidates`、`resolveBroadcastArgs`、
+  `resolveNotificationArgs`、参数名兜底）→ 参数按类型/按值在实参里认，见下
+- **559 行测试 → 56 行**：`ReflectTest` / `MethodArgsTest` / `SignaturesTest` 随被测代码一起删，
+  只留介入判据一份 `PushTest`（判据是全模块单一支点，判错了就是全放行或全不放行）
+- 构建不再需要 `-parameters` / `javaParameters`（参数名兜底已删）
+
+> CI workflow 两处收尾（改 `.github/workflows/` 要 `workflows` 权限，GitHub App 推不动，
+> v1.0.0 之后由人工落地）：① 删掉「构建失败往 PR 贴日志评论」那一步与随之而来的
+> `pull-requests: write` 权限（日志已经在 job summary 里，不值得为它扩大仓库权限）；
+> ② 步骤注释里的「参数下标解析的单元测试」改为介入判据（`PushTest`）。
+
+### 换上的
+
+- **表驱动**：七个自启动/拦截闸门其实是两种形状（返回 true 放行 / 返回 false 不拦截），
+  写成两张 `List<Pair<类名, 方法名>>` 加一个 `gate()` 循环，不再是七段近似重复的代码
+- **入口清单化**：`XposedMain.FIXES: List<Pair<String, Fixes>>`，新增一组 Hook = 加一行
+- **开机闸门 fail-open**：`AMS.finishBooting` 挂不上时退化为「载入后 60 秒」，
+  不会因为找不到一个方法就让整个模块永久不生效（旧版没有这条退路）
+- **参数按类型/按值识别**，与参数位置彻底解耦：
+  - Intent：签名里只有一个，`args.filterIsInstance<Intent>().firstOrNull()`
+  - 目标包名 / 推送 action：`Push.packageIn`（包名形态正则）/ `Push.actionIn`（推送族匹配），
+    取代 `shouldProxy` 的 `args[3] / args[5] / args[6]` 与 MIUI 本地通知的 `args[3]`
+  - 通知取消原因：按值认（取值落在 8 / 10020 / 10021 的那个 int）
+- **日志**：`Keep notification`、七个自启动闸门现在**成功时也打日志**
+  （0.9.0 的验证清单里这两处标着「无法直接观测」）
+- 版本 0.9.0 → 1.0.0，versionCode 56 → 60，入口类仍是 `XposedMain`（CI 的 dex 校验查的就是这个字符串，改名要动 workflow 权限，当时判定不值得——后续规范改了这条判断，见本文件「改名：一次改到底」条）
+
+### 刻意砍掉的角
+
+代价与加回条件都写在代码里的 `ponytail:` 注释旁边，这里只列清单，不复述理由
+（复述就是把复杂度当散文再塞回来一遍）：
+
+| 砍掉的角 | 位置 | 一句话代价 |
+| --- | --- | --- |
+| 不再改写 appOp | `Fixes.kt` `wakeStoppedApps` | 「intent 之后第一个 int」实际命中 `requestCode@7` 而非 `appOp@13`，会静默改错参数；真机已验通——通知照弹、force-stop 后推送照样唤醒 |
+| 不再补调 `checkAbnormalBroadcastInQueueLocked` | `Fixes.kt` `autoStartFixes` | MIUI 少一条「异常广播」留痕；换来三个点同形状、能进同一张表 |
+| 通知取消原因按值认 | `Fixes.kt` `notificationFixes` | 别的 int 参数恰好等于 8 时误拦一次取消（只影响「通知没被清掉」） |
+| bypass 日志全局节流 | `Fixes.kt` `logBypass` | 60 秒内第二个应用的 bypass 日志被吞掉，只留计数 |
+| `intent` 字段不做反射缓存 | `Push.kt` `intentFieldOf` | 没有该字段的宿主类每次调用付一次 `NoSuchFieldException` |
+| **不再动 `whiteApps`** | `Fixes.kt` `miuiFixes` | 上游 fcmfix 连它一起移除 GMS + `ext.services`，但该列表语义从未被证实：若它其实是「允许后台的白名单」，移除是在**收紧**而不是放开。一条可能反向起作用的逻辑不该带着 |
+
+### 保留
+
+- 全部 system_server 侧修复的介入判据仍是同一套「推送族 + 目标明确」（`Push.isTargeted`）
+- 开机后延迟 60 秒才介入；非对应 ROM 的挂载点独立跳过（`hook skip <组名>: <原因>`）
+- CI 结构（零 secrets、test → assembleRelease → assembleDebug → lint → 入口类 dex 校验 → 上传产物）、
+  `scripts/sign-apk.sh`、`docs/build-and-sign-termux.md`
+
+## 0.9.0（已被 1.0.0 覆盖）
+
+签名自适应（版本候选表 + 类型校验 + 参数名兜底）、`core/hook/mods` 分层、
+`ProcessEnv` 收敛进程状态、Groovy → Kotlin DSL + version catalog、JUnit 4 → 5、
+`src/main/java` → `src/main/kotlin`、CI 用 `-Pfcmself.versionName` 注入版本。
+真机验证：OnePlus PLC110 / ColorOS（Android 16, API 36）/ GMS 26.33.32 全链路通过。
+
+## 0.8.0 及更早（历史）
+
+- 去配置化：删掉 SharedPreferences 配置缓存、通知开关、FCM Diagnostics 的 RECONNECT 按钮
+- 恢复 MIUI / HyperOS 自启动修复，新增 MIUI 本地通知与 PowerKeeper 修复
+- 身份迁移：`com.kooritea.fcmfix` → `sumicya.fcmself`，移除设置界面与白名单
+- 环境升级：AGP 9.4 / Gradle 9.6 / libxposed 102 / compileSdk 36 / built-in Kotlin
