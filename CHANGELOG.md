@@ -1,3 +1,9 @@
+## README 收窄成三章；build 与两个清理 job 同一并发组（2026-11-05）
+
+- 按规范 §16「README 只写是什么、从哪下、怎么装怎么删」删「要求／功能／构建」三章：三条作用域各做什么并进简介，Android 16+ 与 root/LSPosed 前提并进「安装与使用」开头。
+- 保留「项目限制」「许可证」两章；「构建」章里 GPL-3 §6(d) 的对应源码指向折成一句留在安装章（artifact 第五段＝`run_number`→head 提交即源码）。
+- `build.yml` 的 `build` job 补 `concurrency: group: gself-build`，两个清理 job 的组由 `gself-cleanup` 改成同组，满足 §12「清理 job 与 build 同 concurrency」。
+
 ## 规范换成单文件 22 条；证据图移进 docs/evidence/（2026-11-05）
 
 - 生效点 `5b323dc`（47 行，GLOBAL＋CHECK 两份）→ `1d2212e`（36 行，单文件），`CHECK.md` 已删，条号改为 1–22；新增「三份上游必读含 morluto/rea」「证据图放 `docs/evidence/` 带日期」「文件字节只许减不许增」「收尾末尾三行、欠账表取消」。

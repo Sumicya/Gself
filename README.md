@@ -1,22 +1,18 @@
 # Gself
 
 基于 LSPosed 的纯 Hook 模块，把 Google 在国产 ROM 上被砍掉的语义补回来。合并自三条线：推送修复（本仓前身，其上上游是 `fcmfix`，旧包名见 CHANGELOG「身份迁移」条）、GooglePasswordManagerUnlock（通行密钥解限）、GboardHook（剪贴板）。
+
+三个作用域各做一件事：
+
+- `system`：定向推送绕过「停止态不得投递」（语义层 `Intent#isExcludingStopped` ＋ AMS 广播入口补 `FLAG_INCLUDE_STOPPED_PACKAGES`）；忽略「包变化」类通知取消；放开 ColorOS 后台限制与解锁后的 Google 禁网规则
+- `com.google.android.gms`：去掉通行密钥的「特权浏览器允许列表」，非 Chrome 也能用
+- `com.google.android.inputmethod.latin`：Gboard 剪贴板显示 10 条、实际不限过期
+
 无界面、无配置、不写文件——装上、勾作用域、重启。
-
-## 要求
-
-- Android 16+（API 36）：模块只实现 Android 16 起的广播出口，旧版本不做兼容，安装时会被 minSdk 拒绝
-- 已 root + LSPosed（libxposed API 101+）
-- 作用域勾 `system` + `com.google.android.gms` + Gboard（scope.list 已预选）
-
-## 功能
-
-- **system**：让定向推送绕过「停止态不得投递」——对 `Intent#isExcludingStopped()` 答 false（语义层），并在 AMS 全部广播入口补 `FLAG_INCLUDE_STOPPED_PACKAGES`（标志层）；忽略「包变化」类通知取消；放开 ColorOS 后台限制，并在 Battery 隐藏 Google 联网开关的机型上拦截开机解锁后的 Google 禁网规则
-- **com.google.android.gms**：移除 Google 密码管理器的「特权浏览器允许列表」检查，非 Chrome 也能用通行密钥
-- **com.google.android.inputmethod.latin**：改写 Gboard 剪贴板显示个数（10）与过期（实际不限时长）
 
 ## 安装与使用
 
+前提：Android 16+（API 36，minSdk 36，低版本装不上）、已 root、已装 LSPosed（libxposed API 101+）。
 全程在手机上（Termux 等带 `gh` 的终端），不需要电脑、不需要 `adb`。
 
 **包只从这里取**：本仓不发 Release、不打 tag，可装的包只有 Actions 里 `Build` 的运行产物，
@@ -51,19 +47,9 @@ rm -rf /storage/emulated/0/Download/Gself-*
 
 验收：按 [`docs/verify-on-device.md`](docs/verify-on-device.md) 第 1 节确认模块被加载（日志 tag `Gself`，出现 `推送达标：语义层在｜标志层在` 即两层都在），再按第 2.1 节那一条命令跑完四项信号。
 
+源码就是本仓：artifact 名第五段＝该次 `Build` 的 `run_number`，按号查运行即可拿到 head 提交，那个提交是可构建的对应源码（GPL-3 §6(d)）。
+
 artifact 只留 5 天、每仓最多 5 个；路径里不带空格，所以第 3 步的 `$(find …)` 可以直接嵌进 `su -c`。
-
-## 构建
-
-```bash
-./gradlew test assembleDebug   # 产物：app/build/outputs/apk/debug/app-debug.apk
-```
-
-CI（`Build`）跑单测 + 编译 debug + 校验 R8 入口类 + 体积分项闸门，产物 `Gself-<版本>.apk` 走 Actions artifact（滚动清理保留最近 5 个发行包，5 天过期）；不发 Release。真机验证见 [`docs/verify-on-device.md`](docs/verify-on-device.md)，其中第 2.1 节是一条命令跑完四项信号的验收块。
-
-体积读数同时写进当轮 CHANGELOG：artifact 会在 5 天后被清理，运行号也会被滚动清掉，只留 ID 等于几轮后就查不到；`CHANGELOG.md` 里那条记着 APK 字节数、dex、原生库、许可全文的体积与出处运行号，几时都能对上。
-
-产物的「对应源码」怎么找：artifact 名第四、五段是版本，第五段等于 `Build` 的 `run_number`，按这个号查该次运行即可拿到 head 提交；那个提交就是可构建的源码，构建命令就是上面这条。
 
 ## 项目限制
 
