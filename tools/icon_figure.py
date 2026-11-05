@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Gself 启动器图标审计出图器：只用标准库，`python3 tools/icon_figure.py` 直接产 docs/icon-mask.png。
+"""Gself 启动器图标审计出图器：只用标准库，`python3 tools/icon_figure.py` 直接产 docs/evidence/2026-10-31/icon-mask.png。
 
 所有口径都写在这里，第三个人可以照着重算：
   · 网格：108dp 画布 → 1080×1080 像素，即 10 px/dp；像素中心采样。
@@ -24,7 +24,7 @@ import zlib
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RES = os.path.join(ROOT, 'app/src/main/res')
-OUT = os.path.join(ROOT, 'docs/icon-mask.png')
+OUT = os.path.join(ROOT, 'docs/evidence/2026-10-31/icon-mask.png')
 
 GRID = 1080
 SCALE = GRID / 108.0

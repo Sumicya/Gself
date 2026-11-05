@@ -1,3 +1,9 @@
+## 规范换成单文件 22 条；证据图移进 docs/evidence/（2026-11-05）
+
+- 生效点 `5b323dc`（47 行，GLOBAL＋CHECK 两份）→ `1d2212e`（36 行，单文件），`CHECK.md` 已删，条号改为 1–22；新增「三份上游必读含 morluto/rea」「证据图放 `docs/evidence/` 带日期」「文件字节只许减不许增」「收尾末尾三行、欠账表取消」。
+- 证据图 `docs/icon-{audit,mask,monochrome}.png` → `docs/evidence/2026-10-31/`，`tools/icon_figure.py` 输出路径同步；重跑后 `icon-mask.png` 与入库版本逐字节相同（sha256 `c6c20445…`）。
+- 此前各条里写的 `docs/icon-mask.png` 是搬迁前路径，以本条为准。
+
 ## 判读一律事后看历史，不要求对着弹窗敲命令（2026-11-02）
 
 - 改前：Gboard 一条写「切到 Gboard 打字再 grep」、通行密钥写「打开站点再 grep」——弹窗／剪贴板面板出现时没法敲命令，这条建议不成立。
