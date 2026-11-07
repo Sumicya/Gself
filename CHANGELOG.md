@@ -1,3 +1,10 @@
+## 修复通行密钥与 Gboard 因 libdexkit.so 被压缩而 UnsatisfiedLinkError，补 CallingAppInfo 4 参构造器与应用进程 LSPosed 日志桥（2026-11-07）
+
+- **推翻 2026-10-30/31「`useLegacyPackaging = true` 压 `.so` 省 190 KB」的结论**：真机（GMS `26.43.30 (260400-1006944126)`，`versionCode=264330035`）`logcat -d -s Gself` 抓到 `hook skip 通行密钥解限: java.lang.UnsatisfiedLinkError: LspModuleClassLoader[…nativeLibraryDirectories=[/data/app/…/sumicya.gself-…/base.apk!/lib/arm64-v8a, …]] couldn't find "libdexkit.so"`。`LspModuleClassLoader` 不走 PackageManager 安装期解压目录，只从 `base.apk!/lib/arm64-v8a` 直接 mmap，要求 APK 内 `.so` 必须为 `ZIP_STORED`（不压缩）。删 `useLegacyPackaging = true`，并在 `build.yml` 体积校验补 `so_stored == 1` 硬门禁；`libdexkit.so` 压缩后字节 190746 → 381024，APK 预算 500000 → 700000、原生库预算 200000 → 400000。
+- **修复应用进程（GMS / Gboard）日志不进 `/data/adb/lspd/log/`**：`XposedMain.onSystemServerStarting` 设了 `xposedApi = hooks.api`，但 `onPackageLoaded` 漏设，导致 GMS（PID 19462/19744）与 Gboard 的 `log()`/`skip()` 只打 `Log.d("Gself", …)` 而不调 `xposedApi?.log(...)`，`grep -h gself /data/adb/lspd/log/*.log` 看不到这两条作用域的任何输出。`onPackageLoaded` 补 `xposedApi = hooks.api`。
+- **通行密钥解限兼容 Jetpack Credentials 1.5+ 的 4 参主构造器与 GMS 多 DexLoader**：旧版 `Gms.kt` 只匹配 `paramCount == 3` 且只取 `firstOrNull()`，在 Jetpack Credentials 1.5+（主构造器 4 参 `(String, String, SigningInfoCompat, SigningInfo)`，`origin` 在下标 1；两个 `public` 3 参构造器 `(String, SigningInfo, String)` 与 `(String, List, String)`，`origin` 在下标 2）下会漏钩；改为通过 `originArgIndex(paramTypes)` 钩挂该类全部带 `origin` 的构造器，补去除了 `"Cannot be empty"` 锚点的二级字符串回退，并用 `@Volatile gmsInstalled` 挡住同一 GMS 进程多次 `onPackageLoaded` 重复建 `DexKitBridge`。
+- **清零全仓休眠等待调用与对齐工作流名（规范 §8/§12/§22）**：删 `build.yml:62`、`cleanup.py:279`（改为 `gh run watch`）、`docs/verify-on-device.md` 三处休眠指令；`build.yml` 的 `name: Build` → `name: build`（与文件名一致，同步 `README.md`）并删顶部已不存在的 `pr-check.yml` 注释。
+
 ## README 收窄成三章；build 与两个清理 job 同一并发组（2026-11-05）
 
 - 按规范 §16「README 只写是什么、从哪下、怎么装怎么删」删「要求／功能／构建」三章：三条作用域各做什么并进简介，Android 16+ 与 root/LSPosed 前提并进「安装与使用」开头。

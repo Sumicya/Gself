@@ -1,6 +1,6 @@
-# Gself 出包：push（不限分支）与手动触发出 debug APK；PR 校验在 pr-check.yml。
+# Gself 出包：push（不限分支）与手动触发出 debug APK，产物名 Gself-五段版本。
 # 号源只取 github.run_number 原值，当日序号差值锚定；清理在独立 job，构建红了也照跑。
-name: Build
+name: build
 
 on:
   push:
@@ -59,7 +59,6 @@ jobs:
             for i in 1 2 3 4 5; do
               if out=$(gh api "$1" 2>&1) && printf '%s' "$out" > "$2"; then return 0; fi
               echo "取号接口 $1 第 $i 次失败：$(printf '%s' "$out" | tr '\n' ' ' | head -c 200)" >&2
-              sleep 3
             done
             echo "::error::取号失败：$1 连续 5 次不可用；最后一次输出：$(printf '%s' "$out" | tr '\n' ' ' | head -c 300)"
             return 1
@@ -188,11 +187,13 @@ jobs:
           with open('apk-size.txt', 'w') as f:
               f.write(str(apk_size))
           # 分项落盘：让「哪个部分长大了」也变成可校验的指标，而不只是看一个总数
+          so_infos = [i for i in infos if i.filename.endswith('.so')]
+          so_stored = bool(so_infos) and all(i.compress_type == zipfile.ZIP_STORED for i in so_infos)
           with open('apk-parts.txt', 'w') as f:
               f.write('dex %d\n' % dex)
-              f.write('native %d\n'
-                      % sum(i.compress_size for i in infos if i.filename.endswith('.so')))
+              f.write('native %d\n' % sum(i.compress_size for i in so_infos))
               f.write('abi %s\n' % (','.join(abis) or 'none'))
+              f.write('so_stored %s\n' % ('1' if so_stored else '0'))
           PY
 
       - name: 核对 R8 保留 Xposed 入口类
@@ -278,14 +279,16 @@ jobs:
         shell: bash
         run: |
           # 放在上传之后：超预算要红，但红的是指标，不是把产物一起扣掉
-          # 三个上限都从 2026-10-31 的实测留余量：APK 452315（其中 .so 190746、dex 236792、许可全文 14203）
-          BUDGET=500000
+          # LspModuleClassLoader 只从 base.apk!/lib/arm64-v8a 直接 mmap，.so 必须按 STORED（不压缩）存：
+          # STORED 下 APK ~651 KB（其中 libdexkit.so 381024、dex ~236900、许可全文 14203）
+          BUDGET=700000
           DEX=250000
-          NATIVE=200000
+          NATIVE=400000
           size=$(cat apk-size.txt)
           dex=$(awk '$1 == "dex" {print $2}' apk-parts.txt)
           native=$(awk '$1 == "native" {print $2}' apk-parts.txt)
           abi=$(awk '$1 == "abi" {print $2}' apk-parts.txt)
+          so_stored=$(awk '$1 == "so_stored" {print $2}' apk-parts.txt)
           dex=${dex:-0}
           native=${native:-0}
           rc=0
@@ -305,7 +308,11 @@ jobs:
             echo "::error::原生库 ABI 是 '$abi'，只允许 arm64-v8a"
             rc=1
           fi
-          echo "APK $size/$BUDGET 余 $((BUDGET - size))；dex $dex/$DEX；原生 $native/$NATIVE；ABI $abi"
+          if [ "$so_stored" != "1" ]; then
+            echo "::error::原生库未按 ZIP_STORED（不压缩）存储，LspModuleClassLoader 从 base.apk!/lib/ 加载会抛 UnsatisfiedLinkError"
+            rc=1
+          fi
+          echo "APK $size/$BUDGET 余 $((BUDGET - size))；dex $dex/$DEX；原生 $native/$NATIVE（STORED=$so_stored）；ABI $abi"
           exit $rc
 
   cleanup-artifacts:

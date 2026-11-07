@@ -119,8 +119,7 @@ su -c "am force-stop $PKG"
 su -c "dumpsys package $PKG | grep -E 'stopped='"        # ① 期望 stopped=true
 su -c "pidof $PKG"                                       # ② 期望空（进程真的没了）
 su -c "logcat -c"
-# 这里推一条 FCM 消息，等 60 秒
-sleep 60
+# 从另一台设备或桌面端推一条 FCM 消息后，再跑下面四条
 su -c "pidof $PKG"                                       # ③ 期望有新的 pid
 su -c "logcat -d -s Gself | tail -20"                  # 期望含 wake: $PKG（AMS#…）；用 tail，head 取的是最旧的
 su -c "logcat -b events -d | grep -E 'am_proc_start' | grep -E 'c2dm|firebase'"   # ④ 期望 callingAction=c2dm RECEIVE
@@ -236,13 +235,14 @@ su -c "logcat -d | grep -iE '<包名>|c2dm|Background execution|not delivering|s
 
 1. **没有开机闸门**：开机后立刻推一条，看 `wake:` 有没有打出来、系统稳不稳。
    若开机阶段出现异常，把 1.0.0 的 `finishBooting` 闸门从 git 历史里取回来。
-2. **`shouldProxy` 一律 `NOT_INCLUDE`**（旧版只对推送放行）。验法是**待机耗电**：
+2. **`shouldProxy` 一律 `NOT_INCLUDE`**（旧版只对推送放行）。验法是**待机耗电**（重置后正常使用一晚再取）：
    ```bash
-   su -c 'dumpsys batterystats --reset'; sleep 3600   # 或正常使用一晚
+   su -c 'dumpsys batterystats --reset'
    su -c 'dumpsys batterystats | grep -iE "wake lock|Estimated battery"'
    ```
    耗电明显上升就按 `Fixes.kt` 里 `ponytail:` 注释的路径把推送判据加回来。
-3. **取消原因按值认，不按下标**。验法：正常用一段时间，看有没有「该被清掉的通知没被清掉」
+3. **通行密钥解限与 Gboard 剪贴板（2026-11-07 根因）**：`26.10.30.2.83`–`26.11.5.1.120` 期间因 `useLegacyPackaging = true` 把 `lib/arm64-v8a/libdexkit.so` 压缩成 DEFLATE，而 `LspModuleClassLoader` 只从 `base.apk!/lib/arm64-v8a` 直接 mmap（要求 `ZIP_STORED`），导致 GMS 与 Gboard 抛 `UnsatisfiedLinkError: couldn't find "libdexkit.so"`；同时 `XposedMain.onPackageLoaded` 漏设 `xposedApi = hooks.api`，导致该错误只写进 `logcat -s Gself`、未进 `/data/adb/lspd/log/`。自 2026-11-07 起两处已修并补 4 参 `CallingAppInfo` 构造器钩挂。
+4. **取消原因按值认，不按下标**。验法：正常用一段时间，看有没有「该被清掉的通知没被清掉」
    （别的 int 参数恰好等于 5 / 10020 / 10021 会误拦一次取消）。出现就按注释改成「第一个 String 之后」的定位。
 
 ## 7. 当前验证状态
@@ -446,13 +446,10 @@ LSPosed 日志本身会在模块载入时自动记一行，两条路互相兜底
 
 **空日志不等于失败，推送有延迟**：多个 30 秒窗口里 `grep -icE 'c2dm|firebase'` 全是 0，
 但应用最后还是被拉起来了（`stopped=` 自己从 true 变回 false）—— force-stop 之后第一条推送迟到，
-30 秒窗口抓不到它。测这条等 **2–5 分钟**，用下面这条自打标签的循环抓：
+30 秒窗口抓不到它。测这条等 **2–5 分钟**后再用下面这条命令抓：
 
 ```bash
-su -c 'logcat -c; for i in $(seq 10); do sleep 30; echo "=== 第 $i 个 30 秒 $(date +%H:%M:%S) ===";
-  echo -n "c2dm/firebase 计数: "; logcat -d | grep -icE "c2dm|firebase|MESSAGING_EVENT";
-  logcat -d -s Gself | tail -3; dumpsys package <目标包名> | grep -m1 -o "stopped=[a-z]*";
-  logcat -c; done'
+su -c 'logcat -d | grep -icE "c2dm|firebase|MESSAGING_EVENT"; logcat -d -s Gself | tail -3; dumpsys package <目标包名> | grep -m1 -o "stopped=[a-z]*"'
 ```
 
 计数为 0 只表示「这会儿还没到」；判失败要看 5 分钟后 `stopped=` 是否仍为 true、

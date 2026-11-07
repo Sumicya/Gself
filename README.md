@@ -15,7 +15,7 @@
 前提：Android 16+（API 36，minSdk 36，低版本装不上）、已 root、已装 LSPosed（libxposed API 101+）。
 全程在手机上（Termux 等带 `gh` 的终端），不需要电脑、不需要 `adb`。
 
-**包只从这里取**：本仓不发 Release、不打 tag，可装的包只有 Actions 里 `Build` 的运行产物，
+**包只从这里取**：本仓不发 Release、不打 tag，可装的包只有 Actions 里 `build` 的运行产物，
 下满 5 天后自动过期。
 
 **1. 下载到固定路径**（`gh` 已登录时可用；落点是 `Download` 根，不解到别处）
@@ -47,7 +47,7 @@ rm -rf /storage/emulated/0/Download/Gself-*
 
 验收：按 [`docs/verify-on-device.md`](docs/verify-on-device.md) 第 1 节确认模块被加载（日志 tag `Gself`，出现 `推送达标：语义层在｜标志层在` 即两层都在），再按第 2.1 节那一条命令跑完四项信号。
 
-源码就是本仓：artifact 名第五段＝该次 `Build` 的 `run_number`，按号查运行即可拿到 head 提交，那个提交是可构建的对应源码（GPL-3 §6(d)）。
+源码就是本仓：artifact 名第五段＝该次 `build` 的 `run_number`，按号查运行即可拿到 head 提交，那个提交是可构建的对应源码（GPL-3 §6(d)）。
 
 artifact 只留 5 天、每仓最多 5 个；路径里不带空格，所以第 3 步的 `$(find …)` 可以直接嵌进 `su -c`。
 
