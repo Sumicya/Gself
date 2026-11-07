@@ -138,4 +138,23 @@ class PushTest {
         assertFalse(Push.needsStoppedPatch("android.intent.action.BOOT_COMPLETED", "pkg", noFlags))
         assertFalse(Push.needsStoppedPatch(null, "pkg", noFlags))
     }
+
+    /**
+     * `CallingAppInfo` 在 Jetpack Credentials 1.2–1.6 间的构造器签名变迁：
+     * - 3 参 `(String, SigningInfo, String)` 与 `(String, List, String)`：origin 在下标 2；
+     * - 4 参主构造器 `(String, String, SigningInfoCompat, SigningInfo)`：origin 在下标 1；
+     * - 2 参 `(String, SigningInfo)`（无 origin）或 3 个 String（歧义）必须返回 -1。
+     */
+    @Test
+    fun findsOriginArgIndexAcrossCallingAppInfoConstructors() {
+        assertEquals(2, originArgIndex(arrayOf(String::class.java, Any::class.java, String::class.java)))
+        assertEquals(2, originArgIndex(arrayOf(String::class.java, List::class.java, String::class.java)))
+        assertEquals(
+            1,
+            originArgIndex(arrayOf(String::class.java, String::class.java, Any::class.java, Any::class.java)),
+        )
+        assertEquals(-1, originArgIndex(arrayOf(String::class.java, Any::class.java)))
+        assertEquals(-1, originArgIndex(arrayOf(String::class.java, String::class.java, String::class.java)))
+        assertEquals(-1, originArgIndex(emptyArray()))
+    }
 }

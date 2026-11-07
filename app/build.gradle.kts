@@ -55,16 +55,11 @@ android {
         }
     }
 
-    // .so 默认按 store 存（AGP 4.2 起 useLegacyPackaging=false，为了安装后能直接 mmap），
-    // 原生库的原始字节一分不少地计入 APK。改成安装时解压，APK 内按 deflate 存。
-    // 这一项是量出来的，不是猜的：同一份代码只增删这三行，APK 由 452,315 变成 651,327 字节，
-    // 其中 `lib/arm64-v8a/libdexkit.so` 由 190,746（deflate）变 381,024（store），
-    // 剩下的 8,734 字节是对齐与额外字段。删掉这三行，包体大 44%。
-    packaging {
-        jniLibs {
-            useLegacyPackaging = true
-        }
-    }
+    // LspModuleClassLoader 的 nativeLibraryDirectories 固定指 base.apk!/lib/arm64-v8a（直接从 APK 内 mmap），
+    // 不走安装时解压出的 /data/app/…/lib/arm64/。Bionic 要求 APK 内直读的 .so 必须按 STORED（不压缩）存；
+    // 2026-10-30 曾设 useLegacyPackaging = true 把 libdexkit.so 按 deflate 压成 190,746 字节，
+    // 2026-11-07 真机实测导致 GMS/Gboard 调 System.loadLibrary("dexkit") 抛 UnsatisfiedLinkError。
+    // 故保持 AGP 默认 useLegacyPackaging = false（STORED，381,024 字节），并由 CI 断言 .so 必须为 STORED。
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

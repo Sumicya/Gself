@@ -24,7 +24,6 @@ import json
 import os
 import re
 import subprocess
-import time
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
@@ -272,12 +271,13 @@ for r, ws, why in drop_r:
         if APPLY:
             if not mutate("POST", endpoint + "/cancel", f"取消 run={r['id']}"):
                 continue
-            for attempt in range(15):
-                r = json.loads(gh("api", endpoint))
-                if r["status"] == "completed":
-                    break
-                time.sleep(2)
-            else:
+            subprocess.run(
+                ["gh", "run", "watch", str(r["id"]), "--repo", REPO, "--interval", "2"],
+                capture_output=True,
+                text=True,
+            )
+            r = json.loads(gh("api", endpoint))
+            if r["status"] != "completed":
                 FAILED.append((endpoint, f"取消 run={r['id']}", "等待超时", "取消后尚未完成，未删除"))
                 continue
             # 运行在扫描与取消之间可能上传产物，重读后再删，避免无清单级联删除。
