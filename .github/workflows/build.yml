@@ -127,13 +127,13 @@ jobs:
               tree = ast.parse(src, filename=p)
               defs = set(dir(builtins)) | {'__name__', '__file__'}
               for node in ast.walk(tree):
+                  if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                      for a in node.args.posonlyargs + node.args.args + node.args.kwonlyargs:
+                          defs.add(a.arg)
+                      if node.args.vararg: defs.add(node.args.vararg.arg)
+                      if node.args.kwarg: defs.add(node.args.kwarg.arg)
                   if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                       defs.add(node.name)
-                      if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                          for a in node.args.posonlyargs + node.args.args + node.args.kwonlyargs:
-                              defs.add(a.arg)
-                          if node.args.vararg: defs.add(node.args.vararg.arg)
-                          if node.args.kwarg: defs.add(node.args.kwarg.arg)
                       if toks.count(node.name) <= 1:
                           problems.append(f'{p}:{node.lineno} 无人引用 {node.name}')
                   elif isinstance(node, (ast.Import, ast.ImportFrom)):
