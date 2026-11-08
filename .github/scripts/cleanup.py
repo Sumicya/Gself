@@ -44,6 +44,12 @@ print(f"cleanup.py 启动参数：SCOPE={SCOPE} SEGMENTS={SEGMENTS} CLEANUP_APPL
 print("删除失败分级口径：DELETE 403 → ::warning:: 降级不红；403 以外 → ::error:: 累积，脚本末尾红 job")
 
 
+def gh(*args):
+    p = subprocess.run(["gh", *args], capture_output=True, text=True)
+    if p.returncode != 0:
+        raise SystemExit("gh " + " ".join(args) + " 失败：" + p.stderr.strip())
+    return p.stdout
+
 
 def list_all(url, key):
     out = gh("api", "--paginate", url, "--jq", key + "[]")
