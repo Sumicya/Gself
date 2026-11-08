@@ -48,11 +48,11 @@
 | 五段版本 | 全局发行版本格式 `yy.m.d.当日序号.总序号`，例：`26.10.5.4.24` 只是格式示例 |
 | 总序号 | 第五段，等于 `versionCode`；取 `build.yml` 本次运行的 `run_number` 原值，不从提交数、时间戳或本地计数推算（取法写在 `build.yml`，不写死现值） |
 | 当日序号 | 第四段，当日（`UTC+8`）`build.yml` 运行的位次，从 1 起；按差值锚定：当日现存运行的最小 `run_number` 与现存合规产物反推值取小作为首条号，失败运行同样占号 |
-| 出包运行 | 占用当日序号的运行：`build.yml` 的 `push`（不限分支）与 `workflow_dispatch`；PR 校验运行永不计入 |
-| 非发行版本 | 取不到发行版本时的名字，形如 `dev-1`（不传 `-PversionCode` 时 `versionCode` 为 1）；PR 校验与本地构建都用它 |
+| 出包运行 | 占用当日序号的运行：`build.yml` 的 `push`（不限分支）与 `workflow_dispatch` |
+| 非发行版本 | 取不到发行版本时的名字，形如 `dev-1`（不传 `-PversionCode` 时 `versionCode` 为 1）；本地构建用它 |
 | 单一版本来源 | 版本只在 CI 的「算版本 yy.m.d.当日序号.总序号」一步算一次，产物名、artifact 名与 `versionCode` 都从它生成 |
 | artifact（Actions 产物） | GitHub Actions 的上传产物；本仓库只发 `Gself-<版本>.apk`，不发 Release |
 | Release / tag | GitHub 的发行与标签；本仓库不发 Release、不打 tag |
-| 滚动清理 | 每次 `build.yml` / `pr-check.yml` 跑完都执行（构建红了也跑）：artifact 全仓按 `created_at` 保留最新 5 个，每工作流运行保留最新 5 条；判据（命名、来源、重复当日序号、号源口径、数量）全写在 `.github/scripts/cleanup.py` |
+| 滚动清理 | 每次 `build.yml` 跑完都执行（构建红了也跑）：artifact 全仓按 `created_at` 保留最新 5 个，每工作流运行保留最新 5 条；判据（命名、来源、重复当日序号、号源口径、数量）全写在 `.github/scripts/cleanup.py` |
 | `retention-days` | artifact 的时间兜底过期天数（本仓库 5 天），不代替按数量的滚动清理 |
 | 项目名前缀筛选 | 清理只按 artifact 名前缀（本项目名 + `-`，大小写不敏感）圈定对象，不按「最新 N 个」直接删无关对象 |

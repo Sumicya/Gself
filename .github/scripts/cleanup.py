@@ -1,24 +1,22 @@
 #!/usr/bin/env python3
-"""清理本仓超量 artifact、运行记录、Release 与 tag。逻辑只写这一份，两个工作流、各清理作业都调用同一文件。
+"""清理本仓超量 artifact、运行记录、Release 与 tag。
 
-按 `CLEANUP_SCOPE` 分两档，写权限分开授，不同授（规范 R6）：
+按 `CLEANUP_SCOPE` 分两档，写权限分开授（规范 §12/§13）：
 
 - `actions`（默认）：artifact 与运行记录。权限 `actions: write` + `contents: read`。
-  PR 校验工作流 `pr-check.yml` 与出包工作流 `build.yml` 各一个作业，`CLEANUP_APPLY='true'` 真删。
-  会话推送即触发；真删的调用点必须会话可达，否则清理一次也不会发生（规范 b0594d3）。
+  出包工作流 `build.yml` 在构建结束后执行（`if: always()`），`CLEANUP_APPLY='true'` 真删。
 - `releases`：Release 只留最近 1 个，无保留 Release 对应的本项目前缀 tag 一并删。权限只授 `contents: write`，
   只在出包工作流 `build.yml` 里、默认分支上跑；不取号，不需要完整历史。
 
-三个清理作业共用同一个 `concurrency` group `gself-cleanup` 串行，避免并发删同一对象。
+清理作业与 `build` 共用同一个 `concurrency` group `gself-build` 串行，避免并发删同一对象。
 
-清理失败按原因分口径（规范 a8787a8）：403 权限类打 `::warning::` 写明对象、端点与返回码后继续，
+清理失败按原因分口径（规范 §11）：403 权限类打 `::warning::` 写明对象、端点与返回码后继续，
 不让 job 红；403 以外的失败当轮即红 job 并逐条点名附返回码。
 只读预演（`CLEANUP_APPLY='false'`）是备用形态，禁止拿「预演已证」当清理已做。
 
 actions 档判据五条：命名、来源、重复当日序号、号源口径、数量。
 artifact 全仓按 created_at 保留最新 5 个；运行记录每工作流按开始时间保留最新 5 条。
 先列完整计划，再删产物，超限未完成运行先取消。运行上限优先，超限运行承载的候选保留产物也删除。
-
 """
 import json
 import os
@@ -45,20 +43,6 @@ print(f"cleanup.py 启动参数：SCOPE={SCOPE} SEGMENTS={SEGMENTS} CLEANUP_APPL
       f"PREFIX={PREFIX} KEEP={KEEP} RUN_ID={SELF} TODAY={TODAY} REPO={REPO}")
 print("删除失败分级口径：DELETE 403 → ::warning:: 降级不红；403 以外 → ::error:: 累积，脚本末尾红 job")
 
-
-def git_out(*args):
-    """跑一条 git 命令，拿不到就返回 None（不静默）。"""
-    p = subprocess.run(["git", *args], capture_output=True, text=True)
-    return p.stdout.strip() if p.returncode == 0 else None
-
-
-# 取号核对：号源只有 github.run_number 一处；这里把命令输出打出来，让日志能独立核对。
-# 只 actions 档需要：releases 档不取号。
-def gh(*args):
-    p = subprocess.run(["gh", *args], capture_output=True, text=True)
-    if p.returncode != 0:
-        raise SystemExit("gh " + " ".join(args) + " 失败：" + p.stderr.strip())
-    return p.stdout
 
 
 def list_all(url, key):

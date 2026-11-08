@@ -1,6 +1,6 @@
 # 在 Termux 里构建与签名
 
-本仓库的 CI **不发 Release**：`Build` 工作流只编译 debug 包，并上传一个 artifact `Gself-<版本>.apk`
+本仓库的 CI **不发 Release**：`build` 工作流只编译 debug 包，并上传一个 artifact `Gself-<版本>.apk`
 （debug 签名，可直接安装；取法见会话汇报里的下载命令块，按前缀 `Gself-` 过滤 artifact）。
 这份文档讲两件可选的事：不依赖 CI 的本地构建，以及用自己的密钥签名（需要长期覆盖安装、或改过包内容时用）。
 
@@ -36,8 +36,8 @@ cd Gself
 
 本地构建**不传版本参数**，得到的是非发行版本：`versionName` 是 `dev-1`、`versionCode` 是 1，
 产物在 `app/build/outputs/apk/debug/app-debug.apk`。发行版本（五段 `yy.m.d.当日序号.总序号`）只在
-main 的 CI 出包链路里产生（取号逻辑在 `.github/workflows/build.yml` 的
-Compute 步）。想让本地包覆盖安装时不降级，把 `versionCode`
+CI 的 `build` 工作流里产生（取号逻辑在 `.github/workflows/build.yml` 的
+「算版本 yy.m.d.当日序号.总序号」一步）。想让本地包覆盖安装时不降级，把 `versionCode`
 设成不比已装包小（已装包的总序号 = 产物名第五段，或看 CI 运行摘要里的 `versionCode`）：
 
 ```bash

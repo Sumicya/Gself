@@ -113,6 +113,70 @@ jobs:
           fi
           rm -f runs.json arts.json ver.err
 
+      - name: 扫描残留死码与零用导入
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import ast, glob, re, sys
+
+          problems = []
+          # 1) Python 源码（.github/scripts/*.py 与 tools/*.py）：AST 扫未引用函数/类/导入与只写不读变量
+          for p in sorted(glob.glob('.github/scripts/*.py') + glob.glob('tools/*.py')):
+              src = open(p, encoding='utf-8').read()
+              toks = re.findall(r'\b[A-Za-z_][A-Za-z0-9_]*\b', re.sub(r'#.*', '', src))
+              tree = ast.parse(src, filename=p)
+              for node in ast.walk(tree):
+                  if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                      if toks.count(node.name) <= 1:
+                          problems.append(f'{p}:{node.lineno} 无人引用 {node.name}')
+                  elif isinstance(node, (ast.Import, ast.ImportFrom)):
+                      for a in node.names:
+                          nm = a.asname or a.name.split('.')[0]
+                          if toks.count(nm) <= 1:
+                              problems.append(f'{p}:{node.lineno} import 无人使用 {nm}')
+                  elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store) and node.id != '_':
+                      if toks.count(node.id) <= 1:
+                          problems.append(f'{p}:{node.lineno} 变量只写不读 {node.id}')
+
+          # 2) Kotlin 源码（app/src/main 与 app/src/test 分池计数，含缩进成员）
+          def strip_comments(s):
+              return re.sub(r'//.*', '', re.sub(r'/\*[\s\S]*?\*/', '', s))
+
+          main_files = sorted(glob.glob('app/src/main/kotlin/**/*.kt', recursive=True))
+          test_files = sorted(glob.glob('app/src/test/kotlin/**/*.kt', recursive=True))
+          main_blobs = {p: strip_comments(open(p, encoding='utf-8').read()) for p in main_files}
+          test_blobs = {p: strip_comments(open(p, encoding='utf-8').read()) for p in test_files}
+          main_toks = re.findall(r'\b[A-Za-z_][A-Za-z0-9_]*\b', '\n'.join(main_blobs.values()))
+          all_toks = main_toks + re.findall(r'\b[A-Za-z_][A-Za-z0-9_]*\b', '\n'.join(test_blobs.values()))
+          decl_re = re.compile(
+              r'^\s*(?:@\w+(?:\([^)]*\))?\s*)*(?:(?:private|internal|public|protected|override|inline|const|lateinit|tailrec|operator|infix)\s+)*'
+              r'(?:fun|val|var|class|object|interface|typealias)\s+(?:<[^>]+>\s+)?(?:[A-Za-z0-9_<>?.,\s]+\.)?([A-Za-z_][A-Za-z0-9_]*)\b',
+              re.M,
+          )
+          imp_re = re.compile(r'^\s*import\s+[\w.]+\.(\w+)\s*$', re.M)
+          for p in main_files + test_files:
+              s = main_blobs.get(p) or test_blobs[p]
+              file_toks = re.findall(r'\b[A-Za-z_][A-Za-z0-9_]*\b', s)
+              for m in imp_re.finditer(s):
+                  nm = m.group(1)
+                  if file_toks.count(nm) <= 1:
+                      problems.append(f'{p}:{s[:m.start()].count(chr(10))+1} import 无人使用 {nm}')
+              for m in decl_re.finditer(s):
+                  dline, nm = m.group(0).strip(), m.group(1)
+                  if 'override' in dline or '@Test' in dline or nm == 'XposedMain':
+                      continue
+                  ln = s[:m.start()].count('\n') + 1
+                  if p in main_blobs and main_toks.count(nm) <= 1:
+                      problems.append(f'{p}:{ln} 主码声明无人调用 {nm}（main={main_toks.count(nm)} total={all_toks.count(nm)}）')
+                  elif p in test_blobs and all_toks.count(nm) <= 1 and not nm.endswith('Test'):
+                      problems.append(f'{p}:{ln} 测试声明无人引用 {nm}')
+
+          for item in problems:
+              print('::error::' + item)
+          print(f'死码扫描：{len(main_files)+len(test_files)} 个 kt + 2 个 py，残留 {len(problems)} 处')
+          sys.exit(1 if problems else 0)
+          PY
+
       - name: 测试与构建
         shell: bash
         run: |
@@ -158,9 +222,8 @@ jobs:
         shell: bash
         run: |
           python3 - <<'PY'
-          import glob, os, sys, traceback, zipfile
+          import glob, os, sys, zipfile
 
-          # 禁按排序位置取值（规范 25f521f「六·参数、判据与取值」）：
           # 先断言恰好一个，再解包；多个就报错，不静默取第一个。
           apks = sorted(glob.glob('app/build/outputs/apk/debug/*.apk'))
           if len(apks) != 1:
@@ -201,7 +264,6 @@ jobs:
         run: |
           python3 - <<'PY'
           import glob, sys, zipfile
-          # 禁按排序位置取值（规范 25f521f「六·参数、判据与取值」）：
           # 先断言恰好一个，再解包；多个就报错，不静默取第一个。
           apks = sorted(glob.glob('app/build/outputs/apk/debug/*.apk'))
           if len(apks) != 1:
@@ -234,7 +296,6 @@ jobs:
               # AXML 的字符串池可能是 UTF-8 也可能是 UTF-16LE，两种都试
               return s.encode('utf-8') in blob or s.encode('utf-16-le') in blob
 
-          # 禁按排序位置取值（规范 25f521f「六·参数、判据与取值」）：
           # 先断言恰好一个，再解包；多个就报错，不静默取第一个。
           apks = sorted(glob.glob('app/build/outputs/apk/debug/*.apk'))
           if len(apks) != 1:

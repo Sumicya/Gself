@@ -251,7 +251,7 @@ su -c "logcat -d | grep -iE '<包名>|c2dm|Background execution|not delivering|s
 | --- | --- |
 | 编译 + 单测 | **已验证**（CI 持续实跑：`./gradlew test assembleDebug` 全绿，R8 入口类 dex 校验通过）。包含 `PushTest` 与纯策略单测；本轮 ColorOS 新挂点未真机验证。沙箱没有 JDK / Android SDK，编译只能由 CI 完成 |
 | 五段版本（`run_number` 口径）与产物名 | **已验证**（CI 实跑）：Build 取本次 `run_number` 为第五段，持续产出 `Gself-yy.m.d.当日序号.总序号` 并上传同名 artifact |
-| 清理（五判据、每工作流 run 最新 5 条、全仓 artifact 最新 5 个） | **已验证**（CI 实跑）：build.yml 与 pr-check.yml 的 cleanup 步持续执行并输出逐项结论 |
+| 清理（五判据、每工作流 run 最新 5 条、全仓 artifact 最新 5 个） | **已验证**（CI 实跑）：`build.yml` 的清理作业持续执行并输出逐项结论 |
 | system_server 三组 Hook（推送 / 通知 / ColorOS） | **已验证**（2026-10-05 22:13，Android 16 / API 36，ColorOS）：载入、当时的 `hook target: BroadcastController#broadcastIntentLocked(25)`（该挂点 2026-10-30 已移除，见第 2 节）、`OplusAppStartup 自启动闸门已关`、`OplusProxyBroadcast 代理已全关`、`Hans GMS 限制已置空`、`OplusProxyWakeLock instance captured`、`keep notification`、`unfreeze 可用（4 参签名）`、`wake: com.zhiliaoapp.musically` 全部出现（日志见第 9 节） |
 | 推送唤醒标志层（AMS 入口） | **已验证**（2026-10-30 12:39，ColorOS / Android 16，nagramx）：`am force-stop` 后 `wake:` 命中，进程由 c2dm 广播以新 pid 拉起，GMS 侧 `CANCELLED` 计数 0，通知入队 |
 | ColorOS 首次解锁后的 Google 联网保护 | **代码新增，待真机验证**：按 `IgnoreGmsUserSet` 元数据及 Google appId 窄范围处理拒绝规则，并清除 Oplus 限制广播；新增纯 JVM 策略测试。新挂点是否匹配用户固件、FCM 是否恢复仍须在设备验证。怎么验：第 3 节末「首次解锁后 GMS 一直未连接」的日志窗口（重启后看 FCM Diagnostics 的 `Close err` 与 `dumpsys batterystats`）；约 10 分钟 |

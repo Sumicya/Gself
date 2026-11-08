@@ -39,9 +39,7 @@ class HotPathBenchmarkTest {
         val nsMedian: Double,
         val nsMax: Double,
         val bytesPerOp: Double,
-    ) {
-        val nsPerOp: Double get() = nsMedian
-    }
+    )
 
     private fun measure(name: String, body: () -> Boolean): Row {
         val warmup = 200_000

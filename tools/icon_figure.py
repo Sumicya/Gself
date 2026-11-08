@@ -13,13 +13,11 @@
   · 降采样：面积平均（目标像素覆盖的源像素块求均值），不做 gamma 校正，
     与系统把 108dp 矢量栅格化到 48/96/192px 的口径一致到一阶。
 """
-import glob
 import hashlib
 import math
 import os
 import re
 import struct
-import sys
 import zlib
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -235,9 +233,6 @@ FONT = {
 }
 
 
-def text_w(s, scale):
-    return len(s) * 4 * scale - scale
-
 
 def draw_text(buf, w, h, x0, y0, s, scale, color):
     for k, ch in enumerate(s.upper()):
@@ -322,7 +317,7 @@ def build():
     for i in range(GRID * GRID):
         if white[i]:
             rgb[3 * i:3 * i + 3] = b'\xff\xff\xff'
-    return rgb, white, monos, shadow_spans, (sx, sy, ex, ey), a0
+    return rgb, white, monos
 
 
 def masked(rgb, monos, fn, mode='color'):
@@ -343,7 +338,7 @@ def masked(rgb, monos, fn, mode='color'):
 
 
 def main():
-    rgb, white, monos, shadow_spans, grad, a0 = build()
+    rgb, white, monos = build()
 
     # 指标（与图同源，跑这一条命令就能复算）
     maxr, at = 0.0, None
