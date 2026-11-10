@@ -7,7 +7,7 @@
 - **Android 代码去重（§9）**：删 `Push.needsStoppedPatch(Intent?)`（全仓零调用）与 `Push.isTargetedPush(Intent?)` 的 `Intent` 版，改成只吃 `String?` 的纯函数，挂载点自己拆参；`Push` 里写死的 `0x10`/`0x20` 用 `PushTest.literalFlagsMatchIntentConstants` 与 `Intent` 常量对齐。删 `HotPathBenchmarkTest`（4,358 B，只产出宿主 JVM 的 ns/op 参考数，三轮都没能给出可当结论的比值；`HotPathTest` 的零分配断言保留，它是唯一能红的那条）。`app/build.gradle.kts` 4,215 → 2,880 B，只留决定与数据。
 - **工作流（§12/§14）**：`name: build` 与文件名一致、`env` 两键、单并发组 `gself-build`（build 与清理同组串行）、artifacts 三样齐全；`paths-ignore` 去掉已不存在的 `docs/**`。步骤从 13 个压到 8 个，全中文步名。
 - **README 收窄（§16）**：只留是什么／从哪下／怎么装删／项目限制／许可证，4,909 → 2,333 B；删掉「名字只有一套」之外的过程叙述与三处指向已删文档的链接。
-- **规模**：仓内跟踪字节 455,803 → 314,688（净 −141,115 B，−30.9%）；`tools/` 四个脚本合计 30,272 B 替代原 `build.yml` 内联步骤与 `icon_figure.py`。
+- **规模**：`git ls-tree -r --long` 实测，跟踪字节 455,803 → 318,564（净 −137,239 B，−30.1%），文件 46 → 41；`tools/` 四个脚本合计 28,097 B，替代原 `build.yml` 内联步骤与 `icon_figure.py`。
 - **未验证**：本沙箱无 JDK 与 Android SDK，`./gradlew test assembleDebug` 与 `tools/apkcheck.py` 只在 CI 上跑；`tools/version.py` 的取号逻辑是从原内联脚本原样搬出并只做静态检查（`py_compile` + `grep` 对齐），本轮运行的第 103 号即为它的首次实跑。
 
 ## 修复通行密钥与 Gboard 因 libdexkit.so 被压缩而 UnsatisfiedLinkError，补 CallingAppInfo 4 参构造器与应用进程 LSPosed 日志桥（2026-11-07）
