@@ -1,22 +1,15 @@
 #!/usr/bin/env python3
-"""清理本仓超量 artifact、运行记录、Release 与 tag。
+"""清理本仓超量 artifact 与运行记录（规范「12 工作流格式」「13 产物」）。
 
-按 `CLEANUP_SCOPE` 分两档，写权限分开授（规范 §12/§13）：
-
-- `actions`（默认）：artifact 与运行记录。权限 `actions: write` + `contents: read`。
-  出包工作流 `build.yml` 在构建结束后执行（`if: always()`），`CLEANUP_APPLY='true'` 真删。
-- `releases`：Release 只留最近 1 个，无保留 Release 对应的本项目前缀 tag 一并删。权限只授 `contents: write`，
-  只在出包工作流 `build.yml` 里、默认分支上跑；不取号，不需要完整历史。
-
-清理作业与 `build` 共用同一个 `concurrency` group `gself-build` 串行，避免并发删同一对象。
-
-清理失败按原因分口径（规范 §11）：403 权限类打 `::warning::` 写明对象、端点与返回码后继续，
-不让 job 红；403 以外的失败当轮即红 job 并逐条点名附返回码。
-只读预演（`CLEANUP_APPLY='false'`）是备用形态，禁止拿「预演已证」当清理已做。
-
-actions 档判据五条：命名、来源、重复当日序号、号源口径、数量。
+判据五条：命名、来源、重复当日号、号源口径、数量。
 artifact 全仓按 created_at 保留最新 5 个；运行记录每工作流按开始时间保留最新 5 条。
-先列完整计划，再删产物，超限未完成运行先取消。运行上限优先，超限运行承载的候选保留产物也删除。
+先列完整计划，再删产物；超限的未完成运行先取消，超限运行承载的候选产物也删。
+运行上限优先：不为承载关系扩容。
+
+`CLEANUP_APPLY='true'` 才真删；`false` 只列计划（禁止拿预演当清理已做）。
+
+失败分级（规范「11 对外动作」）：403 打 `::warning::` 写明对象、端点、返回码后继续，不红 job；
+403 以外的失败逐条点名并红 job。本仓不发版、不打 tag，所以没有 Release／tag 档。
 """
 import json
 import os
@@ -26,20 +19,16 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
 REPO = os.environ["REPO"]
-SCOPE = os.environ.get("CLEANUP_SCOPE", "actions").strip()
-if SCOPE not in ("actions", "releases"):
-    raise SystemExit(f"CLEANUP_SCOPE 只能是 actions 或 releases，收到 {SCOPE!r}")
-SELF = int(os.environ["RUN_ID"]) if SCOPE == "actions" else 0   # releases 档不清运行记录，不需要
+SELF = int(os.environ["RUN_ID"])
 SEGMENTS = int(os.environ["SEGMENTS"])
 APPLY = os.environ.get("CLEANUP_APPLY", "false").strip().lower() == "true"
 PREFIX = REPO.split("/")[-1] + "-"  # 项目名前缀由 REPO 推导，不写死
 KEEP = 5                       # 全仓 artifact 5 个、每工作流 run 5 条
-KEEP_RELEASES = 1              # Release 1 个，tag 与 Release 同口径
-NEED = "contents: write" if SCOPE == "releases" else "actions: write"
+NEED = "actions: write"
 CST = timezone(timedelta(hours=8))
 TODAY = datetime.now(CST).strftime("%Y-%m-%d")
 VERB = "删" if APPLY else "将删"
-print(f"cleanup.py 启动参数：SCOPE={SCOPE} SEGMENTS={SEGMENTS} CLEANUP_APPLY={'true' if APPLY else 'false'} "
+print(f"cleanup.py 启动参数：SEGMENTS={SEGMENTS} CLEANUP_APPLY={'true' if APPLY else 'false'} "
       f"PREFIX={PREFIX} KEEP={KEEP} RUN_ID={SELF} TODAY={TODAY} REPO={REPO}")
 print("删除失败分级口径：DELETE 403 → ::warning:: 降级不红；403 以外 → ::error:: 累积，脚本末尾红 job")
 
@@ -94,7 +83,7 @@ def finish():
     if FAILED:
         for endpoint, label, code, err in FAILED:
             print(f"  ::error::{label} 删除失败（HTTP {code}，非权限类）：{endpoint} — {err}")
-        raise SystemExit(f"清理失败 {len(FAILED)} 个对象（非 403，按规范 a8787a8 当轮红 job）")
+        raise SystemExit(f"清理失败 {len(FAILED)} 个对象（非 403，当轮红 job）")
     if DENIED:
         print(f"清理未完成：{len(DENIED)} 个对象存在 HTTP 403 权限缺口")
     elif APPLY:
@@ -102,39 +91,6 @@ def finish():
     else:
         print("只读扫描完成：未执行删除")
 
-
-def clean_releases():
-    """Release 只留最近 1 个；tag 与 Release 同口径：无保留 Release 对应的本项目前缀 tag 一并删。"""
-    rels = sorted((r for r in list_all(f"repos/{REPO}/releases?per_page=100", ".")
-                   if r["tag_name"].startswith(PREFIX)),
-                  key=lambda r: (r["created_at"], r["id"]), reverse=True)
-    keep, drop = rels[:KEEP_RELEASES], rels[KEEP_RELEASES:]
-    kept_tags = {r["tag_name"] for r in keep}
-    tags = [t["ref"][len("refs/tags/"):]
-            for t in list_all(f"repos/{REPO}/git/matching-refs/tags/{PREFIX}", ".")]
-    drop_tags = sorted(t for t in tags if t not in kept_tags)
-    print("Release 保留清单：", [r["tag_name"] for r in keep] or "（无）")
-    print("Release 删除清单：", [r["tag_name"] for r in drop] or "（无）")
-    print("tag 删除清单：", drop_tags or "（无）")
-    stuck = set()                  # Release 没删掉的 tag 不删，避免留下指向缺失 tag 的 Release
-    for r in drop:
-        print(f"  {VERB} Release {r['tag_name']}（数量：超出上限 {KEEP_RELEASES}）")
-        if APPLY and not mutate("DELETE", f"repos/{REPO}/releases/{r['id']}", f"Release {r['tag_name']}"):
-            stuck.add(r["tag_name"])
-    for tag in drop_tags:
-        if tag in stuck:
-            print(f"  tag {tag} 未删：对应 Release 删除失败")
-            continue
-        print(f"  {VERB} tag {tag}（无保留 Release 对应）")
-        if APPLY:
-            mutate("DELETE", f"repos/{REPO}/git/refs/tags/{tag}", f"tag {tag}")
-    print(f"本项目 Release 共 {len(rels)} 个，保留 {len(keep)} 个；tag 共 {len(tags)} 个")
-
-
-if SCOPE == "releases":
-    clean_releases()
-    finish()
-    raise SystemExit(0)
 
 runs = list_all(f"repos/{REPO}/actions/runs?per_page=100", ".workflow_runs")
 run_by_id = {r["id"]: r for r in runs}
@@ -164,7 +120,7 @@ for a in sorted(arts, key=lambda x: (x["created_at"], x["id"]), reverse=True):
     else:
         survivors.append((a, ws, seg))
 
-# 判据三：同日同当日序号重复 —— 按 artifact created_at 删旧留新（规范 c5ac12d:73）。
+# 判据三：同日同当日序号重复 —— 按 artifact created_at 删旧留新。
 # 不按总序号大小判：改文件名、换号源后总序号会回头，按大小判会误删新产物。
 # 删前把两个 artifact 的名与 id、两次运行的 rn 打进日志（删除清单由日志保存）。
 if SEGMENTS >= 5:
