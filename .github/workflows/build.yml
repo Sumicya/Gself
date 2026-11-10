@@ -1,12 +1,11 @@
-# Gself 出包：push（不限分支）与手动触发出 debug APK；PR 校验在 pr-check.yml。
-# 号源只取 github.run_number 原值，当日序号差值锚定；清理在独立 job，构建红了也照跑。
-name: Build
+# Gself 出包：push（改动产物面）与手动触发都出 debug APK，产物名 Gself-<五段版本>，留 5 天。
+# 号源是 github.run_number 原值；清理在独立 job，构建红了也照跑。
+name: build
 
 on:
   push:
     paths-ignore:
       - '**.md'
-      - 'docs/**'
       - 'LICENSE'
       - '.gitignore'
   workflow_dispatch:
@@ -26,9 +25,6 @@ jobs:
     concurrency:
       group: gself-build
       cancel-in-progress: false
-    permissions:
-      contents: read
-      actions: read
     steps:
       - uses: actions/checkout@v7
 
@@ -42,228 +38,29 @@ jobs:
       - name: 授予 gradlew 执行权限
         run: chmod +x gradlew
 
-      - name: 算版本 yy.m.d.当日序号.总序号
+      - name: 扫残留死码与零用导入
+        run: python3 tools/deadcode.py
+
+      - name: 算版本 yy.m.d.当日号.总序号
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           RUN_ID: ${{ github.run_id }}
           RUN_NUMBER: ${{ github.run_number }}
-        run: |
-          set -euo pipefail
-          # 失败原因写成 ::error:: 注解：job 日志要另开页面，注解在 API 里一行就能取到。
-          # 不用 trap ... ERR：2026-10-30 运行 74 实测它在这个步骤外壳里不触发（只报通用退出码），
-          # 所以每个可能失败的调用都用 if ! 显式接管，注解由分支自己打。
-          # 取号只读两个接口：Actions 接口抖动时重试，抖动挡在构建之外；
-          # 真失败就把 gh 的原始输出写成 ::error:: 注解——job 日志要另开页面，注解一行就能取到。
-          fetch() {
-            for i in 1 2 3 4 5; do
-              if out=$(gh api "$1" 2>&1) && printf '%s' "$out" > "$2"; then return 0; fi
-              echo "取号接口 $1 第 $i 次失败：$(printf '%s' "$out" | tr '\n' ' ' | head -c 200)" >&2
-              sleep 3
-            done
-            echo "::error::取号失败：$1 连续 5 次不可用；最后一次输出：$(printf '%s' "$out" | tr '\n' ' ' | head -c 300)"
-            return 1
-          }
-          fetch "repos/$REPO/actions/workflows/build.yml/runs?per_page=100" runs.json
-          fetch "repos/$REPO/actions/artifacts?per_page=100" arts.json
-
-          if ! python3 - 2>ver.err <<'PY'
-          import json, os, re, sys
-          from datetime import datetime, timedelta, timezone
-
-          TZ = timezone(timedelta(hours=8))
-          repo = os.environ["REPO"]
-          run_number = int(os.environ["RUN_NUMBER"])
-          runs = json.load(open("runs.json"))["workflow_runs"]
-          arts = json.load(open("arts.json"))["artifacts"]
-
-          def local_day(stamp: str) -> str:
-              # 整数拼接，不用 %m/%d（会补零）也不用 %-m/%-d（非 glibc 平台不生效）。
-              # Python 3.11 起 fromisoformat 直接认接口回的零时区后缀，不必手写替换。
-              d = datetime.fromisoformat(stamp).astimezone(TZ)
-              return f"{d.year % 100}.{d.month}.{d.day}"
-
-          today = local_day(datetime.now(TZ).isoformat())
-          todays = [r["run_number"] for r in runs if local_day(r["run_started_at"]) == today]
-          first = min(todays) if todays else run_number
-
-          # 当日现存合规产物 Gself-yy.m.d.d0.r0 反推当日首条运行号 r0 - d0 + 1
-          pat = re.compile(r"^" + re.escape(repo.split("/")[-1]) + r"-(\d{2}\.\d{1,2}\.\d{1,2})\.(\d+)\.(\d+)$")
-          for a in arts:
-              m = pat.match(a["name"])
-              if not m or a.get("expired") or m.group(1) != today:
-                  continue
-              first = min(first, int(m.group(3)) - int(m.group(2)) + 1)
-
-          daily = run_number - first + 1
-          if daily < 1:
-              sys.exit(f"当日序号小于 1：run_number={run_number} R_first={first}")
-          version = f"{today}.{daily}.{run_number}"
-          # 规范给定的形状断言：两位年、不补零的月与日、两个不带前导零的正整数
-          shape = r"\d{2}\.(1[0-2]|[1-9])\.(3[01]|[12][0-9]|[1-9])\.([1-9]\d*)\.([1-9]\d*)"
-          if not re.fullmatch(shape, version):
-              sys.exit(f"版本不符合 yy.m.d.当日序号.总序号（不补零）：{version}")
-          print(f"取号：HEAD SHA={os.environ.get('GITHUB_SHA', '')} run_id={os.environ['RUN_ID']} "
-                f"run_number={run_number} R_first={first} 当日序号={daily} 版本={version}")
-          with open(os.environ["GITHUB_ENV"], "a") as env:
-              env.write(f"VERSION_NAME={version}\nVERSION_CODE={run_number}\n")
-          PY
-          then
-            echo "::error::取号脚本失败：$(tr '\n' ' ' < ver.err | head -c 300)"
-            exit 1
-          fi
-          rm -f runs.json arts.json ver.err
+        run: python3 tools/version.py
 
       - name: 测试与构建
         shell: bash
         run: |
           set -o pipefail
-          # 构建失败时把 build.log 末尾写进注解：编译错误、单测失败、R8 报错都在里面，
-          # 注解可见即可定位，不必依赖下载 job 日志。
-          # 同上：不靠 trap ERR（实测不触发），显式 if ! 接管并把 build.log 末尾写进注解。
           if ! ./gradlew -PversionName="${{ env.VERSION_NAME }}" -PversionCode="${{ env.VERSION_CODE }}" test assembleDebug 2>&1 | tee build.log; then
             echo "::error::构建失败；build.log 末尾：$(tail -8 build.log 2>/dev/null | tr '\n' ' ' | head -c 800)"
             exit 1
           fi
+          mv app/build/outputs/apk/debug/app-debug.apk "app/build/outputs/apk/debug/Gself-${{ env.VERSION_NAME }}.apk"
 
-      - name: 报告热路径基线
-        shell: bash
-        run: |
-          # 单测把基线写进 build/bench-hooks.txt（工作目录可能是 app/ 也可能是根），
-          # 这里找出来写进注解：注解永久可查，比翻 job 日志稳。
-          f=$(find . -name 'bench-hooks.txt' | head -1)
-          if [ -z "$f" ]; then
-            echo "::warning::没找到 bench-hooks.txt，热路径基线未产出"
-            exit 0
-          fi
-          # 全文进 step summary（run 页面永久可点、不截断），注解只是指针。
-          # 上一版用 head -c 900 截断，把最后的判定句「不当结论」四个字切掉了，
-          # 于是能点开的那份证据里结论是残的——证据不完整等于没证据。
-          {
-            echo "## 热路径基线（宿主 JVM，非真机）"
-            echo '```'
-            cat "$f"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-          # 注解里必须自带判定句本身：上一版只写摘要，判定句仍在摘要之后被切掉。
-          verdict=$(grep -E '比值区间' "$f" | head -1)
-          echo "::notice::热路径基线（全文见 step summary）：$verdict；$(grep -E '^isPush' "$f" | tr '\n' ' ')"
-
-      - name: 改产物名
-        shell: bash
-        run: |
-          cd ${{ github.workspace }}/app/build/outputs/apk
-          mv debug/app-debug.apk debug/Gself-${{ env.VERSION_NAME }}.apk
-
-      - name: 报告产物体积构成
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          import glob, os, sys, traceback, zipfile
-
-          # 禁按排序位置取值（规范 25f521f「六·参数、判据与取值」）：
-          # 先断言恰好一个，再解包；多个就报错，不静默取第一个。
-          apks = sorted(glob.glob('app/build/outputs/apk/debug/*.apk'))
-          if len(apks) != 1:
-              sys.exit(f'期望恰好 1 个 APK，实际 {len(apks)} 个：{apks}')
-          apk = apks[0]
-          apk_size = os.path.getsize(apk)  # 装机的那份文件有多大，这才是体积口径
-          with zipfile.ZipFile(apk) as z:
-              infos = z.infolist()
-              entries = {i.filename: len(z.read(i.filename)) for i in infos}
-          dex = sum(v for k, v in entries.items()
-                    if k.startswith('classes') and k.endswith('.dex'))
-          total_c = sum(i.compress_size for i in infos)
-          total_u = sum(i.file_size for i in infos)
-          abis = sorted({n.split('/')[1] for n in entries if n.startswith('lib/')})
-          top = sorted(infos, key=lambda x: x.compress_size, reverse=True)[:8]
-          print(f'{apk}: {apk_size} 字节（条目压缩后合计 {total_c} / 解压 {total_u}），{len(infos)} 个条目')
-          print(f'dex 合计 {dex} 字节；lib/ 下的 ABI：{abis}')
-          for i in top:
-              print(f'{i.compress_size:>10}{i.file_size:>12}  {i.filename}')
-          # 一行注解把结论带出去：job 日志要另开页面，注解在 API 里就能取
-          print('::notice::APK %d 字节（dex %d；ABI %s；前三大 %s）'
-                % (apk_size, dex, abis,
-                   ', '.join('%s=%d' % (i.filename, i.compress_size) for i in top[:3])))
-          with open('apk-size.txt', 'w') as f:
-              f.write(str(apk_size))
-          # 分项落盘：让「哪个部分长大了」也变成可校验的指标，而不只是看一个总数
-          with open('apk-parts.txt', 'w') as f:
-              f.write('dex %d\n' % dex)
-              f.write('native %d\n'
-                      % sum(i.compress_size for i in infos if i.filename.endswith('.so')))
-              f.write('abi %s\n' % (','.join(abis) or 'none'))
-          PY
-
-      - name: 核对 R8 保留 Xposed 入口类
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          import glob, sys, zipfile
-          # 禁按排序位置取值（规范 25f521f「六·参数、判据与取值」）：
-          # 先断言恰好一个，再解包；多个就报错，不静默取第一个。
-          apks = sorted(glob.glob('app/build/outputs/apk/debug/*.apk'))
-          if len(apks) != 1:
-              sys.exit(f'期望恰好 1 个 APK，实际 {len(apks)} 个：{apks}')
-          apk = apks[0]
-          with zipfile.ZipFile(apk) as z:
-              dex = b''.join(z.read(n) for n in z.namelist()
-                             if n.startswith('classes') and n.endswith('.dex'))
-          ok = b'Lsumicya/gself/XposedMain;' in dex
-          print(f'{apk}: 入口类 sumicya.gself.XposedMain '
-                + ('已保留' if ok else '被 R8 改名或裁剪'))
-          print(f'dex 合计 {len(dex)} 字节')
-          sys.exit(0 if ok else 1)
-          PY
-
-      - name: 核验编好的图标层（编译产物为准，不看源码）
-        shell: bash
-        run: |
-          # 一手材料是 APK 里的二进制 AXML 与 resources.arsc，不是源 XML：
-          # 源文件写对了不等于 aapt2 编出来还在、引用还通。这里逐字节比对。
-          python3 - <<'PY'
-          import glob, re, sys, zipfile
-
-          src = open('app/src/main/res/drawable/ic_launcher_monochrome.xml',
-                     encoding='utf-8').read()
-          pathdata = re.findall(r'android:pathData="([^"]+)"', src)
-          assert len(pathdata) == 1, '源文件应只有一条 path'
-
-          def has(blob, s):
-              # AXML 的字符串池可能是 UTF-8 也可能是 UTF-16LE，两种都试
-              return s.encode('utf-8') in blob or s.encode('utf-16-le') in blob
-
-          # 禁按排序位置取值（规范 25f521f「六·参数、判据与取值」）：
-          # 先断言恰好一个，再解包；多个就报错，不静默取第一个。
-          apks = sorted(glob.glob('app/build/outputs/apk/debug/*.apk'))
-          if len(apks) != 1:
-              sys.exit(f'期望恰好 1 个 APK，实际 {len(apks)} 个：{apks}')
-          apk = apks[0]
-          with zipfile.ZipFile(apk) as z:
-              names = z.namelist()
-              anydpi = sorted(n for n in names if 'mipmap-anydpi-v26' in n)
-              mono = sorted(n for n in names if n.endswith('ic_launcher_monochrome.xml'))
-              if len(mono) != 1:
-                  sys.exit(f'期望恰好 1 份 monochrome 层，实际 {len(mono)}：{mono}')
-              layers = {n: (has(z.read(n), 'background'), has(z.read(n), 'foreground'),
-                            has(z.read(n), 'monochrome')) for n in anydpi}
-              blob = z.read(mono[0]) if mono else b''
-              exact = bool(mono) and has(blob, pathdata[0])
-              prefix = bool(mono) and has(blob, pathdata[0][:40])
-              arsc = 'resources.arsc' in names and has(z.read('resources.arsc'),
-                                                       'ic_launcher_monochrome')
-
-          ok = (len(anydpi) == 2 and len(mono) == 1 and all(all(v) for v in layers.values())
-                and prefix and arsc)
-          detail = ('anydpi-v26 条目 %d（%s）；monochrome 层 %d 份，pathData %s；'
-                    'arsc 已登记 ic_launcher_monochrome=%s'
-                    % (len(anydpi), '、'.join(n.split('/')[-1] for n in anydpi), len(mono),
-                       '逐字节相同' if exact else ('前缀相同' if prefix else '不一致'), arsc))
-          for n, v in layers.items():
-              detail += '；%s 三层=%s' % (n.split('/')[-1], ''.join('1' if x else '0' for x in v))
-          print(('::notice::图标层核验通过：' if ok else '::error::图标层核验不通过：') + detail)
-          sys.exit(0 if ok else 1)
-          PY
+      - name: 核 APK（入口类／原生库／许可／图标／体积）
+        run: python3 tools/apkcheck.py
 
       - name: 上传产物
         uses: actions/upload-artifact@v7
@@ -273,40 +70,6 @@ jobs:
           retention-days: 5
           if-no-files-found: error
           overwrite: true
-
-      - name: 校验体积预算
-        shell: bash
-        run: |
-          # 放在上传之后：超预算要红，但红的是指标，不是把产物一起扣掉
-          # 三个上限都从 2026-10-31 的实测留余量：APK 452315（其中 .so 190746、dex 236792、许可全文 14203）
-          BUDGET=500000
-          DEX=250000
-          NATIVE=200000
-          size=$(cat apk-size.txt)
-          dex=$(awk '$1 == "dex" {print $2}' apk-parts.txt)
-          native=$(awk '$1 == "native" {print $2}' apk-parts.txt)
-          abi=$(awk '$1 == "abi" {print $2}' apk-parts.txt)
-          dex=${dex:-0}
-          native=${native:-0}
-          rc=0
-          if [ "$size" -gt "$BUDGET" ]; then
-            echo "::error::产物体积 $size 字节超出预算 $BUDGET 字节"
-            rc=1
-          fi
-          if [ "$dex" -gt "$DEX" ]; then
-            echo "::error::dex $dex 字节超出上限 $DEX 字节"
-            rc=1
-          fi
-          if [ "$native" -gt "$NATIVE" ]; then
-            echo "::error::原生库 $native 字节超出上限 $NATIVE 字节"
-            rc=1
-          fi
-          if [ "$abi" != "arm64-v8a" ]; then
-            echo "::error::原生库 ABI 是 '$abi'，只允许 arm64-v8a"
-            rc=1
-          fi
-          echo "APK $size/$BUDGET 余 $((BUDGET - size))；dex $dex/$DEX；原生 $native/$NATIVE；ABI $abi"
-          exit $rc
 
   cleanup-artifacts:
     needs: build
@@ -326,27 +89,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           RUN_ID: ${{ github.run_id }}
-          CLEANUP_SCOPE: actions
-        run: python3 .github/scripts/cleanup.py
-
-  cleanup-releases:
-    needs: build
-    if: always() && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    concurrency:
-      group: gself-build
-      cancel-in-progress: false
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - name: Release 只留最近 1 个，孤立 tag 一并删
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          RUN_ID: ${{ github.run_id }}
-          CLEANUP_SCOPE: releases
-        run: python3 .github/scripts/cleanup.py
+        run: python3 tools/cleanup.py

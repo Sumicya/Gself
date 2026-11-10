@@ -40,6 +40,7 @@ class XposedMain : XposedModule() {
     /** app 进程入口：按包名分发 GMS / Gboard 两组。 */
     override fun onPackageLoaded(param: XposedModuleInterface.PackageLoadedParam) {
         val hooks = Hook(this, param.defaultClassLoader)
+        xposedApi = hooks.api
         when (param.packageName) {
             GMS -> hooks.install("通行密钥解限") { passkeyUnlock(param.applicationInfo.sourceDir) }
             GBOARD -> hooks.install("Gboard 剪贴板") { gboardFixes() }
