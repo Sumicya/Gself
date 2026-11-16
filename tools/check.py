@@ -24,6 +24,7 @@ CHECKS = []
 
 def fail(rule: str, msg: str) -> None:
     CHECKS.append(f'{rule} {msg}')
+    print(f'::error::{rule} {msg}')
 
 
 def workflow() -> None:
@@ -88,7 +89,7 @@ def releases() -> None:
         p = subprocess.run(['gh', 'api', f'repos/{repo}/{endpoint}?per_page=100', '--jq', 'length'],
                            capture_output=True, text=True)
         if p.returncode != 0:
-            fail('§18', f'查 {endpoint} 失败：{p.stderr.strip()[:120]}')
+            fail('§18', f'查 {endpoint} 失败（要 GH_TOKEN 且要有读权限）：{p.stderr.strip()[:100]}')
         elif p.stdout.strip() not in ('', '0'):
             fail('§18', f'仓里有 {p.stdout.strip()} 个 {kind}，§18 不许发版、不许打 tag')
 
