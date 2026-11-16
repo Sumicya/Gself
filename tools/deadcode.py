@@ -15,9 +15,9 @@
 计数前先剥注释：死代码只要在注释里被提一次就会凑够两次。Kotlin 的 `"$name"` 模板是真引用，
 所以计数视图保留字符串、只把三引号原始字符串里的声明抹掉。
 
-盲区不写在这里，写在 `tools/scan-scope.json`：三类分开记（excluded 有意排除 / deferred
-延期未审 / open_questions 待答问题），每条带「为什么」和「剩下什么限制」。清单里点的文件
-必须真实存在，否则按「清单已过期」报错——清单自己也会烂。
+盲区不写在这里，写在 `tools/blindspots.json`：三类分开记（excluded 有意排除 / deferred
+延期未审 / open_questions 待答问题），每条三个字段 path／why／limit。清单里点的文件必须真实
+存在，否则按「清单已过期」报错——清单自己也会烂。
 
 用法：`python3 tools/deadcode.py`；有发现退出码 1。
 """
@@ -32,7 +32,7 @@ ROOT = Path(__file__).resolve().parents[1]
 KOTLIN_MAIN = ROOT / 'app/src/main/kotlin'
 KOTLIN_TEST = ROOT / 'app/src/test/kotlin'
 README = ROOT / 'README.md'
-SCOPE = ROOT / 'tools/scan-scope.json'
+SCOPE = ROOT / 'tools/blindspots.json'
 SCOPES = ('excluded', 'deferred', 'open_questions')
 PY_DIRS = (ROOT / 'tools',)
 REF_FILES = (ROOT / 'README.md', ROOT / '.github/workflows/build.yml')
@@ -249,11 +249,12 @@ def scope_problems() -> tuple[list[str], int]:
             problems.append(f'盲区清单 {kind} 类为空')
         for row in rows:
             total += 1
-            item = row.get('item', '')
-            if not row.get('why') or not row.get('limit'):
-                problems.append(f'盲区清单 {kind} 的 {item} 缺 why 或 limit')
-            if item and not (ROOT / item).exists():
-                problems.append(f'盲区清单已过期：{kind} 里点的 {item} 已不在仓里')
+            path = row.get('path', '')
+            missing = [k for k in ('path', 'why', 'limit') if not row.get(k)]
+            if missing:
+                problems.append(f'盲区清单 {kind} 的 {path or "?"} 缺字段 {"、".join(missing)}')
+            if path and not (ROOT / path).exists():
+                problems.append(f'盲区清单已过期：{kind} 里点的 {path} 已不在仓里')
     return problems, total
 
 

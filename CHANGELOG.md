@@ -1,3 +1,12 @@
+## 盲区清单改名对齐 `tools/blindspots.json`；§4 读证改报分支头提交 SHA（2026-11-16，规范 `30ddbc3`）
+
+- **规范**：`Sumicya/selfs` PR #15 head `30ddbc3bee03b8a9d0604cacafaf3c7e788d994b`，`GLOBAL.md` 11,086 B / 25 条。两处新规落到本仓：§12「清单必须统一为 `tools/blindspots.json`，三类键 `excluded`／`deferred`／`open_questions`，每条 `path`／`why`／`limit`」；§4「读证里的短 SHA 是**分支头提交 SHA**，不是文件 blob SHA」。
+- **改名不重写（§6）**：`git mv tools/scan-scope.json tools/blindspots.json`，字段 `item` → `path`，删掉非规范字段 `_about`；六条盲区内容一字未动，`tools/deadcode.py` 的校验跟着改（缺 `path`／`why`／`limit` 任一栏都报，文案点名缺哪栏），`tools/check.py` 的说明同步。
+- **四条造反例全部退 1**：A 删掉一条的 `limit` → `盲区清单 excluded 的 app/src/main/res 缺字段 limit`；B 把字段名改回 `item` → `盲区清单 excluded 的 ? 缺字段 path`；C 清空 `deferred` 整类 → `盲区清单 deferred 类为空`；D 加一条指向 `tools/ghost.py` → `盲区清单已过期`。还原后 `盲区 6 条；问题 0 处`，退出 **0**。
+- **读证口径更正（我自己上轮记错）**：上轮写的 `morluto/rea` `d6bcfc1` 是文件 blob SHA，`rea` 的分支头提交是 `7d502ddb0d`；其余八份上轮报的就是提交 SHA（`96608e0`／`93a5847`／`b7bb3ee`／`090188d`／`481379b`／`0d6f799`／`c6432d1`／`8c1065e`），本轮九份按提交 SHA 重取一遍、字节数与行数逐条复核，与上轮报的一致。
+- **九份读证（分支头提交 SHA，采样 2026-11-16 18:37 `+08:00`）**：`ponytail` `96608e078b` 3,496 B／52 行；`CL4R1T4S` `93a5847654` 957,315 B／7,832 行；`nagi-studio/skills` `b7bb3ee09f` 5,727 B／92 行；`rea` `7d502ddb0d` 33,036 B／491 行；`craft-anything` `090188d705` 27,859 B／431 行；`uncut` `481379bea0` 12,339 B／276 行；`ste80-humanizer` `0d6f7994a5` 14,837 B／217 行；`codex-security` `c6432d1131` 162,145 B／3,011 行；`agentes-chat` `8c1065e79d` 11,111 B／121 行。**这张表只证明取到了这九个文件、量到了这些字节**，不证明九份都是本轮从头读到尾：`ponytail`、`ste80`、`codex-security`、`agentes-chat`、`uncut`、`craft-anything` 首中尾都现场取过，`CL4R1T4S`（957 KB）与 `rea`、`nagi` 是字节与结构级核对。
+- **未做**：盲区清单是否要拆成三个文件、篇号台账格式——主人已判「不拆」「不进规范」，本仓照办，无动作。
+
 ## 按 2026-11-16 版规范（`selfs` PR #15 head `8a68a96e`，10,236 B / 25 条）复核：补 §12 机器可读盲区清单、补 §18/§14 可执行自检（2026-11-16）
 
 - **读证**：`Sumicya/selfs` PR #15 head `8a68a96eefe95ee9040703032a7450ee359c4386`，`GLOBAL.md` 10,236 B、25 条。九份上游全文重读——`ponytail` `skills/ponytail/SKILL.md` `96608e0`、`CL4R1T4S` `ANTHROPIC/CLAUDE-CODE-FABLE-5.2.txt` `93a5847`、`nagi-studio/skills` `b7bb3ee`、`morluto/rea` `d6bcfc1`、`storytold/craft-anything` `090188d`、`Balanov/uncut` `481379b`、`Dodaios/ste80-humanizer` `SKILL.md` `0d6f799` 七份 SHA 未变，另有新增两份：`openai/codex-security` `sdk/typescript/docs/cli.md` `c6432d1` 162,145 B 3,011 行（首 `# CLI and workflows`、中 ```` ``` ````、尾 `for deployment and source-build instructions.`）、`agentes-chat/agentes-chat` `README.md` `8c1065e` 11,111 B 121 行（首 `<p align="center">`、中 `the phone, a public domain instead…`、尾 `[Code of Conduct](CODE_OF_CONDUCT…`）。另七份沿用 11-16 上午的读数，本轮仅复核 SHA 未变。

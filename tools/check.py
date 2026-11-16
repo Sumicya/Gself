@@ -9,7 +9,7 @@
 3. 脚本位置（§11）：`.sh` 与 `cleanup.py` 之外的 `.py` 只许在 `tools/`，不许有 `scripts/`、`ci/`。
 4. 文档（§19）：README 四章齐（是什么／从哪下／怎么装／怎么删）、无 TODO 与过程表、无禁用话术。
 5. 读证（§4）：`CHANGELOG.md` 最新一条必须点出九份上游与规范提交的短 SHA。
-6. 盲区（§12）：`tools/scan-scope.json` 三类齐全，由 `tools/deadcode.py` 复核，这里只查它在。
+6. 盲区（§12）：`tools/blindspots.json` 三类齐全、每条 path／why／limit 三字段齐，由 `tools/deadcode.py` 复核，这里只查它在。
 
 用法：`python3 tools/check.py`；有发现退出码 1。
 """
