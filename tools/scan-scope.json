@@ -1,0 +1,39 @@
+{
+  "_about": "§12 要求盲区机器可读落盘，三类分开记。tools/deadcode.py 每次运行都会读这份清单：条目必须对得上仓里的真实文件，对不上就报「清单已过期」。",
+  "excluded": [
+    {
+      "item": "app/src/main/res",
+      "why": "资源由 aapt2 编译，源码里没有调用点",
+      "limit": "资源名（ic_launcher_monochrome、app_name 等）的引用与重复资源查不出来"
+    },
+    {
+      "item": "gradle/libs.versions.toml",
+      "why": "依赖版本字符串不在 Kotlin/Python 抽取范围内",
+      "limit": "声明了却没用到的依赖查不出来"
+    },
+    {
+      "item": "app/src/main/AndroidManifest.xml",
+      "why": "清单由构建期解析，属性名不是标识符",
+      "limit": "未使用的 permission / 组件声明查不出来"
+    }
+  ],
+  "deferred": [
+    {
+      "item": "tools/deadcode.py",
+      "why": "缺陷：调用方在同一行尾部（`x = f(a)  # f(` ）以外的普通同行写法已覆盖，但跨文件同名的私有函数会互相顶替",
+      "limit": "不计：Kotlin 计数按全局词频，两个文件各有同名私有函数时，任一方有调用即双方都不报"
+    },
+    {
+      "item": "tools/deadcode.py",
+      "why": "缺陷：`.sh` 判据只到文件级与顶层函数级",
+      "limit": "函数体内局部变量、参数、`source` 进来的外部命令都不解析"
+    }
+  ],
+  "open_questions": [
+    {
+      "item": "tools/deadcode.py",
+      "why": "未答：Kotlin 的 `internal` 声明是否应允许零引用（当前一律按死码报）",
+      "limit": "现在按「零引用即死码」处理，宁可误报也不漏报"
+    }
+  ]
+}

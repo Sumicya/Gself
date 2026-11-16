@@ -41,6 +41,9 @@ jobs:
       - name: 扫残留死码与零用导入
         run: python3 tools/deadcode.py
 
+      - name: 核规范硬项（对外动作／工作流格式／脚本位置／文档／读证）
+        run: python3 tools/check.py
+
       - name: 算版本 yy.m.d.当日号.总序号
         env:
           GH_TOKEN: ${{ github.token }}

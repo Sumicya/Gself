@@ -15,22 +15,14 @@
 计数前先剥注释：死代码只要在注释里被提一次就会凑够两次。Kotlin 的 `"$name"` 模板是真引用，
 所以计数视图保留字符串、只把三引号原始字符串里的声明抹掉。
 
-固有盲区（补不掉，只能列出来）：
-
-- 反射按字符串调用的成员：`Class.forName("…").getMethod("x")` 里的 `"x"` 只是个字符串。
-  本仓只有 Hook 目标的运行期查找，那些名字来自 ROM，不在本仓源码里。
-- 只在构建脚本或资源文件里被引用的符号：`.xml` / `.gradle.kts` 不在抽取范围内。
-  `ic_launcher_monochrome` 等资源名只由 aapt2 使用。
-- 资源字段（`res/values/strings.xml` 的 `app_name`）由清单引用，不计。
-- 本仓不写文件、不用键值存储，所以「键只写或只读」这条判据不适用。
-- `.sh` 只查「整份文件有没有人引用」和「顶层函数有没有人调用」两件事：函数体的局部变量、
-  参数、`source` 进来的外部命令都不解析。函数名区分大小写，靠 `grep -w` 的单词边界匹配；
-  如果函数名同时也是常用命令（`run`、`check`），可能被别处的同性名字误救活。
-- `gradle/*.kts`、`.xml`、`.yml` 里的键值引用不在抽取范围：构建脚本里的字符串不参与计数。
+盲区不写在这里，写在 `tools/scan-scope.json`：三类分开记（excluded 有意排除 / deferred
+延期未审 / open_questions 待答问题），每条带「为什么」和「剩下什么限制」。清单里点的文件
+必须真实存在，否则按「清单已过期」报错——清单自己也会烂。
 
 用法：`python3 tools/deadcode.py`；有发现退出码 1。
 """
 import ast
+import json
 import re
 import sys
 from collections import Counter
@@ -40,6 +32,8 @@ ROOT = Path(__file__).resolve().parents[1]
 KOTLIN_MAIN = ROOT / 'app/src/main/kotlin'
 KOTLIN_TEST = ROOT / 'app/src/test/kotlin'
 README = ROOT / 'README.md'
+SCOPE = ROOT / 'tools/scan-scope.json'
+SCOPES = ('excluded', 'deferred', 'open_questions')
 PY_DIRS = (ROOT / 'tools',)
 REF_FILES = (ROOT / 'README.md', ROOT / '.github/workflows/build.yml')
 PATH_REF = re.compile(r'(?:docs|tools|\.github)/[\w./-]+\.\w+')
@@ -242,16 +236,39 @@ def dead_paths() -> list[str]:
     return problems
 
 
+def scope_problems() -> tuple[list[str], int]:
+    """盲区清单本身要能验：三类齐全、每条有 why 与 limit、点的文件真实存在。"""
+    problems: list[str] = []
+    if not SCOPE.exists():
+        return [f'缺盲区清单 {SCOPE.name}'], 0
+    data = json.loads(SCOPE.read_text(encoding='utf-8'))
+    total = 0
+    for kind in SCOPES:
+        rows = data.get(kind) or []
+        if not rows:
+            problems.append(f'盲区清单 {kind} 类为空')
+        for row in rows:
+            total += 1
+            item = row.get('item', '')
+            if not row.get('why') or not row.get('limit'):
+                problems.append(f'盲区清单 {kind} 的 {item} 缺 why 或 limit')
+            if item and not (ROOT / item).exists():
+                problems.append(f'盲区清单已过期：{kind} 里点的 {item} 已不在仓里')
+    return problems, total
+
+
 def main() -> int:
     kt, n_main, n_test = kotlin_problems()
     py, n_py = python_problems()
     sh, n_sh = shell_problems()
     ref = dead_paths()
-    for line in kt + py + sh + ref:
+    scope, n_scope = scope_problems()
+    bad = kt + py + sh + ref + scope
+    for line in bad:
         print(line)
     print(f'残留：Kotlin {n_main} 主 + {n_test} 测、Python {n_py} 个、Shell {n_sh} 个、'
-          f'引用面 {len(REF_FILES)} 个文件；问题 {len(kt) + len(py) + len(sh) + len(ref)} 处')
-    return 1 if kt or py or sh or ref else 0
+          f'引用面 {len(REF_FILES)} 个文件、盲区 {n_scope} 条；问题 {len(bad)} 处')
+    return 1 if bad else 0
 
 
 if __name__ == '__main__':
