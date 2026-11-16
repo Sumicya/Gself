@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """残留代码闸门：本地与 CI 同一个入口，非 0 不出包。
 
-判据（GLOBAL「9 目录与清旧」）：
+判据（GLOBAL「12 清旧」）：
 
 1. 标识符只出现 1 次＝只有定义、没有调用点。主码与测试**分池**计数：主码里的名字只被测试
    调用也算残留（测试是调用方，不是用户）。
 2. import 零用：导入后在文件里再没出现。
 3. 变量只写不读、模块级常量零引用。
 4. 死引用：README、本工作流与源码注释里指向已删文件的路径。
+5. 顶层函数零调用：`tools/*.sh` 里定义了却没被同目录任何脚本或工作流调用的函数；
+   整份 `.sh` 没人引用（工作流、README、别的脚本都不提）也算残留：2026-11-16 删掉的签名
+   脚本就是这样躺了半年，全仓三条 `grep` 都查不到谁调过它。
 
 计数前先剥注释：死代码只要在注释里被提一次就会凑够两次。Kotlin 的 `"$name"` 模板是真引用，
 所以计数视图保留字符串、只把三引号原始字符串里的声明抹掉。
@@ -20,6 +23,10 @@
   `ic_launcher_monochrome` 等资源名只由 aapt2 使用。
 - 资源字段（`res/values/strings.xml` 的 `app_name`）由清单引用，不计。
 - 本仓不写文件、不用键值存储，所以「键只写或只读」这条判据不适用。
+- `.sh` 只查「整份文件有没有人引用」和「顶层函数有没有人调用」两件事：函数体的局部变量、
+  参数、`source` 进来的外部命令都不解析。函数名区分大小写，靠 `grep -w` 的单词边界匹配；
+  如果函数名同时也是常用命令（`run`、`check`），可能被别处的同性名字误救活。
+- `gradle/*.kts`、`.xml`、`.yml` 里的键值引用不在抽取范围：构建脚本里的字符串不参与计数。
 
 用法：`python3 tools/deadcode.py`；有发现退出码 1。
 """
@@ -32,6 +39,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 KOTLIN_MAIN = ROOT / 'app/src/main/kotlin'
 KOTLIN_TEST = ROOT / 'app/src/test/kotlin'
+README = ROOT / 'README.md'
 PY_DIRS = (ROOT / 'tools',)
 REF_FILES = (ROOT / 'README.md', ROOT / '.github/workflows/build.yml')
 PATH_REF = re.compile(r'(?:docs|tools|\.github)/[\w./-]+\.\w+')
@@ -185,6 +193,44 @@ def python_problems() -> tuple[list[str], int]:
     return problems, len(files)
 
 
+SH_FUNC = re.compile(r'^([A-Za-z_][A-Za-z0-9_]*)[ \t]*\(\)[ \t]*\{', re.M)
+
+
+def shell_problems() -> tuple[list[str], int]:
+    """`.sh` 两条判据：整份脚本没人引用、顶层函数没人调用。
+
+    引用面＝全部 `tools/*.sh` 的正文＋全部工作流＋README。注释先剥掉：只在注释里被提一次
+    不算被用到。函数与文件名都按词边界匹配，定义处本身扣除。
+    """
+    problems: list[str] = []
+    files = sorted((ROOT / 'tools').glob('*.sh'))
+    if not files:
+        return problems, 0
+    bodies = {p: strip_comments(p.read_text(encoding='utf-8'), True) for p in files}
+    # 工作流与 README 也要剥注释：只在注释里被提一次不算被用到
+    surface = '\n'.join(list(bodies.values()) + [
+        strip_comments(p.read_text(encoding='utf-8'), True)
+        for p in sorted((ROOT / '.github/workflows').glob('*.yml'))
+    ] + ([strip_comments(README.read_text(encoding='utf-8'), True)] if README.exists() else []))
+
+    def used(name: str) -> bool:
+        hits = len(re.findall(r'(?<![\w.-])' + re.escape(name) + r'(?![\w-])', surface))
+        definitions = len(re.findall(r'^[ \t]*' + re.escape(name) + r'[ \t]*\(\)[ \t]*\{',
+                                    surface, re.M))
+        return hits - definitions > 0
+
+    for path, body in bodies.items():
+        alive = used(path.stem)
+        if not alive:
+            problems.append(f'{path.name} 整份脚本无人引用（工作流、README、别的脚本都不提它）')
+            continue    # 整份都没人用，里面的函数不必逐条再报
+        for m in SH_FUNC.finditer(body):
+            if not used(m.group(1)):
+                line = body[:m.start()].count('\n') + 1
+                problems.append(f'{path.name}:{line} 函数无人调用  {m.group(1)}')
+    return problems, len(files)
+
+
 def dead_paths() -> list[str]:
     problems: list[str] = []
     for path in REF_FILES:
@@ -199,12 +245,13 @@ def dead_paths() -> list[str]:
 def main() -> int:
     kt, n_main, n_test = kotlin_problems()
     py, n_py = python_problems()
+    sh, n_sh = shell_problems()
     ref = dead_paths()
-    for line in kt + py + ref:
+    for line in kt + py + sh + ref:
         print(line)
-    print(f'残留：Kotlin {n_main} 主 + {n_test} 测、Python {n_py} 个、引用面 {len(REF_FILES)} 个文件；'
-          f'问题 {len(kt) + len(py) + len(ref)} 处')
-    return 1 if kt or py or ref else 0
+    print(f'残留：Kotlin {n_main} 主 + {n_test} 测、Python {n_py} 个、Shell {n_sh} 个、'
+          f'引用面 {len(REF_FILES)} 个文件；问题 {len(kt) + len(py) + len(sh) + len(ref)} 处')
+    return 1 if kt or py or sh or ref else 0
 
 
 if __name__ == '__main__':

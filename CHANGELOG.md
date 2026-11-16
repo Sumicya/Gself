@@ -1,3 +1,12 @@
+## 删掉无人引用的签名脚本，死码闸门补上 `.sh` 扫描（2026-11-16）
+
+- **触发**：主人点名「`tools/sign-apk.sh` 全仓没有任何地方用它」，并要求死码脚本补 `.sh`。
+- **核实**：`grep -rn 'sign-apk' .`（去掉 `.git/` 与 `CHANGELOG.md` 的历史记录）在删之前只剩文件自身第 8 行的一处用法注释，工作流、README、`tools/*.py` 全无引用；`git log --format='%h %ad' --date=short -- tools/sign-apk.sh` 只有 `0c8b9dc`（2026-11-05，随 `pr-check` 一起删时被顺手带上的整树提交）一条，此后无人碰过它。
+- **删**：`git rm tools/sign-apk.sh`（2,162 B）。本仓不出正式签名包——CI 产物就是 debug 证书签的，覆盖安装要靠同一 debug 证书，自签反而会与后续 CI 包签名不一致，所以这个脚本不只是没人用，留着还会误导。
+- **闸门补 `.sh`（§12 清旧）**：`tools/deadcode.py` 新增 `shell_problems()`，两条判据——整份脚本无人引用（工作流、README、别的 `tools/*.sh` 都不提它的文件名）、顶层函数无人调用。引用面先把 `#` 注释剥掉，只在注释里被提一次不算被用到；文件名与函数名都按词边界匹配（`sign-apk` 不会命中 `sign-apk.sh` 之外的同名片段）。盲区清单补一条：`.sh` 只查文件级与顶层函数级两件事，函数体内的局部变量、参数、`source` 进来的外部命令都不解析，函数名与常用命令同名时可能被别处误救活。
+- **造反例实证**（两次都贴退出码）：① 放入只有 `probe_helper()` 的 `tools/zz-probe.sh`，README 只在注释里提它 → `zz-probe.sh 整份脚本无人引用`，退出码 **1**；② 放入 `tools/zz-probe2.sh` 并在工作流里真实调用它、但函数没人调 → `zz-probe2.sh:2 函数无人调用  unused_helper`，退出码 **1**；两处都删掉后复跑 `问题 0 处`，退出码 **0**。
+- **规模更正**：上一轮报的 318,564 B 量自提交 `5e8217a`，而推送后紧跟的 `6b35fd2`（改 CHANGELOG 数字）又 +48 B，所以 HEAD `6b35fd2` 实测是 `41 个文件 318,612 B`——主人数的 318,612 是对的，我报的是上一个提交的数，48 B 就是这么来的。本轮减的是脚本 2,162 B，加的是闸门 2,737 B 与本条记录；提交后总数用 `git ls-tree -r --long HEAD | awk '{s+=$4;n++} END {print n" 个文件 "s" B"}'` 现取，不写在这句里（写进来就会自己改自己）。
+
 ## 按 2026-11-10 新规范（`selfs` PR #15 head `f07f159b`）重构：删 `docs/`、脚本收进 `tools/`、清理链删发版档、单入口 `tools/apkcheck.py`（2026-11-10）
 
 - **读证**：`Sumicya/selfs` open PR #15（`arena/61955670-selfs`）head `f07f159b22fc44143fdb3fa02d31c5dfd78818d9`，`GLOBAL.md` blob `df8feae`、6,566 B、36 行、22 条；六份上游入口（`ponytail` `skills/ponytail/SKILL.md` `96608e0` / `CL4R1T4S` `ANTHROPIC/CLAUDE-CODE-FABLE-5.2.txt` `93a5847` / `nagi-studio/skills` `b7bb3ee` / `morluto/rea` `55b6d2c` / `storytold/craft-anything` `0c1f7f7` / `Balanov/uncut` `ae65a94`）全文读完。`selfs` `main` 仍是 `96fdd26f`，落后于生效 head，如实报。
