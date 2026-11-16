@@ -13,9 +13,9 @@ import java.util.concurrent.atomic.AtomicReference
 /**
  * 全部挂载点：三组，每组一个顶层扩展函数，由 [XposedMain] 直接调用。
  *
- * 只剩 AOSP 与 ColorOS/Oplus 两条线。真机 `service list` 里没有 powerkeeper / millet /
- * smartpower，MIUI 那套挂载点在这台设备上从未命中过一次，删掉；非 ColorOS 的机器上
- * 第三组会整组 `hook skip`，不影响前两组。
+ * 只剩 AOSP 与 ColorOS/Oplus 两条线：真机 `service list` 里没有 powerkeeper / millet /
+ * smartpower，MIUI 那套挂载点一次都没命中过，已删。非 ColorOS 机器上第三组整组 `hook skip`，
+ * 不影响前两组。
  */
 
 // ---------- 1. 推送唤醒（核心） ----------
@@ -24,24 +24,22 @@ import java.util.concurrent.atomic.AtomicReference
  * 让推送广播绕过「停止态不得投递」：两层挂载，一层管语义，一层管标志。
  *
  * 语义层（`停止态决策`）：AOSP 判定「要不要排除停止态应用」只有一处枢轴——`Intent.isExcludingStopped()`
- * （android-16.0.0_r1 `core/java/android/content/Intent.java:10023`）。`IntentResolver#buildResolveList`
- * 在 `IntentResolver.java:729` 取值，`:749` 据此跳过停止态过滤器；`BroadcastSkipPolicy` 全文没有第二处
- * 停止态判断。在这一层对定向推送答「不排除」，不依赖哪个 AMS 重载进来，也不怕 ROM 改签名。
+ * （android-16.0.0_r1 `core/java/android/content/Intent.java:10023`），`IntentResolver#buildResolveList`
+ * 在 `IntentResolver.java:729` 取值、`:749` 据此跳过停止态过滤器。在这一层对定向推送答「不排除」，
+ * 不依赖哪个 AMS 重载进来，也不怕 ROM 改签名。
  *
  * 标志层（`推送入口（AMS）`）：在 `ActivityManagerService` 所有带 `Intent` 参数的广播重载上补
- * `FLAG_INCLUDE_STOPPED_PACKAGES`——原生系统发 boot_completed 就是加这个标志
- * （`ActivityManagerService.java:5144`），真机 shell 对照实验也证明只有带它的广播才能投递到停止态应用。
- * 补标志必须赶在 `BroadcastController#broadcastIntentLocked` 复制 intent（`:896`）之前：复制之后
- * 系统会给**副本**补 `FLAG_EXCLUDE_STOPPED_PACKAGES`（`:922`，注释原文「By default broadcasts do not
- * go to stopped apps」），那时改原件已经晚了。这也是 2026-10-30 前挂 BC 从不命中的同一处机制。
+ * `FLAG_INCLUDE_STOPPED_PACKAGES`——原生发 boot_completed 就带它（`ActivityManagerService.java:5144`），
+ * 真机对照实验也证明只有带它的广播能投递到停止态应用。补标志必须赶在 `BroadcastController` 复制 intent
+ * 之前：复制后系统给**副本**补 `FLAG_EXCLUDE_STOPPED_PACKAGES`（`:922`，原文「By default broadcasts do not
+ * go to stopped apps」），那时改原件已经晚了。
  *
- * 两层的分工是可观测的：标志层命中时语义层静默（标志已让枢轴返回 false），标志层漏掉的推送由语义层
- * 兜底并打一行 `决策入口兜底`——这行同时是「还有没挂上的 AMS 入口」的客观信号。
+ * 两层分工可观测：标志层命中时语义层静默（标志已让枢轴返回 false），标志层漏掉的推送由语义层兜底并打
+ * 一行 `决策入口兜底`——这行同时是「还有没挂上的 AMS 入口」的客观信号。任一层活着，推送都不会因停止态被丢。
  */
 fun Hook.wakeStoppedApps() {
     val decided = install("停止态决策") { stoppedFilterDecision() }
     val flagged = install("推送入口（AMS）") { broadcastEntryFlags() }
-    // 两层是互为保险的：一行讲清哪层活着，比让主人去两条日志里拼强。
     if (decided || flagged) {
         trace("推送达标：语义层${if (decided) "在" else "缺"}｜标志层${if (flagged) "在" else "缺"}")
     } else {
@@ -49,29 +47,30 @@ fun Hook.wakeStoppedApps() {
     }
 }
 
-/** 已补标志的推送条数：只看「哪一层在干活」，不参与判据。 */
+/** 已补标志的推送条数：只看哪层在干活，不参与判据。 */
 private val patchedPushes = AtomicInteger()
 
-/** 语义层命中条数；0 而标志层一直在补，说明枢轴没被调用（被内联或被 ROM 改写）。 */
+/** 语义层命中条数；为 0 而标志层一直在补，说明枢轴没被调用（被内联或被 ROM 改写）。 */
 private val decisionHits = AtomicInteger()
 
 /**
  * 语义层：把 `Intent.isExcludingStopped()` 对定向推送改答 false。
  *
- * 这个方法是 AOSP 的公共方法（每次 intent 解析问一次），ROM 一般不改名；它只有三行、理论上可能被
- * ART 内联，所以标志层保留——两层任何一层活着，推送都不会因为停止态被丢。
+ * 这是 AOSP 公共方法（每次 intent 解析问一次），ROM 一般不改名；它只有三行、理论上可能被 ART 内联，
+ * 所以标志层保留——两层任何一层活着，推送都不会因为停止态被丢。
  */
 private fun Hook.stoppedFilterDecision() {
     hook(find(Intent::class.java, "isExcludingStopped")) { chain ->
         val intent = chain.thisObject as? Intent ?: return@hook chain.proceed()
-        // 快路：原生答案本来就是 false（没带 EXCLUDE，或已带 INCLUDE）时直接放行——
-        // proceed() 的返回值与「返回 false」完全相同，省掉后面的字符串判据。绝大多数解析走这里。
+        // 快路：原生答案本来就是 false（没带 EXCLUDE，或已带 INCLUDE）——proceed() 的返回值
+        // 与「返回 false」逐位相同，省掉字符串判据。绝大多数解析走这里。
         if (!Push.excludesStopped(intent.flags)) return@hook chain.proceed()
-        if (!Push.isTargetedPush(intent)) return@hook chain.proceed()
+        val target = Push.targetOf(intent)
+        if (!Push.isTargetedPush(target, intent.action)) return@hook chain.proceed()
         val hits = decisionHits.incrementAndGet()
-        // 只在标志层漏了这条时出声：前 3 次逐条记，之后每 100 次记一次，避免洪水
+        // 只在标志层漏了这条时出声：前 3 次逐条记，之后每 100 次记一次，避免洪水。
         if (intent.flags and Intent.FLAG_INCLUDE_STOPPED_PACKAGES == 0 && (hits <= 3 || hits % 100 == 0)) {
-            trace("决策入口兜底：${Push.targetOf(intent)}（${intent.action} 未带 0x20，第 $hits 次）")
+            trace("决策入口兜底：$target（${intent.action} 未带 0x20，第 $hits 次）")
         }
         false
     }
@@ -84,9 +83,8 @@ private fun Hook.broadcastEntryFlags() {
     var hooked = 0
     for (name in BROADCAST_ENTRIES) {
         for (m in intentOverloads(ams, name)) {
-            // Intent 的下标在装挂载点时就定下来（按类型算，ROM 在前后插参数都不影响），
-            // 运行期直接按下标取：`filterIsInstance` 每次调用都会新建一个 ArrayList，
-            // 而这里每次系统广播都会进来一次，白分配。
+            // Intent 的下标装挂载点时定下来（按类型算，ROM 前后插参数都不影响），运行期直接取：
+            // filterIsInstance 每次调用都新建 ArrayList，而这里每次系统广播都进来一次。
             val intentIndex = m.parameterTypes.indexOfFirst { it == Intent::class.java }
             hook(m) { chain ->
                 (chain.args.getOrNull(intentIndex) as? Intent)?.let { waken(it, "AMS#$name") }
@@ -108,13 +106,11 @@ private fun intentOverloads(clazz: Class<*>, name: String): List<Method> =
 
 /** 补 `FLAG_INCLUDE_STOPPED_PACKAGES` 并解冻目标；判据全在 [Push.needsStoppedPatch]，这里只执行。 */
 private fun waken(intent: Intent, where: String) {
-    // 快路：已带 INCLUDE 的广播直接退出，连 component / package 都不读。
-    // 同一条广播会依次穿过 broadcastIntent / broadcastIntentWithFeature / broadcastIntentLocked，
-    // 第 2、3 次进来时标志已经补好，这里只剩一次位运算。
-    // 这条快路依赖 [Push.needsStoppedPatch] 的第一个合取项（带 INCLUDE 必不需要补），
-    // 该不变量由 PushTest#includeFlagNeverNeedsPatch 钉住，删掉那边这个提前返回就会变语义。
+    // 快路：已带 INCLUDE 就直接退出，连 component / package 都不读。同一条广播会依次穿过
+    // broadcastIntent / broadcastIntentWithFeature / broadcastIntentLocked，第 2、3 次进来时标志已补好。
+    // 该提前返回依赖 [Push.needsStoppedPatch] 的第一个合取项，由 PushTest#includeFlagNeverNeedsPatch 钉住。
     if (intent.flags and Intent.FLAG_INCLUDE_STOPPED_PACKAGES != 0) return
-    // 目标包名只查一次：判据与日志共用，不为了「可读」多走一遍 component / package 取值
+    // 目标包名只查一次：判据与日志共用，不为「可读」多走一遍 component / package 取值。
     val target = Push.targetOf(intent) ?: return
     if (!Push.needsStoppedPatch(intent.action, target, intent.flags)) return
     intent.addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES)
