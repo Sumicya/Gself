@@ -253,7 +253,10 @@ def scope_problems() -> tuple[list[str], int]:
             missing = [k for k in ('path', 'why', 'limit') if not row.get(k)]
             if missing:
                 problems.append(f'盲区清单 {kind} 的 {path or "?"} 缺字段 {"、".join(missing)}')
-            if path and not (ROOT / path).exists():
+            if path and (ROOT / path).resolve() == ROOT:
+                # §12：path 可以指向目录，但不许指向仓根——那等于把全仓一次性洗白
+                problems.append(f'盲区清单 {kind} 的 path 不许指向仓根：{path}')
+            elif path and not (ROOT / path).exists():
                 problems.append(f'盲区清单已过期：{kind} 里点的 {path} 已不在仓里')
     return problems, total
 

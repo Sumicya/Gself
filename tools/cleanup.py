@@ -10,6 +10,10 @@ artifact 全仓按 created_at 保留最新 5 个；运行记录每工作流按�
 
 失败分级（规范「11 对外动作」）：403 打 `::warning::` 写明对象、端点、返回码后继续，不红 job；
 403 以外的失败逐条点名并红 job。本仓不发版、不打 tag，所以没有 Release／tag 档。
+
+**不等（规范「10 等」，2026-11-21 删例外后）**：取消超限运行后不 `gh run watch`、不 sleep。
+取消是请求，完成是下一轮的事——下一轮扫描时它已是 completed，那时才删。
+删一个还在跑的运行，等于删掉别人正在看的日志和产物，所以本轮只取消、不删。
 """
 import json
 import os
@@ -212,26 +216,12 @@ for r, ws, why in drop_r:
         print(f"run={r['id']} 未删：其产物删除失败，禁止级联删除")
         continue
     if r["status"] != "completed":
+        # §10：只发取消，不等它停下来（不 watch、不 sleep）。下一轮再删。
         endpoint = f"repos/{REPO}/actions/runs/{r['id']}"
-        print(f"  {'取消' if APPLY else '将取消'} 超限运行 {r['id']}，完成后再删")
+        print(f"  {'已取消' if APPLY else '将取消'} 超限运行 {r['id']}，滚动到下一轮再删")
         if APPLY:
-            if not mutate("POST", endpoint + "/cancel", f"取消 run={r['id']}"):
-                continue
-            subprocess.run(
-                ["gh", "run", "watch", str(r["id"]), "--repo", REPO, "--interval", "2"],
-                capture_output=True,
-                text=True,
-            )
-            r = json.loads(gh("api", endpoint))
-            if r["status"] != "completed":
-                FAILED.append((endpoint, f"取消 run={r['id']}", "等待超时", "取消后尚未完成，未删除"))
-                continue
-            # 运行在扫描与取消之间可能上传产物，重读后再删，避免无清单级联删除。
-            for a in list_all(endpoint + "/artifacts?per_page=100", ".artifacts"):
-                if not delete("artifacts", a["id"], f"{a['name']} id={a['id']}", "超限运行取消后的产物复查"):
-                    blocked_runs.add(r["id"])
-            if r["id"] in blocked_runs:
-                continue
+            mutate("POST", endpoint + "/cancel", f"取消 run={r['id']}")
+        continue
     delete("runs", r["id"], f"run={r['id']} {ws}", why)
 
 finish()
