@@ -1,23 +1,21 @@
 #!/usr/bin/env python3
 """规范自检：把 §4／§11／§12／§14／§16／§17 里原本靠人记的几条，做成一条能跑的命令。
 
-判据（GLOBAL `ccb9aeb`，11,261 B / 25 条）：
+判据（GLOBAL `1a2d3d6`，8,852 B / 23 条 + 附录 A–D）：
 
-1. 工作流（§14）：`name` 与文件名一致且唯一；顶层 `env` 两键；每个 job 的并发组以 `<仓>-` 开头、
+1. 工作流（§14 + 附录 B）：`name` 与文件名一致且唯一；顶层 `env` 两键；每个 job 的并发组以 `<仓>-` 开头、
    `cancel-in-progress: false`；清理 job `if: always()` 且调 `tools/cleanup.py`；产物三件套齐。
-2. 对外动作（§16）：任何字符串值里都不得出现发版、打 tag、强推、`[skip ci]`；本仓 Release 与 tag 必须为 0。
+2. 对外动作（§16）：任何值里都不得出现发版、打 tag、强推、`[skip ci]`；本仓 Release 与 tag 必须为 0。
 3. 脚本位置（§11）：不许有 `scripts/`、`ci/`；`app/`、`.github/` 下不许躺 `.py`。
 4. 文档（§17）：README 四章齐；README 与工作流里无 TODO 与禁用话术。
 5. 读证（§4）：`CHANGELOG.md` 最新一条点出九份上游与提交 SHA。
 6. 盲区（§12）：`tools/blindspots.json` 存在（内容校验在 `tools/deadcode.py`）。
 
-**解析真 YAML，不搜字符串**：2026-11-16 实测旧版只做子串匹配，
-把 `env` 缩进挪两格、或把并发组换掉，旧的字符串判据会漏。这里按缩进建树再判。
+**解析真 YAML，不搜字符串**：旧版只做子串匹配，把 `env` 缩进挪两格就漏。
+用 PyYAML 的 `BaseLoader`——全按字符串读，`on:` 才不会被 YAML 1.1 解析成布尔 `True`
+（`safe_load` 会，实测：顶层键变成 `['name', True, …]`）。缺依赖时报「未验证」并退 2，不静默放行。
 
-不引第三方依赖：runner 上有没有 PyYAML 没验证过，赌它不如自己解析本仓工作流用到的子集
-（块映射、块序列、行内标量、引号、注释）。解析不了就报错退出，不静默放行。
-
-用法：`python3 tools/check.py`；问题 0 处退 0，有发现退 1，解析不了退 2。
+用法：`python3 tools/check.py`；问题 0 处退 0，有发现退 1，缺依赖退 2。
 """
 import os
 import re
@@ -25,150 +23,17 @@ import subprocess
 import sys
 from pathlib import Path
 
+try:
+    import yaml
+except ImportError:  # 缺依赖 ≠ 通过
+    print('::error::缺 PyYAML，规范自检未验证（pip install pyyaml）')
+    sys.exit(2)
+
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS = sorted((ROOT / '.github/workflows').glob('*.yml'))
 CHECKS: list[str] = []
 FORBIDDEN = ('gh release', 'action-gh-release', 'push --tags', '[skip ci]', 'git push -f',
              'git push --force')
-SCALAR = re.compile(r'^(?P<key>[^:#]+?):(?:\s+(?P<val>.*))?$')
-
-
-class BadYaml(Exception):
-    pass
-
-
-def strip_comment(line: str) -> str:
-    """去掉行尾注释；引号内的 `#` 不算注释。"""
-    quote = None
-    for i, ch in enumerate(line):
-        if quote:
-            if ch == quote:
-                quote = None
-        elif ch in '"\'':
-            quote = ch
-        elif ch == '#' and (i == 0 or line[i - 1] in ' \t'):
-            return line[:i]
-    return line
-
-
-def scalar(text: str):
-    text = text.strip()
-    if not text:
-        return None
-    if len(text) >= 2 and text[0] == text[-1] and text[0] in '"\'':
-        inner = text[1:-1]
-        return inner.replace("\\'", "'").replace('\\n', '\n') if text[0] == "'" else inner
-    if text in ('true', 'True'):
-        return True
-    if text in ('false', 'False'):
-        return False
-    if text in ('null', '~'):
-        return None
-    if re.fullmatch(r'-?\d+', text):
-        return int(text)
-    if text.startswith('[') and text.endswith(']'):
-        return [scalar(x) for x in text[1:-1].split(',') if x.strip()]
-    return text
-
-
-def parse(text: str):
-    """把本仓工作流用到的 YAML 子集解析成 dict/list。遇到不认识的写法抛 BadYaml。"""
-    rows = []
-    lines = text.split('\n')
-    i = 0
-    while i < len(lines):
-        raw = lines[i]
-        i += 1
-        line = strip_comment(raw).rstrip()
-        if not line.strip() or line.lstrip().startswith('---'):
-            continue
-        indent = len(line) - len(line.lstrip(' '))
-        if '\t' in line[:indent + 1]:
-            raise BadYaml('缩进里有制表符')
-        body = line.strip()
-        # `run: |` / `run: >` 的块标量：整段原样收成一条字符串，块内不做 YAML 解析
-        m = re.match(r'^(?P<key>[^:#]+?):\s+(?P<flag>[|>])[-+]?$', body)
-        if m:
-            chunk = []
-            while i < len(lines):
-                nxt = lines[i]
-                if not nxt.strip():
-                    chunk.append('')
-                    i += 1
-                    continue
-                if len(nxt) - len(nxt.lstrip(' ')) <= indent:
-                    break
-                chunk.append(nxt)
-                i += 1
-            pad = min((len(x) - len(x.lstrip(' ')) for x in chunk if x.strip()), default=0)
-            text_block = '\n'.join(x[pad:] for x in chunk).strip('\n')
-            rows.append((indent, f'{m.group("key")}: {text_block!r}'))
-            continue
-        rows.append((indent, body))
-    pos = 0
-
-    def block(indent: int):
-        nonlocal pos
-        if pos >= len(rows):
-            return None
-        if rows[pos][0] < indent:
-            return None
-        if rows[pos][1].startswith('- '):
-            return sequence(rows[pos][0])
-        return mapping(rows[pos][0])
-
-    def mapping(indent: int):
-        nonlocal pos
-        out = {}
-        while pos < len(rows):
-            ind, body = rows[pos]
-            if ind < indent:
-                break
-            if ind > indent:
-                raise BadYaml(f'缩进对不齐：{body[:40]}')
-            if body.startswith('- '):
-                break
-            m = SCALAR.match(body)
-            if not m:
-                raise BadYaml(f'认不出的行：{body[:40]}')
-            key, val = m.group('key').strip(), m.group('val')
-            pos += 1
-            if val is None or val == '':
-                # 下一行缩进更深才是子结构，否则是空值
-                out[key] = block(rows[pos][0]) if pos < len(rows) and rows[pos][0] > ind else None
-            else:
-                out[key] = scalar(val)
-        return out
-
-    def sequence(indent: int):
-        nonlocal pos
-        out = []
-        while pos < len(rows):
-            ind, body = rows[pos]
-            if ind != indent or not body.startswith('- '):
-                break
-            rest = body[2:].strip()
-            pos += 1
-            if not rest:
-                out.append(block(rows[pos][0]) if pos < len(rows) and rows[pos][0] > ind else None)
-                continue
-            if SCALAR.match(rest) and not rest.startswith('- '):
-                # `- key: value` 起头的映射项
-                item = {}
-                m = SCALAR.match(rest)
-                key, val = m.group('key').strip(), m.group('val')
-                pos -= 1
-                rows[pos] = (ind + 2, rest)
-                item = mapping(ind + 2)
-                out.append(item)
-            else:
-                out.append(scalar(rest))
-        return out
-
-    doc = block(rows[0][0]) if rows else None
-    if pos != len(rows):
-        raise BadYaml(f'没解析完，停在：{rows[pos][1][:40]}')
-    return doc
 
 
 def fail(rule: str, msg: str) -> None:
@@ -177,7 +42,7 @@ def fail(rule: str, msg: str) -> None:
 
 
 def strings(node):
-    """递归取出所有字符串（键与值都算），注释不在解析结果里。"""
+    """递归取出所有字符串（键与值都算）；注释不在解析结果里，注释掉的 group 骗不过去。"""
     if isinstance(node, dict):
         for k, v in node.items():
             yield str(k)
@@ -190,13 +55,11 @@ def strings(node):
 
 
 def load(path: Path):
+    """BaseLoader 全按字符串读：`cancel-in-progress` 是 'false' 而不是布尔，比较处一律比字符串。"""
     try:
-        doc = parse(path.read_text(encoding='utf-8'))
-    except BadYaml as e:
-        fail('§14', f'{path.name} 解析失败（{e}），该文件未验证')
-        return None
-    except Exception as e:  # parser 的意外形状：同样按「未验证」处理，不许静默放行也不许崩栈
-        fail('§14', f'{path.name} 解析异常（{type(e).__name__}: {e}），该文件未验证')
+        doc = yaml.load(path.read_text(encoding='utf-8'), Loader=yaml.BaseLoader)
+    except yaml.YAMLError as e:
+        fail('§14', f'{path.name} 解析失败（{str(e).splitlines()[0]}），该文件未验证')
         return None
     if not isinstance(doc, dict):
         fail('§14', f'{path.name} 顶层不是映射（{type(doc).__name__}），该文件未验证')
@@ -215,15 +78,18 @@ def workflow() -> None:
         if doc.get('name') != path.stem:
             fail('§14', f'{path.name} 的 name={doc.get("name")!r} 与文件名不一致')
         env = doc.get('env') or {}
-        if str(env.get('SEGMENTS')) != '5':
+        if not isinstance(env, dict):
+            fail('§14', f'{path.name} 顶层 env 不是映射，该文件未验证')
+            continue
+        if env.get('SEGMENTS') != '5':
             fail('§14', f'{path.name} 顶层 env 的 SEGMENTS 不是 5，是 {env.get("SEGMENTS")!r}')
-        if str(env.get('CLEANUP_APPLY')).lower() != 'true':
+        if str(env.get('CLEANUP_APPLY', '')).lower() != 'true':
             fail('§14', f'{path.name} 顶层 env 的 CLEANUP_APPLY 不是 true，是 {env.get("CLEANUP_APPLY")!r}')
-        has_cleanup = False
         jobs = doc.get('jobs') or {}
         if not isinstance(jobs, dict):
             fail('§14', f'{path.name} 的 jobs 不是映射，该文件未验证')
             continue
+        has_cleanup = False
         for job_name, job in jobs.items():
             if not isinstance(job, dict):
                 fail('§14', f'{path.name} 的 job {job_name} 不是映射，该文件未验证')
@@ -232,7 +98,7 @@ def workflow() -> None:
             group = conc.get('group') if isinstance(conc, dict) else conc
             if not group or not str(group).startswith(repo + '-'):
                 fail('§14', f'{path.name} 的 job {job_name} 并发组 {group!r} 没以 {repo}- 开头')
-            if isinstance(conc, dict) and conc.get('cancel-in-progress') is not False:
+            if not isinstance(conc, dict) or str(conc.get('cancel-in-progress', '')).lower() != 'false':
                 fail('§14', f'{path.name} 的 job {job_name} 缺 cancel-in-progress: false')
             steps = job.get('steps') or []
             if not isinstance(steps, list):
@@ -250,9 +116,9 @@ def workflow() -> None:
                 for key in ('retention-days', 'if-no-files-found', 'overwrite'):
                     if key not in with_:
                         fail('§14', f'{path.name} 的产物步骤缺 {key}')
-                if str(with_.get('if-no-files-found')) != 'error':
+                if str(with_.get('if-no-files-found', '')).lower() != 'error':
                     fail('§14', f'{path.name} 的 if-no-files-found 不是 error')
-                if with_.get('overwrite') is not True:
+                if str(with_.get('overwrite', '')).lower() != 'true':
                     fail('§14', f'{path.name} 的 overwrite 不是 true')
         if not has_cleanup:
             fail('§14', f'{path.name} 没有调 cleanup.py 的清理 job')
@@ -323,7 +189,25 @@ def releases() -> None:
             fail('§16', f'仓里有 {p.stdout.strip()} 个 {kind}，§16 不许发版、不许打 tag')
 
 
+def self_check() -> None:
+    """ponytail：新写的非平凡逻辑要留一条能跑的 assert 自检。这里钉住解析口径。"""
+    sample = ('name: build\nenv:\n  SEGMENTS: \'5\'\n  CLEANUP_APPLY: \'true\'\n'
+              'jobs:\n  b:\n    concurrency:\n      group: x-b\n'
+              '      cancel-in-progress: false\n    steps:\n      - run: |\n          a: b\n          c\n')
+    doc = yaml.load(sample, Loader=yaml.BaseLoader)
+    assert doc['name'] == 'build', doc          # 不把 on/name 变成布尔
+    assert doc['env']['CLEANUP_APPLY'] == 'true'  # 全按字符串读
+    assert doc['jobs']['b']['concurrency']['cancel-in-progress'] == 'false'
+    assert doc['jobs']['b']['steps'][0]['run'].startswith('a: b')  # 块标量原样保留
+    assert 'on' not in doc or isinstance('on', str)
+
+
 def main() -> int:
+    if '--self-check' in sys.argv:
+        self_check()
+        print('自检：解析口径 4 条断言通过')
+        return 0
+    self_check()
     workflow()
     scripts()
     docs()

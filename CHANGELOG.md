@@ -1,3 +1,17 @@
+## 按 ponytail ultra 审自己：砍掉自写 YAML 解析器，改用 PyYAML BaseLoader（2026-11-23，规范 `1a2d3d6`）
+
+- **开头取值**：`1a2d3d6ff459a37220096105bf68e59569bf11c2`／8,852 B／23 条／采样 2026-11-23 17:51 `+08:00`。
+- **九份读证（按读证提交号取，采样 2026-11-23 17:56 `+08:00`）**：`DietrichGebert/ponytail` `96608e078b` `skills/ponytail/SKILL.md` 3,496 B／52 行（首 `---`、尾 `| **ultra** | Also questio…`）；`elder-plinius/CL4R1T4S` `93a5847654` 957,315 B／7,832 行；`nagi-studio/skills` `b7bb3ee09f` 5,727 B／92 行；`morluto/rea` `7d502ddb0d` 33,036 B／491 行；`storytold/craft-anything` `090188d705` 27,859 B／431 行；`Balanov/uncut` `481379bea0` 12,339 B／276 行；`Dodaios/ste80-humanizer` `0d6f7994a5` 14,837 B／217 行；`openai/codex-security` `c6432d1131` 162,145 B／3,011 行；`agentes-chat/agentes-chat` `8c1065e79d` 11,111 B／121 行。**这次是全文读完 ponytail 才动手**，不再是只引 README 的二手转述。
+- **ponytail 原文的三条硬规则，我违反了三条**：①「Never add a dependency for a few lines」——我反过来，为省一个依赖自写了 138 行 YAML 解析器；②「Standard library or a platform feature? Use it」——PyYAML 就是现成的，我没查就断言「沙箱没有」；③「Lazy code without its check is unfinished」——我四个脚本里 `assert`／test 计数全是 **0**。
+- **实测推翻我自己的断言**：我说「沙箱没 PyYAML，只能自己写」。实测 `pip install --break-system-packages pyyaml` 0.8 秒装上，wheel 809 KB。**缺的是我没装，不是取不到**。上一版那句理由不成立。
+- **BaseLoader 才是对的 Loader**：`yaml.safe_load` 按 YAML 1.1 把 `on:` 解析成布尔 `True`（实测顶层键变成 `['name', True, 'permissions', 'env', 'jobs']`，查 `on` 查不到）；`yaml.BaseLoader` 全按字符串读，`on` 保持 `'on'`，且 `cancel-in-progress` 是 `'false'` 而非布尔。判据里五处布尔比较跟着改成比字符串。
+- **§6 行数（改前改后）**：`tools/check.py` **338 → 222 行**（−116，−34%）。砍掉的是自写的 `strip_comment`／`scalar`／`parse`／`BadYaml` 共 138 行；加回的是 PyYAML 调用、`self_check()` 与本轮说明。
+- **补上 ponytail 要求的自检**：`check.py` 新增 `self_check()`，四条断言钉住解析口径（`name` 不被布尔化、`env` 值是字符串、`cancel-in-progress` 是 `'false'`、`run: |` 块标量原样保留），`python3 tools/check.py --self-check` 可单独跑，主流程每次也先跑一遍。
+- **补上 `shortcut:` 注释**（ponytail 规定的格式）：`version.py` 两处——指纹只覆盖六条进包路径（构建脚本换位置才需升级）；只回溯最近 100 条运行（超出且产物被清理时会退回新号，需调大 `per_page`）。
+- **十条造反例全部退 1**（改完复验，判据没弱化）：env 缩进两格（解析失败）、并发组换 `other-build`、删 `retention-days`、删 `if: always()`、`name` 改 `build2`、顶层 `env` 挪进 job、插 `gh release`、删清理步骤、`cancel-in-progress` 改 `true`、删 `overwrite`。还原后 0 处退 0。
+- **依赖声明**：`build.yml` 在自检步骤前加一步 `python3 -m pip install --quiet --break-system-packages pyyaml`；缺依赖时 `check.py` 退 **2** 并写「未验证」（实测 `PYTHONPATH` 伪造无 yaml → 退 2），不会静默放行。
+- **未验证**：CI 里装 PyYAML 那一步本轮未实跑；下一次出包才验证。本轮改了 `check.py`（工具面）与 `build.yml`（CI 面），按 §15 会触发 CI 但不改产物内容，号应仍落在 `26.11.23.1`。
+
 ## 规范整份重写为 23 条（`1a2d3d6`，8,852 B）后对齐：条号全部重指（2026-11-23，规范 `1a2d3d6`）
 
 - **开头取值**：`Sumicya/selfs` `main` 头 `1a2d3d6ff459a37220096105bf68e59569bf11c2`，`GLOBAL.md` 8,852 B／92 行／**23 条**（上版 `ccb9aeb` 为 11,261 B／105 行／25 条，少了 2,409 B、2 条）。结构也变了：正文 23 条 + 附录 A（上游入口）／B（工作流字段）／C（盲区清单）／D（许可），原来是 25 条不分附录。

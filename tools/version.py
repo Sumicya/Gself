@@ -25,6 +25,7 @@ from datetime import datetime, timedelta, timezone
 TZ = timezone(timedelta(hours=8))
 SHAPE = r'\d{2}\.(1[0-2]|[1-9])\.(3[01]|[12][0-9]|[1-9])\.([1-9]\d*)\.([1-9]\d*)'
 ARTIFACT = 'Gself'
+# shortcut: 指纹只覆盖这六条路径，漏判会是「改了别的文件却沿用旧号」；构建脚本换了位置才需升级
 PACKAGED = ('app', 'gradle', 'build.gradle.kts', 'settings.gradle.kts', 'gradle.properties', 'gradlew')
 
 
@@ -89,6 +90,7 @@ def main() -> int:
         # 未开始的运行没有 run_started_at；用 created_at 兜底，与 cleanup.py 同一取法
         return r.get('run_started_at') or r['created_at']
 
+    # shortcut: 只看最近 100 条运行；同内容产物被清理且超出 100 条时会退回新号，需调大 per_page
     runs = fetch(f'repos/{repo}/actions/workflows/build.yml/runs?per_page=100', 'workflow_runs')
     earlier = sorted((r for r in runs if r['run_number'] < run_number), key=lambda r: r['run_number'])
 
