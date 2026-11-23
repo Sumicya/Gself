@@ -213,8 +213,8 @@ def main() -> int:
     docs()
     read_proof()
     releases()
-    print(f'自检：工作流 {len(WORKFLOWS)} 个、工具 {len(list((ROOT / "tools").glob("*")))} 个；'
-          f'问题 {len(CHECKS)} 处')
+    tools = [p for p in (ROOT / "tools").glob("*") if p.is_file()]  # 目录不算：py_compile 会留 __pycache__
+    print(f'自检：工作流 {len(WORKFLOWS)} 个、工具 {len(tools)} 个；问题 {len(CHECKS)} 处')
     return 1 if CHECKS else 0
 
 
