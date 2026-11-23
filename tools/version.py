@@ -24,6 +24,7 @@ from datetime import datetime, timedelta, timezone
 
 TZ = timezone(timedelta(hours=8))
 SHAPE = r'\d{2}\.(1[0-2]|[1-9])\.(3[01]|[12][0-9]|[1-9])\.([1-9]\d*)\.([1-9]\d*)'
+ARTIFACT = 'Gself'
 PACKAGED = ('app', 'gradle', 'build.gradle.kts', 'settings.gradle.kts', 'gradle.properties', 'gradlew')
 
 
@@ -38,6 +39,13 @@ def fetch(endpoint: str, key: str) -> list:
     if p.returncode != 0:
         sys.exit(f'取号接口 {endpoint} 失败（{p.returncode}）：{p.stderr.strip()[:300]}')
     return json.loads(p.stdout)[key]
+
+
+def write_env(version: str, run_number: int) -> None:
+    if not re.fullmatch(SHAPE, version):
+        sys.exit(f'版本不合五段不补零口径：{version}')
+    with open(os.environ['GITHUB_ENV'], 'a') as env:
+        env.write(f'VERSION_NAME={version}\nVERSION_CODE={run_number}\n')
 
 
 def tree_lines_local(sha: str) -> list[str]:
@@ -77,41 +85,52 @@ def main() -> int:
     head = os.environ.get('GITHUB_SHA', '')
     today = local_day(datetime.now(TZ).isoformat())
 
-    runs = fetch(f'repos/{repo}/actions/workflows/build.yml/runs?per_page=100', 'workflow_runs')
     def started(r):
         # 未开始的运行没有 run_started_at；用 created_at 兜底，与 cleanup.py 同一取法
         return r.get('run_started_at') or r['created_at']
 
-    earlier = sorted((r for r in runs
-                      if r['run_number'] < run_number and local_day(started(r)) == today),
-                     key=lambda r: r['run_number'])
+    runs = fetch(f'repos/{repo}/actions/workflows/build.yml/runs?per_page=100', 'workflow_runs')
+    earlier = sorted((r for r in runs if r['run_number'] < run_number), key=lambda r: r['run_number'])
 
-    # 今日更早的运行按时间排，同一份内容只记一次；本条内容出现的位置就是当日号。
-    seen: dict[str, int] = {}
     cache: dict[str, list[str]] = {}
-    for r in earlier:
-        sha = r['head_sha']
+
+    def fp_of(sha: str) -> str:
         if sha not in cache:
             cache[sha] = tree_lines_local(sha) if sha == head else tree_lines_api(repo, sha)
-        fp = fingerprint(cache[sha])
+        return fingerprint(cache[sha])
+
+    mine = fp_of(head)
+
+    # §15「同一内容重跑同一号」：先找同一份内容上一次出过包的运行，沿用它那天的 yy.m.d 与当日号。
+    # 只在「今天」里找不够——2026-11-23 的 #109 就是同内容跨天重跑，当日号从 1 重来、涨了号。
+    for r in reversed(earlier):
+        arts = [a for a in fetch(f'repos/{repo}/actions/runs/{r["id"]}/artifacts', 'artifacts')
+                if a['name'].startswith(ARTIFACT + '-')]
+        if not arts or fp_of(r['head_sha']) != mine:
+            continue
+        tag = arts[0]['name'][len(ARTIFACT) + 1:]
+        if re.fullmatch(SHAPE, tag):
+            kept = tag.rsplit('.', 1)[0] + f'.{run_number}'
+            print(f'取号：内容同 {r["run_number"]} 号运行（{tag}），沿用其 yy.m.d 与当日号，只换总序号 → {kept}')
+            write_env(kept, run_number)
+            return 0
+
+    # 新内容：当日号＝它在今日运行序列里第一次出现的位置（从 1 数）。
+    seen: dict[str, int] = {}
+    for r in earlier:
+        if local_day(started(r)) != today:
+            continue
+        fp = fp_of(r['head_sha'])
         if fp not in seen:
             seen[fp] = len(seen) + 1
-
-    mine = fingerprint(tree_lines_local(head))
     daily = seen.get(mine, len(seen) + 1)
 
     version = f'{today}.{daily}.{run_number}'
-    if not re.fullmatch(SHAPE, version):
-        sys.exit(f'版本不合五段不补零口径：{version}')
-    same = [r['run_number'] for r in earlier if cache.get(r['head_sha']) and
-            fingerprint(cache[r['head_sha']]) == mine]
     print(f'取号：SHA={head} run_id={run_id} run_number={run_number} '
-          f'今日更早运行={len(earlier)} 今日不同内容={len(seen)} '
-          f'内容指纹={mine[:12]} 同内容运行={same} 当日号={daily} 版本={version}')
-    with open(os.environ['GITHUB_ENV'], 'a') as env:
-        env.write(f'VERSION_NAME={version}\nVERSION_CODE={run_number}\n')
+          f'更早运行={len(earlier)} 今日不同内容={len(seen)} '
+          f'内容指纹={mine[:12]} 当日号={daily} 版本={version}')
+    write_env(version, run_number)
     return 0
-
 
 if __name__ == '__main__':
     sys.exit(main())
