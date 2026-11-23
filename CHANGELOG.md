@@ -10,7 +10,9 @@
 - **补上 `shortcut:` 注释**（ponytail 规定的格式）：`version.py` 两处——指纹只覆盖六条进包路径（构建脚本换位置才需升级）；只回溯最近 100 条运行（超出且产物被清理时会退回新号，需调大 `per_page`）。
 - **十条造反例全部退 1**（改完复验，判据没弱化）：env 缩进两格（解析失败）、并发组换 `other-build`、删 `retention-days`、删 `if: always()`、`name` 改 `build2`、顶层 `env` 挪进 job、插 `gh release`、删清理步骤、`cancel-in-progress` 改 `true`、删 `overwrite`。还原后 0 处退 0。
 - **依赖声明**：`build.yml` 在自检步骤前加一步 `python3 -m pip install --quiet --break-system-packages pyyaml`；缺依赖时 `check.py` 退 **2** 并写「未验证」（实测 `PYTHONPATH` 伪造无 yaml → 退 2），不会静默放行。
-- **未验证**：CI 里装 PyYAML 那一步本轮未实跑；下一次出包才验证。本轮改了 `check.py`（工具面）与 `build.yml`（CI 面），按 §15 会触发 CI 但不改产物内容，号应仍落在 `26.11.23.1`。
+- **CI 实跑（#111，`45151134917`，head `233ba65`）**：`conclusion=success`，产物 `Gself-26.11.23.1.111` 313,223 B。runner 上 `pip install pyyaml` 与 `BaseLoader` 都通了，「装依赖」这条不再是推断。
+  这同时是上一轮挂的验证点：**#111 与 #110 同在 `26.11.23.1` 号段、只换末段**，跨天沿用已在真实 CI 里实测成立，不再逐日涨号。
+- **未验证**：本轮 CI 那步只在本次运行里成功过一次；下一次出包才验证。本轮改了 `check.py`（工具面）与 `build.yml`（CI 面），按 §15 会触发 CI 但不改产物内容，号应仍落在 `26.11.23.1`。
 
 ## 规范整份重写为 23 条（`1a2d3d6`，8,852 B）后对齐：条号全部重指（2026-11-23，规范 `1a2d3d6`）
 
