@@ -53,7 +53,7 @@ def tree_lines_api(repo: str, sha: str) -> list[str]:
                        capture_output=True, text=True)
     if p.returncode != 0:
         sys.exit(f'取树 {sha} 失败（{p.returncode}）：{p.stderr.strip()[:200]}  '
-                 f'——§16 要求按内容编号，取不到内容就不出包')
+                 f'——§15 要求按内容编号，取不到内容就不出包')
     data = json.loads(p.stdout)
     if data.get('truncated'):
         sys.exit(f'树 {sha} 被截断，判不出内容是否变化，不出包')

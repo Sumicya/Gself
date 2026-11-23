@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""规范自检：把 §4／§11／§12／§14／§18／§19 里原本靠人记的几条，做成一条能跑的命令。
+"""规范自检：把 §4／§11／§12／§14／§16／§17 里原本靠人记的几条，做成一条能跑的命令。
 
 判据（GLOBAL `ccb9aeb`，11,261 B / 25 条）：
 
 1. 工作流（§14）：`name` 与文件名一致且唯一；顶层 `env` 两键；每个 job 的并发组以 `<仓>-` 开头、
    `cancel-in-progress: false`；清理 job `if: always()` 且调 `tools/cleanup.py`；产物三件套齐。
-2. 对外动作（§18）：任何字符串值里都不得出现发版、打 tag、强推、`[skip ci]`；本仓 Release 与 tag 必须为 0。
+2. 对外动作（§16）：任何字符串值里都不得出现发版、打 tag、强推、`[skip ci]`；本仓 Release 与 tag 必须为 0。
 3. 脚本位置（§11）：不许有 `scripts/`、`ci/`；`app/`、`.github/` 下不许躺 `.py`。
-4. 文档（§19）：README 四章齐；README 与工作流里无 TODO 与禁用话术。
+4. 文档（§17）：README 四章齐；README 与工作流里无 TODO 与禁用话术。
 5. 读证（§4）：`CHANGELOG.md` 最新一条点出九份上游与提交 SHA。
 6. 盲区（§12）：`tools/blindspots.json` 存在（内容校验在 `tools/deadcode.py`）。
 
@@ -259,7 +259,7 @@ def workflow() -> None:
         for value in strings(doc):
             for bad in FORBIDDEN:
                 if bad in value:
-                    fail('§18', f'{path.name} 出现禁用的对外动作 {bad!r}')
+                    fail('§16', f'{path.name} 出现禁用的对外动作 {bad!r}')
     for name, files in names.items():
         if len(files) > 1:
             fail('§14', f'工作流 name {name!r} 重复：{files}')
@@ -278,13 +278,13 @@ def docs() -> None:
     readme = (ROOT / 'README.md').read_text(encoding='utf-8')
     for head in ('## 装', '## 删', '## 项目限制', '## 许可证'):
         if head not in readme:
-            fail('§19', f'README 缺章节 {head}')
+            fail('§17', f'README 缺章节 {head}')
     # CHANGELOG 存历史、黑历史不删：禁用词只查 README 与工作流
     scope = [ROOT / 'README.md', *WORKFLOWS]
     for word in ('TODO', '仅供学习交流', '禁止商用'):
         for p in scope:
             if word in p.read_text(encoding='utf-8'):
-                fail('§19', f'{p.name} 出现禁用词 {word!r}')
+                fail('§17', f'{p.name} 出现禁用词 {word!r}')
     if not (ROOT / 'tools/blindspots.json').exists():
         fail('§12', '缺 tools/blindspots.json')
 
@@ -312,15 +312,15 @@ def repo_slug() -> str:
 def releases() -> None:
     repo = os.environ.get('GITHUB_REPOSITORY') or repo_slug()
     if not repo:
-        fail('§18', '取不到仓名（git remote origin 缺失），Release 与 tag 未验证')
+        fail('§16', '取不到仓名（git remote origin 缺失），Release 与 tag 未验证')
         return
     for kind, endpoint in (('Release', 'releases'), ('tag', 'tags')):
         p = subprocess.run(['gh', 'api', f'repos/{repo}/{endpoint}?per_page=100', '--jq', 'length'],
                            capture_output=True, text=True)
         if p.returncode != 0:
-            fail('§18', f'查 {endpoint} 失败（要 GH_TOKEN 且要有读权限）：{p.stderr.strip()[:90]}')
+            fail('§16', f'查 {endpoint} 失败（要 GH_TOKEN 且要有读权限）：{p.stderr.strip()[:90]}')
         elif p.stdout.strip() not in ('', '0'):
-            fail('§18', f'仓里有 {p.stdout.strip()} 个 {kind}，§18 不许发版、不许打 tag')
+            fail('§16', f'仓里有 {p.stdout.strip()} 个 {kind}，§16 不许发版、不许打 tag')
 
 
 def main() -> int:

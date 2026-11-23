@@ -1,3 +1,17 @@
+## 规范整份重写为 23 条（`1a2d3d6`，8,852 B）后对齐：条号全部重指（2026-11-23，规范 `1a2d3d6`）
+
+- **开头取值**：`Sumicya/selfs` `main` 头 `1a2d3d6ff459a37220096105bf68e59569bf11c2`，`GLOBAL.md` 8,852 B／92 行／**23 条**（上版 `ccb9aeb` 为 11,261 B／105 行／25 条，少了 2,409 B、2 条）。结构也变了：正文 23 条 + 附录 A（上游入口）／B（工作流字段）／C（盲区清单）／D（许可），原来是 25 条不分附录。
+- **九份读证（按读证提交号取，采样 2026-11-23 17:44 `+08:00`）**：`DietrichGebert/ponytail` `96608e078b` `skills/ponytail/SKILL.md` 3,496 B／52 行（首 `---`、尾 `| **ultra** | Also question th…`）；`elder-plinius/CL4R1T4S` `93a5847654` `ANTHROPIC/CLAUDE-CODE-FABLE-5.2.txt` 957,315 B／7,832 行；`nagi-studio/skills` `b7bb3ee09f` `README.md` 5,727 B／92 行（首 `# Nagi Skills`、尾 `把仓库里的 skill 直接…`）；`morluto/rea` `7d502ddb0d` `README.md` 33,036 B／491 行（首 `<div align="center">`、中 `<a id="choosing-a-deep-analysi…`）；`storytold/craft-anything` `090188d705` `README.md` 27,859 B／431 行（首 `<p align="center">`、尾 `</p>`）；`Balanov/uncut` `481379bea0` `README.md` 12,339 B／276 行（首 `<div align="center">`、尾 `MIT. Fork it, modify it, ship…`）；`Dodaios/ste80-humanizer` `0d6f7994a5` `SKILL.md` 14,837 B／217 行（首 `---`、中 `| 9 | Stacked qualifiers`）；`openai/codex-security` `c6432d1131` `sdk/typescript/docs/cli.md` 162,145 B／3,011 行（首 `# CLI and workflows`、尾 `for deployment and source-buil…`）；`agentes-chat/agentes-chat` `8c1065e79d` `README.md` 11,111 B／121 行（首 `<p align="center">`、尾 `[SECURITY.md](SECURITY.md). Ev…`）。字节与行数与 11-22 那轮逐个相同；本轮是重读，不是复用旧读数。
+- **条号全部重编**，本仓脚本里写的 `§N` 会指错条，这轮逐个改：
+  旧 §18 对外动作 → 新 **§16**；旧 §19 写东西 → 新 **§17**；旧 §16 号源 → 新 **§15**；旧 §15 产物 → 并入新 **§14**（出包）。
+  `tools/check.py` 里 7 处 `§18`、4 处 `§19` 改完；`tools/version.py` 的 `§16`（号源）改 `§15`。**CHANGELOG 旧条目里的条号一个没动**——那是历史记录，按 §17「黑历史不删」保留原文。
+- **核过没弱化**：改完 `check.py` 仍 0 处退 0；造反例三条照旧变红且报对了新条号——插 `gh release` → `§16 build.yml 出现禁用的对外动作 'gh release'`；README 加 `TODO` → `§17 README.md 出现禁用词 'TODO'`；并发组改 `x-build` → `§14 … 并发组 'x-build' 没以 gself- 开头`。
+- **附录 B 无需新增判据**：新附录 B 列的字段（`name` 同名唯一、顶层 `env` 两键、并发组 `<仓>-<用途>`、`cancel-in-progress: false`、清理 job `if: always()` 同组调 `cleanup.py`、产物三件套）与 `check.py` 已经在查的逐条对应，没有漏项，所以这轮不新增代码。
+- **自抓一次**：首条先写完才发现 `check.py` 报 9 处 `§4 最新一条变更记录没点出上游 …`——我把条号对齐写完了却没写读证。§4 是「开工前读完」不是「交付时补一句」，这份读证本该在动手前取；补上后才 0 处。判据能抓住我自己漏的这一步，说明它有用；但这也说明我开工时跳了 §4，记一笔。
+- **§15 跑不跑 CI**：本轮只动 `tools/`，未触及进包路径（`app/`／`gradle/`／`build.gradle.kts`／`settings.gradle.kts`／`gradle.properties`／`gradlew`），故**不跑 CI**，不涨号。
+- **收尾再取一次**：`1a2d3d6ff459a37220096105bf68e59569bf11c2`／8,852 B／采样 2026-11-23 17:42 `+08:00`，与开头一致，期间规范未变。
+- **新规范新增的两条自检要求**：§2「每轮开头和收尾各取一次本仓 `GLOBAL.md` 的提交号和字节」——本轮开头已取（`1a2d3d6`／8,852 B／23 条／采样 2026-11-23 17:41 `+08:00`），收尾再取一次核对；§6「自称重写的，改前改后各报 `wc -l`」——本轮是条号对齐，不是重写，`tools/check.py` 338 → 338 行、`tools/version.py` 117 → 117 行（`wc -l` 实测，只换标签文字，行数不变）。
+
 ## 规范合入 `main`（`ccb9aeb`）后对齐：自检改真 YAML 解析、盲区禁指仓根、号源改按产物内容、删掉等运行完成（2026-11-22，规范 `ccb9aeb`）
 
 - **规范**：`Sumicya/selfs` PR #15 已 `merged=true`（2026-11-21T12:16:30Z），`main` 头 `ccb9aebad23519b2a0d5ae597d349c7eda822092`，`GLOBAL.md` 11,261 B / 105 行 / 25 条，比上轮在用的 `30ddbc3` 多 175 B。相对 `30ddbc3` 有四处实质变化：§4 补「读证记采样时刻、复核按读证写的提交号取，不按分支头取」；§9「被点名重写＝整份重写」；§10 删掉「等远端接口最终一致性」的例外；§12 允许 `path` 指目录但禁止指仓根；§16「号源是产物内容，不是运行次数」。
