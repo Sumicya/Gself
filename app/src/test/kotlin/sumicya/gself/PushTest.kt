@@ -91,6 +91,18 @@ class PushTest {
     }
 
     /**
+     * `shouldProxy` 的实参里没有 Intent，只有散字符串。判据只能认推送族，不能「有字符串就算推送」，
+     * 也不能「不是字符串就算推送」——两个方向都会把整片广播挡在代理之外，等于退回旧的耗电形态。
+     */
+    @Test
+    fun proxyCheckOnlyMatchesPushStrings() {
+        assertTrue(Push.anyPushAction(arrayOf<Any?>(null, 7, receive, target)))
+        assertTrue(Push.anyPushAction(arrayOf<Any?>("com.google.firebase.MESSAGING_EVENT")))
+        assertFalse(Push.anyPushAction(arrayOf<Any?>(null, 7, target, "android.intent.action.SCREEN_ON")))
+        assertFalse(Push.anyPushAction(arrayOf<Any?>()))
+    }
+
+    /**
      * `waken` 的提前返回依赖「已带 0x20 必不需要补」这个合取项；这里把 action / target 的
      * 组合都过一遍钉住，谁删掉那个合取项这条就红，而不是让提前返回静默改语义。
      */

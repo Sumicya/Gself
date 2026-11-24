@@ -180,15 +180,12 @@ fun Hook.oplusFixes() {
         trace("OplusAppStartup 自启动闸门已关")
     }
 
-    // 代理广播整个关掉：AOSP 没有这个东西，广播一律由系统自己投递，不代跑。
-    // ponytail: 不再逐条判「实参里有没有推送 action」，而是一律返回 NOT_INCLUDE——省掉了从散字符串
-    //             实参里认 action / 包名的整套启发式（旧 Push.actionIn / packageIn + 包名正则）。
-    //             代价是所有广播都不再走 ColorOS 的代理合批，这部分功耗回到系统自己身上。
-    //             真机若发现待机耗电明显上升，把「实参里有推送 action」的判据加回来。
+    // 只把推送挡在代理之外：一律 NOT_INCLUDE 会让全系统广播都不合批，功耗回到系统身上（2026-11-24 真机）。认错只会「不进代理」，安全。
     install("OplusProxyBroadcast") {
         val notInclude = field(classOf("com.android.server.am.OplusProxyBroadcast\$RESULT"), "NOT_INCLUDE").get(null)
-        hook(find(classOf("com.android.server.am.OplusProxyBroadcast"), "shouldProxy")) { notInclude }
-        trace("OplusProxyBroadcast 代理已全关")
+        hook(find(classOf("com.android.server.am.OplusProxyBroadcast"), "shouldProxy")) { chain ->
+            if (Push.anyPushAction(chain.args)) notInclude else chain.proceed()
+        }
     }
 
     install("Hans GMS 限制") {

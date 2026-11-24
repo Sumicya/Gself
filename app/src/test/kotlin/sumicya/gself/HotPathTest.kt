@@ -35,6 +35,8 @@ class HotPathTest {
         val otherAction = "android.intent.action.SCREEN_ON"
         val target = "com.example.app"
         val flags = 0x10000000 // 正常运行期广播的 flags，都没带 0x10 / 0x20
+        val proxyArgs = arrayOf<Any?>(null, 7, pushAction, target)      // shouldProxy 的实参形状：散字符串
+        val nonPushArgs = arrayOf<Any?>(null, 7, otherAction, target)
 
         fun batch(times: Int) {
             var sink = 0
@@ -47,9 +49,12 @@ class HotPathTest {
                 // 子串判据本体
                 if (Push.isPush(pushAction)) sink++
                 if (Push.isPush(otherAction)) sink++
+                // 代理判据：每次广播都进来，同样不许分配
+                if (Push.anyPushAction(proxyArgs)) sink++
+                if (Push.anyPushAction(nonPushArgs)) sink++
             }
-            // 每轮只该命中两处：推送判据为真、子串判据为真；顺带让 JIT 不能把整批调用当死代码删掉
-            assertEquals(times * 2, sink)
+            // 每轮命中三处：推送判据、子串判据、代理判据各一次；顺带让 JIT 不能把整批当死代码删掉
+            assertEquals(times * 3, sink)
         }
 
         batch(20_000) // 预热：解释执行与本机编译后各来一轮
