@@ -14,7 +14,11 @@
     `e: Fixes.kt:187:36 Argument type mismatch: actual type is '(Mutable)List<Any!>', but 'Array<out Any?>' was expected.`
   - run `45415658339`（`e4ef873`）绿：测试、构建、APK 核验、上传全过，产物 `Gself-26.11.24.3.116` 313,275 B。
 - **零分配**：`anyPushAction` 用下标 `while` 而非 `List.any{}` / `indices`——后两者每次调用都新建对象，而这里每条广播都进来。`HotPathTest` 在 CI 里绿，即 20 万次调用分配 ≤ 8KB 这条实测过了，不是推断。
-- **未验证**：真机耗电是否回落。改的只是「不再全关代理合批」这一条可读的事实，省多少没有真机读数。
+- **第二刀：日志**（2026-11-24 22:40，`ee3f8d8`，run `45416233660` 绿，产物 `Gself-26.11.24.4.117` 312,990 B）。规范同日在头部加了「先进性」一条，按「越激进越好」重看：代理合批只是第一处，日志是第二处、也是更确定的一处。
+  - `trace()` 每次同时写 logcat 与 `xposedApi.log`（LSPosed 框架日志，落盘 + 跨进程），而 `waken` 里每条命中的推送都调一次。框架日志那一跳删掉，只剩 `Log.d`。`xposedApi` 随之成为只写不读的变量，整个删除，连 import 一起。
+  - `waken` 的逐条 `wake:` 日志删除；兜底日志去掉「每 100 次再报一次」；通知取消与防火墙拒绝日志改为只在前 5 次出声。删完 `waken` 的 `where` 参数无人使用，一并删除。
+  - 源码 `706` 行（上一刀 704 → 本刀 706，含新计数器），产物从 313,275 B 降到 312,990 B（−285 B），这是「真的删掉了」的可观测旁证。
+- **未验证**：真机耗电是否回落。两刀改的都是可读的事实（不再全关代理合批、不再每推送写两次日志），省多少电没有真机读数，不编。
 - **留的教训**：注释里写下的「代价」不是免责声明，是待办。写了退路就要有人来走。
 - **九份读证（按读证提交号取，采样 2026-11-24 22:27 `+08:00`）**：`DietrichGebert/ponytail` `96608e078b` 3,496 B／52 行（首 `---`、尾 `| **ultra** | Also q…`）；`elder-plinius/CL4R1T4S` `93a5847654` 957,315 B／7,832 行；`nagi-studio/skills` `b7bb3ee09f` `README.md` 5,727 B／92 行（首 `# Nagi Skills`、尾 `把仓库里的 skil…`）；`morluto/rea` `7d502ddb0d` `README.md` 33,036 B／491 行（首 `<div align="center">`、尾 `does not amend MIT o…`）；`storytold/craft-anything` `090188d705` `README.md` 27,859 B／431 行（首 `<p align="center">`、尾 `</p>`）；`Balanov/uncut` `481379bea0` `README.md` 12,339 B／276 行（首 `<div align="center">`、尾 `MIT. Fork it, modify…`）；`Dodaios/ste80-humanizer` `0d6f7994a5` `SKILL.md` 14,837 B／217 行（首 `---`、尾 ` ``` `）；`openai/codex-security` `c6432d1131` `sdk/typescript/docs/cli.md` 162,145 B／3,011 行（首 `# CLI and workflows`、尾 `for deployment and s…`）；`agentes-chat/agentes-chat` `8c1065e79d` `README.md` 11,111 B／121 行（首 `<p align="center">`、尾 `[SECURITY.md](SECURI…`）。九份字节、行数与上几轮逐个相同；八个上游分支头已动，按 §4 仍按读证提交号取。规范 `262d4b4c` 本身 8,970 B／93 行／23 条。
 
