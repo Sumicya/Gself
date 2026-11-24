@@ -53,6 +53,10 @@ private val patchedPushes = AtomicInteger()
 /** 语义层命中条数；为 0 而标志层一直在补，说明枢轴没被调用（被内联或被 ROM 改写）。 */
 private val decisionHits = AtomicInteger()
 
+/** 逐条日志的出声配额：热路径上的东西只在前几条出声，之后静默。 */
+private val keptNotifications = AtomicInteger()
+private val droppedRejects = AtomicInteger()
+
 /**
  * 语义层：把 `Intent.isExcludingStopped()` 对定向推送改答 false。
  *
@@ -69,7 +73,7 @@ private fun Hook.stoppedFilterDecision() {
         if (!Push.isTargetedPush(target, intent.action)) return@hook chain.proceed()
         val hits = decisionHits.incrementAndGet()
         // 只在标志层漏了这条时出声：前 3 次逐条记，之后每 100 次记一次，避免洪水。
-        if (intent.flags and Intent.FLAG_INCLUDE_STOPPED_PACKAGES == 0 && (hits <= 3 || hits % 100 == 0)) {
+        if (intent.flags and Intent.FLAG_INCLUDE_STOPPED_PACKAGES == 0 && hits <= 3) {
             trace("决策入口兜底：$target（${intent.action} 未带 0x20，第 $hits 次）")
         }
         false
@@ -87,7 +91,7 @@ private fun Hook.broadcastEntryFlags() {
             // filterIsInstance 每次调用都新建 ArrayList，而这里每次系统广播都进来一次。
             val intentIndex = m.parameterTypes.indexOfFirst { it == Intent::class.java }
             hook(m) { chain ->
-                (chain.args.getOrNull(intentIndex) as? Intent)?.let { waken(it, "AMS#$name") }
+                (chain.args.getOrNull(intentIndex) as? Intent)?.let { waken(it) }
                 chain.proceed()
             }
             hooked++
@@ -105,7 +109,7 @@ private fun intentOverloads(clazz: Class<*>, name: String): List<Method> =
         .onEach { it.isAccessible = true }
 
 /** 补 `FLAG_INCLUDE_STOPPED_PACKAGES` 并解冻目标；判据全在 [Push.needsStoppedPatch]，这里只执行。 */
-private fun waken(intent: Intent, where: String) {
+private fun waken(intent: Intent) {
     // 快路：已带 INCLUDE 就直接退出，连 component / package 都不读。同一条广播会依次穿过
     // broadcastIntent / broadcastIntentWithFeature / broadcastIntentLocked，第 2、3 次进来时标志已补好。
     // 该提前返回依赖 [Push.needsStoppedPatch] 的第一个合取项，由 PushTest#includeFlagNeverNeedsPatch 钉住。
@@ -114,11 +118,12 @@ private fun waken(intent: Intent, where: String) {
     val target = Push.targetOf(intent) ?: return
     if (!Push.needsStoppedPatch(intent.action, target, intent.flags)) return
     intent.addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES)
+    // 逐条日志已删：每条命中的推送都要付一次 logcat 写，system_server 是常驻进程，这笔开销是持续的。
+    // 只在「第 3 条推送补了标志、语义层却一次没进」时出声一次，那是真的异常（枢轴可能被内联）。
     if (patchedPushes.incrementAndGet() == 3 && decisionHits.get() == 0) {
         trace("停止态决策未被调用：3 条推送已补标志，Intent#isExcludingStopped 一次未进（可能被内联）")
     }
     unfreeze(target)
-    trace("wake: $target（$where）")
 }
 
 // ---------- 2. 通知不被自动清除 ----------
@@ -155,7 +160,8 @@ fun Hook.notificationFixes() {
                 }
             }
             val hit = reason ?: return@hook chain.proceed()
-            trace("keep notification: $pkg（reason=$hit）")
+            // 只在头几次出声：整包取消在装包/更新时是成批来的，逐条记就是洪水。
+            if (keptNotifications.incrementAndGet() <= 5) trace("keep notification: $pkg（reason=$hit）")
             null
         }
     }
@@ -230,7 +236,9 @@ private fun Hook.googleNetworkFirewallFix() {
         )
 
         if (shouldDrop) {
-            trace("Oplus Google network reject dropped: uid=$uid, type=$networkType")
+            if (droppedRejects.incrementAndGet() <= 5) {
+                trace("Oplus Google network reject dropped: uid=$uid, type=$networkType")
+            }
             null
         } else {
             chain.proceed()
