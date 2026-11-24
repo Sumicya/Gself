@@ -35,8 +35,8 @@ class HotPathTest {
         val otherAction = "android.intent.action.SCREEN_ON"
         val target = "com.example.app"
         val flags = 0x10000000 // 正常运行期广播的 flags，都没带 0x10 / 0x20
-        val proxyArgs = arrayOf<Any?>(null, 7, pushAction, target)      // shouldProxy 的实参形状：散字符串
-        val nonPushArgs = arrayOf<Any?>(null, 7, otherAction, target)
+        val proxyArgs: List<Any?> = listOf(null, 7, pushAction, target)  // shouldProxy 的实参形状：散字符串
+        val nonPushArgs: List<Any?> = listOf(null, 7, otherAction, target)
 
         fun batch(times: Int) {
             var sink = 0

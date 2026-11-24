@@ -180,7 +180,7 @@ fun Hook.oplusFixes() {
         trace("OplusAppStartup 自启动闸门已关")
     }
 
-    // 只把推送挡在代理之外：一律 NOT_INCLUDE 会让全系统广播都不合批，功耗回到系统身上（2026-11-24 真机）。认错只会「不进代理」，安全。
+    // 只把推送挡在代理之外：一律 NOT_INCLUDE 会让全系统广播都不合批（2026-11-24 真机耗电）。认错只会「不进代理」。
     install("OplusProxyBroadcast") {
         val notInclude = field(classOf("com.android.server.am.OplusProxyBroadcast\$RESULT"), "NOT_INCLUDE").get(null)
         hook(find(classOf("com.android.server.am.OplusProxyBroadcast"), "shouldProxy")) { chain ->

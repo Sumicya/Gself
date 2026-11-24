@@ -96,10 +96,10 @@ class PushTest {
      */
     @Test
     fun proxyCheckOnlyMatchesPushStrings() {
-        assertTrue(Push.anyPushAction(arrayOf<Any?>(null, 7, receive, target)))
-        assertTrue(Push.anyPushAction(arrayOf<Any?>("com.google.firebase.MESSAGING_EVENT")))
-        assertFalse(Push.anyPushAction(arrayOf<Any?>(null, 7, target, "android.intent.action.SCREEN_ON")))
-        assertFalse(Push.anyPushAction(arrayOf<Any?>()))
+        assertTrue(Push.anyPushAction(listOf<Any?>(null, 7, receive, target)))
+        assertTrue(Push.anyPushAction(listOf<Any?>("com.google.firebase.MESSAGING_EVENT")))
+        assertFalse(Push.anyPushAction(listOf<Any?>(null, 7, target, "android.intent.action.SCREEN_ON")))
+        assertFalse(Push.anyPushAction(listOf<Any?>()))
     }
 
     /**

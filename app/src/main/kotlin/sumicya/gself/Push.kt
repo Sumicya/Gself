@@ -3,16 +3,8 @@ package sumicya.gself
 import android.content.Intent
 
 /**
- * 「这条广播要不要补停止态放行」——推送唤醒唯一的判据，全是纯函数。
- *
- * 判据是**子串**而不是 action 全等表：`c2dm` / `firebase` 两个词覆盖整个推送族及其变体
- * （`…c2dm.intent.RECEIVE`、`…firebase.MESSAGING_EVENT`，以及 GMS 以后改名的任何 action），
- * 比列举字符串短，也不会因为名字变了就静默漏掉一整条推送。
- *
- * 这些函数在 system_server 里被高频调用（`isExcludingStopped` 每次 intent 解析问一次，AMS 每个
- * 广播入口每次投递问一次），所以不分配对象、不建列表、不遍历集合，只做位运算与 `String.contains`。
- * 判据留在本文件而不到挂载点里，是为了让 [PushTest] 在 JVM 上逐条钉住——判错了就是「对所有广播
- * 放行」或「一个都不放行」，两种都致命。
+ * 推送判据，全是纯函数，集中在 [PushTest] 里逐条钉住——判错了就是「全放行」或「全不放行」。
+ * 跑在 system_server 的高频路径上，所以不分配对象、不建列表，只做位运算与 `String.contains`。
  */
 object Push {
 
@@ -56,6 +48,10 @@ object Push {
     fun isTargetedPush(target: String?, action: String?): Boolean =
         !target.isNullOrEmpty() && isPush(action)
 
-    /** `shouldProxy` 的 action 是散字符串（实参里没有 `Intent`）；`out` 变型是 `Chain#getArgs()` 的类型要求。 */
-    fun anyPushAction(args: Array<out Any?>): Boolean = args.any { it is String && isPush(it) }
+    /** `shouldProxy` 的 action 是散字符串，`Chain#args` 是 `List<Any?>`；`any{}`/`indices` 每次新建对象，故用 while。 */
+    fun anyPushAction(args: List<Any?>): Boolean {
+        var i = 0
+        while (i < args.size) if (isPush(args[i++] as? String)) return true
+        return false
+    }
 }
