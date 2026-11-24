@@ -56,6 +56,6 @@ object Push {
     fun isTargetedPush(target: String?, action: String?): Boolean =
         !target.isNullOrEmpty() && isPush(action)
 
-    /** `shouldProxy` 实参里没有 `Intent`，action 是散字符串；`any` 对数组是索引循环，零分配。 */
-    fun anyPushAction(args: Array<Any?>): Boolean = args.any { it is String && isPush(it) }
+    /** `shouldProxy` 的 action 是散字符串（实参里没有 `Intent`）；`out` 变型是 `Chain#getArgs()` 的类型要求。 */
+    fun anyPushAction(args: Array<out Any?>): Boolean = args.any { it is String && isPush(it) }
 }
