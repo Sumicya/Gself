@@ -7,8 +7,14 @@
 - **认错方向**：任一字符串实参命中推送族就挡。误判只会「这条不进代理」，安全；反方向会让推送迟投，不取。
 - **零分配**：新判据 `Push.anyPushAction` 对数组用 `any`（内联成索引循环，不造 Iterator），只做 `contains`。已并入 `HotPathTest` 的零分配批次，与既有的四个判据同一个计量器、同一组阴阳对照。
 - **测试**：`PushTest.proxyCheckOnlyMatchesPushStrings` 钉住两个方向——不能「有字符串就算推送」，也不能「非字符串算推送」。任一方向错都退回旧的耗电形态。
-- **读数**：源码 `708 → 708` 行（`Fixes.kt` 373→370、`Push.kt` 58→61，其余不动），测试 `277 → 294` 行。净持平，不增。量法 `cat app/src/main/kotlin/sumicya/gself/*.kt | wc -l`。
-- **未验证**：本沙箱无 JDK，`gradlew test` 跑不了。上述测试与零分配结论**未在本机跑过**，只能由 CI 判。真机耗电是否回落同样未验证，改的是「不再全关」这一条可读的事实。
+- **读数**：源码 `708 → 704` 行（`Fixes.kt` 373→370、`Push.kt` 58→61 后压到 57，其余不动），测试 `277 → 294` 行。源码净减 4 行。量法 `cat app/src/main/kotlin/sumicya/gself/*.kt | wc -l`。
+- **编译失败的两次与真错误行**（都是我不知道「`Chain#args` 是 `List` 不是数组」造成的，靠猜修了两轮才对）：
+  - run `45414488358`（`9dc6107`）红。当时取不到日志，改猜是 `Array` 变型问题，改完照样红。
+  - run `45415279740`（`b837f13`）红。这一轮先把 workflow 的失败输出改成「挑错误行 → 逐行打注解 → 写 job summary」，才拿到原文：
+    `e: Fixes.kt:187:36 Argument type mismatch: actual type is '(Mutable)List<Any!>', but 'Array<out Any?>' was expected.`
+  - run `45415658339`（`e4ef873`）绿：测试、构建、APK 核验、上传全过，产物 `Gself-26.11.24.3.116` 313,275 B。
+- **零分配**：`anyPushAction` 用下标 `while` 而非 `List.any{}` / `indices`——后两者每次调用都新建对象，而这里每条广播都进来。`HotPathTest` 在 CI 里绿，即 20 万次调用分配 ≤ 8KB 这条实测过了，不是推断。
+- **未验证**：真机耗电是否回落。改的只是「不再全关代理合批」这一条可读的事实，省多少没有真机读数。
 - **留的教训**：注释里写下的「代价」不是免责声明，是待办。写了退路就要有人来走。
 - **九份读证（按读证提交号取，采样 2026-11-24 22:27 `+08:00`）**：`DietrichGebert/ponytail` `96608e078b` 3,496 B／52 行（首 `---`、尾 `| **ultra** | Also q…`）；`elder-plinius/CL4R1T4S` `93a5847654` 957,315 B／7,832 行；`nagi-studio/skills` `b7bb3ee09f` `README.md` 5,727 B／92 行（首 `# Nagi Skills`、尾 `把仓库里的 skil…`）；`morluto/rea` `7d502ddb0d` `README.md` 33,036 B／491 行（首 `<div align="center">`、尾 `does not amend MIT o…`）；`storytold/craft-anything` `090188d705` `README.md` 27,859 B／431 行（首 `<p align="center">`、尾 `</p>`）；`Balanov/uncut` `481379bea0` `README.md` 12,339 B／276 行（首 `<div align="center">`、尾 `MIT. Fork it, modify…`）；`Dodaios/ste80-humanizer` `0d6f7994a5` `SKILL.md` 14,837 B／217 行（首 `---`、尾 ` ``` `）；`openai/codex-security` `c6432d1131` `sdk/typescript/docs/cli.md` 162,145 B／3,011 行（首 `# CLI and workflows`、尾 `for deployment and s…`）；`agentes-chat/agentes-chat` `8c1065e79d` `README.md` 11,111 B／121 行（首 `<p align="center">`、尾 `[SECURITY.md](SECURI…`）。九份字节、行数与上几轮逐个相同；八个上游分支头已动，按 §4 仍按读证提交号取。规范 `262d4b4c` 本身 8,970 B／93 行／23 条。
 
