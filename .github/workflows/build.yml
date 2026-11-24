@@ -62,7 +62,15 @@ jobs:
         run: |
           set -o pipefail
           if ! ./gradlew -PversionName="${{ env.VERSION_NAME }}" -PversionCode="${{ env.VERSION_CODE }}" test assembleDebug 2>&1 | tee build.log; then
-            echo "::error::构建失败；build.log 末尾：$(tail -8 build.log 2>/dev/null | tr '\n' ' ' | head -c 800)"
+            # 只留 Gradle 的收尾话看不出去哪一行错。先挑编译/测试错误行，挑不到再退回末尾。
+            { grep -nE '^e: |^w: .*error|error:|FAILED|Execution failed|expected|Unresolved' build.log | head -40
+              echo '--- build.log 末尾 ---'; tail -20 build.log; } > build-error.txt || true
+            # 每一行都折成一条注解：日志接口取不到时，注解是唯一还读得到的东西。
+            while IFS= read -r line; do
+              echo "::error::$(printf '%s' "$line" | tr '\n' ' ' | head -c 400)"
+            done < build-error.txt
+            sum=$(head -c 2000 build-error.txt)
+            { echo '### 构建失败'; echo '```'; printf '%s' "$sum"; echo; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
           mv app/build/outputs/apk/debug/app-debug.apk "app/build/outputs/apk/debug/Gself-${{ env.VERSION_NAME }}.apk"
