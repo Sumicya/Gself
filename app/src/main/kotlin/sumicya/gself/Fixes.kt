@@ -45,6 +45,8 @@ fun Hook.wakeStoppedApps() {
 }
 
 /** 逐条日志的出声配额：热路径上的东西只在前几条出声，之后静默。 */
+private const val WAKE_LOG_LIMIT = 5
+private val wakeLogged = AtomicInteger()
 private val keptNotifications = AtomicInteger()
 private val droppedRejects = AtomicInteger()
 
@@ -83,6 +85,9 @@ private fun waken(intent: Intent) {
     if (!Push.needsFlag(intent.action, intent.flags)) return
     val target = Push.targetOf(intent) ?: return
     intent.addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES)
+    // 出声前 5 条：这行是「推送到底有没有被放行」的唯一真机信号，不能删；
+    // 但每条推送一行是常驻开销，所以只在前几条打。
+    if (wakeLogged.incrementAndGet() <= WAKE_LOG_LIMIT) trace("wake: $target（${intent.action}）")
     unfreeze(target)
 }
 
