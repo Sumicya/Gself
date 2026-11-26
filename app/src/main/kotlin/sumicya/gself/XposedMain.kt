@@ -3,6 +3,7 @@ package sumicya.gself
 import android.os.Build
 import android.util.Log
 
+import io.github.libxposed.api.XposedInterface
 import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedModuleInterface
 
@@ -11,9 +12,8 @@ private const val TAG = "Gself"
 internal const val GMS = "com.google.android.gms"
 internal const val GBOARD = "com.google.android.inputmethod.latin"
 
-/** 框架日志写入口：载入时装好，之后只在前 40 条里用。不持有 api 的类型，避免绑死 libxposed 的类名。 */
-@Volatile
-private var frameworkLog: ((String) -> Unit)? = null
+/** 框架日志句柄：照 117 及更早的写法存 XposedInterface，那一版在真机上跑过。 */
+private var frameworkLog: XposedInterface? = null
 
 /**
  * 一行日志：logcat 每次写，LSPosed 框架日志只写前 40 条。
@@ -32,7 +32,7 @@ fun trace(text: String) {
     // 超出配额直接返回：这里在热路径上，连 runCatching 都不该进。
     if (frameworkLogs.get() >= FRAMEWORK_LOG_BUDGET) return
     if (frameworkLogs.incrementAndGet() <= FRAMEWORK_LOG_BUDGET) {
-        runCatching { frameworkLog?.invoke(text) }
+        runCatching { frameworkLog?.log(Log.INFO, TAG, "[gself] $text") }
     }
 }
 
@@ -46,7 +46,7 @@ class XposedMain : XposedModule() {
 
     override fun onSystemServerStarting(param: XposedModuleInterface.SystemServerStartingParam) {
         val hooks = Hook(this, param.classLoader)
-        frameworkLog = { line -> hooks.api.log(Log.INFO, TAG, "[gself] $line") }
+        frameworkLog = hooks.api
         trace("Gself 载入 system_server（Android ${Build.VERSION.RELEASE} / API ${Build.VERSION.SDK_INT}）")
         hooks.wakeStoppedApps()
         hooks.notificationFixes()
@@ -56,7 +56,7 @@ class XposedMain : XposedModule() {
     /** app 进程入口：按包名分发 GMS / Gboard 两组。 */
     override fun onPackageLoaded(param: XposedModuleInterface.PackageLoadedParam) {
         val hooks = Hook(this, param.defaultClassLoader)
-        frameworkLog = { line -> hooks.api.log(Log.INFO, TAG, "[gself] $line") }
+        frameworkLog = hooks.api
         when (param.packageName) {
             GMS -> hooks.install("通行密钥解限") { passkeyUnlock(param.applicationInfo.sourceDir) }
             GBOARD -> hooks.install("Gboard 剪贴板") { gboardFixes() }
