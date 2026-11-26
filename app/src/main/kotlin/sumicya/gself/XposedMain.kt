@@ -3,7 +3,6 @@ package sumicya.gself
 import android.os.Build
 import android.util.Log
 
-import io.github.libxposed.api.XposedInterface
 import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedModuleInterface
 
@@ -12,28 +11,21 @@ private const val TAG = "Gself"
 internal const val GMS = "com.google.android.gms"
 internal const val GBOARD = "com.google.android.inputmethod.latin"
 
-/** 框架日志句柄：照 117 及更早的写法存 XposedInterface，那一版在真机上跑过。 */
-private var frameworkLog: XposedInterface? = null
-
-/**
- * 一行日志：logcat 每次写，LSPosed 框架日志只写前 40 条。
- *
- * 上一轮把框架日志整条删掉是个错误：`/data/adb/lspd/log/*.log` 里就再也读不到 Gself 的任何一行，
- * 而真机验收全指着那个目录。省电的边界不该越过「还能不能验证」。改成限量：
- * 启动判定行、几条 hook active 都在前几十条里，全进得来；之后的高频 `wake:` 不再落盘。
- */
-private const val FRAMEWORK_LOG_BUDGET = 40
-
-/** 已写进框架日志的条数。只用原子自增，不做二次判断——多个线程同时进来时账不会算错。 */
-private val frameworkLogs = java.util.concurrent.atomic.AtomicInteger()
-
+/** 一行日志，只走 logcat：原先还调一次框架日志（落盘 + 跨进程），而这里每条命中推送都要跑一次。 */
 fun trace(text: String) {
     Log.d(TAG, text)
-    // 超出配额直接返回：这里在热路径上，连 runCatching 都不该进。
-    if (frameworkLogs.get() >= FRAMEWORK_LOG_BUDGET) return
-    if (frameworkLogs.incrementAndGet() <= FRAMEWORK_LOG_BUDGET) {
-        runCatching { frameworkLog?.log(Log.INFO, TAG, "[gself] $text") }
-    }
+}
+
+/**
+ * 载入期把这几行也写进 LSPosed 框架日志（`/data/adb/lspd/log/`）。
+ *
+ * 118/119 两版把框架日志整条删掉，那个目录里一行 Gself 都没有，真机验收无从下手。
+ * 这里只补「载入判定」那几行——它们一共十来条，都在开机那一刻，不进热路径。
+ * 热路径（`waken` / `keep notification`）仍然只走 logcat，省电的边界守在这里。
+ */
+private fun traceOnBoot(api: io.github.libxposed.api.XposedInterface, text: String) {
+    Log.d(TAG, text)
+    runCatching { api.log(Log.INFO, TAG, "[gself] $text") }
 }
 
 /**
@@ -46,8 +38,8 @@ class XposedMain : XposedModule() {
 
     override fun onSystemServerStarting(param: XposedModuleInterface.SystemServerStartingParam) {
         val hooks = Hook(this, param.classLoader)
-        frameworkLog = hooks.api
-        trace("Gself 载入 system_server（Android ${Build.VERSION.RELEASE} / API ${Build.VERSION.SDK_INT}）")
+        // 这几行走两条路：logcat 与框架日志。探针读的是框架日志那个目录。
+        traceOnBoot(hooks.api, "Gself 载入 system_server（Android ${Build.VERSION.RELEASE} / API ${Build.VERSION.SDK_INT}）")
         hooks.wakeStoppedApps()
         hooks.notificationFixes()
         hooks.oplusFixes()
@@ -56,7 +48,6 @@ class XposedMain : XposedModule() {
     /** app 进程入口：按包名分发 GMS / Gboard 两组。 */
     override fun onPackageLoaded(param: XposedModuleInterface.PackageLoadedParam) {
         val hooks = Hook(this, param.defaultClassLoader)
-        frameworkLog = hooks.api
         when (param.packageName) {
             GMS -> hooks.install("通行密钥解限") { passkeyUnlock(param.applicationInfo.sourceDir) }
             GBOARD -> hooks.install("Gboard 剪贴板") { gboardFixes() }
