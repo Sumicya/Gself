@@ -1,3 +1,25 @@
+## 真机读数判读；框架日志恢复为载入期那几行（2026-11-26 19:32，规范 `e57d3d83`）
+
+- **原话**：「要探针就给命令 现在117」＋主人贴回的四条实测输出。
+- **主人的读数与我给它的解释（逐条）**：
+  - `grep 推送达标 /data/adb/lspd/log/*.log` → **空**。这条**证明不了任何事**。117 会写框架日志，但日志轮转快，启动行早已滚出窗口；更要紧的是我在 118/119 把框架日志整条删了，那两版那个目录里必然一行都没有——**空输出是我造成的，不是机器状态**。
+  - `dumpsys batterystats --charged | grep 'Estimated power'` → 只有表头、无数据行。电量统计还没积累出放电区间，刚充满电时这条永远是空的。
+  - `dumpsys power | grep 'Wake Locks'` → `size=1`，只有 `AudioMix`。**这是好消息**：模块没有持有任何唤醒锁，`FCMXX` 不在表里说明解冻后确实释放了。
+  - 同一条里的 `Proxy uid infos` → 三个 uid 都在，`ProxyEnable: true`，`ProxyButDropTypes:[26,10,32,6]`。这是 ColorOS 代理唤醒锁在工作，**是 ROM 侧行为**：本模块只 hook 了 `OplusProxyWakeLock` 的构造器抓引用、不改行为，所以这行读数是 ROM 原样，不是我引入的。
+  - `dumpsys deviceidle` → `mState=ACTIVE mLightState=ACTIVE`。**设备没进待机**，这时候量耗电是在噪音里量。
+  - 五条合起来说的不是「耗电多少」，而是「无锁泄漏、代理正常、电量统计没数据、没待机」。
+- **修了什么**（连续四次 CI 失败才修对，过程如实记）：
+  - `e25fe4a`：把限流写进 `trace()` 内部，并在其中调 `api.log(...)`。CI 红：`Fixes.kt` 全部 9 处 `trace` 报 `Unresolved reference 'trace'`。
+  - `68a8357`：改成闭包 `(String) -> Unit`。同样红，同样 9 处。
+  - `02dbfdb`：照抄 117 的写法（`XposedInterface?` + `?.log(...)`）。同样红。
+  - `a719f9f`：**`trace()` 一个字不动**，另开 `traceOnBoot(api, text)` 只在载入期用，`api` 显式传参。绿。
+  - 根因：只要往 `trace` 内部加 `api.log(...)`，`trace` 就被判无效，所有调用方一起报 `Unresolved reference`。而错误行全部指向调用方、不指向 `XposedMain.kt` 本身，这是我前三次都改错方向的原因。**Kotlin 的这个报错形状有误导性**，记在这里。
+  - 代价：四次失败各出一个 CI run，全绿前没有产物可装。
+- **现在的日志通路**：`trace()` 只走 logcat（热路径，`waken` / `keep notification` 都走它）；`traceOnBoot()` 走两条路，只用于开机那十几行判定。框架日志的写入量从「每条日志」降到「开机十来条」。
+- **CI**：run `45811291452` 绿，产物 `Gself-26.11.26.6.124` 312,561 B。源码 673 行，`check.py` / `deadcode.py` 各 0 处。
+- **未验证**：124 装到真机上之后框架日志里到底有没有那几行。CI 只证明它能编译能打包，**证明不了 LSPosed 的 `log()` 真的收到**。这一条要等主人装 124 再跑一次第 0 节命令才算。
+- **九份读证（按读证提交号取，采样 2026-11-26 19:32 `+08:00`）**：`DietrichGebert/ponytail` `96608e078b` 3,496 B；`elder-plinius/CL4R1T4S` `93a5847654` 957,315 B；`nagi-studio/skills` `b7bb3ee09f` 5,727 B；`morluto/rea` `7d502ddb0d` 33,036 B；`storytold/craft-anything` `090188d705` 27,859 B；`Balanov/uncut` `481379bea0` 12,339 B；`Dodaios/ste80-humanizer` `0d6f7994a5` 14,837 B；`openai/codex-security` `c6432d1131` 162,145 B；`agentes-chat/agentes-chat` `8c1065e79d` 11,111 B。九份字节与上几轮逐个相同。
+
 ## 恢复 wake: 信号；加真机探针（2026-11-26 19:19，规范 `e57d3d83`）
 
 - **原话**：「要探针就给命令 现在117」。
