@@ -4,6 +4,7 @@ import android.content.Intent
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -42,52 +43,50 @@ class PushTest {
         assertFalse(Push.isPush("com.google.android.gms.action.RECONNECT"))
     }
 
-    /** 唯一的介入条件：推送族 + 有目标包名 + 还没带 0x20。 */
-    @Test
-    fun patchesOnlyTargetedPushesWithoutTheFlag() {
-        assertTrue(Push.needsStoppedPatch(receive, target, plain))
-        assertFalse(Push.needsStoppedPatch(receive, target, plain or 0x20))
-        assertFalse(Push.needsStoppedPatch(receive, null, plain))
-        assertFalse(Push.needsStoppedPatch(receive, "", plain))
-        assertFalse(Push.needsStoppedPatch("android.intent.action.BOOT_COMPLETED", target, plain))
-        assertFalse(Push.needsStoppedPatch(null, target, plain))
-    }
-
     /**
-     * 真值表来自 AOSP `Intent.java:10023`——`(flags & (0x10 | 0x20)) == 0x10`。
-     * 语义层快路早退时返回 `proceed()`，与原方法逐位相同，所以不改变任何非推送 intent 的结果。
+     * 补标志的判据只看两样：推送族 + 还没带 0x20。
+     * 目标包名不在这层判（取包名比两次 contains 贵，全系统每条广播都进这个函数），
+     * 由 `waken` 在拿到 true 之后再取；「没有目标就不补」这条由 [targetOfRejectsEmpty] 钉住。
      */
     @Test
-    fun matchesAospExclusionTruthTable() {
-        assertFalse(Push.excludesStopped(0))
-        assertTrue(Push.excludesStopped(0x10))
-        assertFalse(Push.excludesStopped(0x20))
-        assertFalse(Push.excludesStopped(0x30))
-        assertTrue(Push.excludesStopped(0x10 or plain))
-        assertFalse(Push.excludesStopped(0x20 or plain))
+    fun patchesOnlyPushesWithoutTheFlag() {
+        assertTrue(Push.needsFlag(receive, plain))
+        assertFalse(Push.needsFlag(receive, plain or 0x20))
+        assertFalse(Push.needsFlag("android.intent.action.BOOT_COMPLETED", plain))
+        assertFalse(Push.needsFlag(null, plain))
+        assertFalse(Push.needsFlag(receive, 0x20))
+    }
+
+    /** 有推送 action 但没有目标包名时不解冻：`waken` 拿到 null 就退出，不补标志也不解冻。 */
+    @Test
+    fun targetOfRejectsEmpty() {
+        assertNull(Push.targetOf(null))
     }
 
     /**
-     * 判据里写死的 0x10 / 0x20 必须与 `android.content.Intent` 的常量一致：
+     * 为什么只挂一层：AOSP 的判据是 `(flags & (0x10 | 0x20)) == 0x10`（`Intent.java:10023`），
+     * 所以只要 0x20 在位，无论 0x10 在不在，答案都是 false。这里把那条规则本身钉在 JVM 上：
+     * 以后谁想把「再补一层语义」加回来，先看这条断言——加了也改变不了结果。
+     */
+    @Test
+    fun includeFlagAloneDefeatsExclude() {
+        fun excludesStopped(flags: Int): Boolean = (flags and (0x10 or 0x20)) == 0x10
+        assertTrue(excludesStopped(0x10))
+        assertFalse(excludesStopped(0x20))
+        // 关键一条：系统在 BroadcastController 里补上 0x10 之后，我们补的 0x20 仍然压住它
+        assertFalse(excludesStopped(0x10 or 0x20))
+        assertFalse(excludesStopped(0x10 or 0x20 or plain))
+    }
+
+    /**
+     * 判据里写死的 0x20 必须与 `android.content.Intent` 的常量一致：
      * 挂载点用常量补标志，判据用字面量算，两边漂了就是「补了却判不出」。
      */
     @Test
     fun literalFlagsMatchIntentConstants() {
         assertEquals(0x10, Intent.FLAG_EXCLUDE_STOPPED_PACKAGES)
         assertEquals(0x20, Intent.FLAG_INCLUDE_STOPPED_PACKAGES)
-        assertTrue(Push.excludesStopped(Intent.FLAG_EXCLUDE_STOPPED_PACKAGES))
-        assertFalse(Push.excludesStopped(Intent.FLAG_INCLUDE_STOPPED_PACKAGES))
-        assertFalse(Push.needsStoppedPatch(receive, target, Intent.FLAG_INCLUDE_STOPPED_PACKAGES))
-    }
-
-    /** 语义层只放行「有目标包名 + 属于推送族」，与 flags 无关。 */
-    @Test
-    fun semanticLayerNeedsBothTargetAndPushAction() {
-        assertTrue(Push.isTargetedPush(target, receive))
-        assertFalse(Push.isTargetedPush(null, receive))
-        assertFalse(Push.isTargetedPush("", receive))
-        assertFalse(Push.isTargetedPush(target, "android.intent.action.SCREEN_ON"))
-        assertFalse(Push.isTargetedPush(target, null))
+        assertFalse(Push.needsFlag(receive, Intent.FLAG_INCLUDE_STOPPED_PACKAGES))
     }
 
     /**
@@ -112,7 +111,7 @@ class PushTest {
                               "android.intent.action.SCREEN_ON", null)) {
             for (pkg in listOf(target, null, "")) {
                 for (flags in listOf(0x20, 0x20 or plain, 0x30)) {
-                    assertFalse(Push.needsStoppedPatch(action, pkg, flags),
+                    assertFalse(Push.needsFlag(action, flags),
                         "带 INCLUDE 时不该需要补标志：action=$action target=$pkg flags=$flags")
                 }
             }

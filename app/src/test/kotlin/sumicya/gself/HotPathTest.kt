@@ -41,11 +41,9 @@ class HotPathTest {
         fun batch(times: Int) {
             var sink = 0
             for (i in 0 until times) {
-                // 语义层快路：原生答案本来就是 false 的那一支
-                if (Push.excludesStopped(flags)) sink++
                 // 标志层判据：不取 action、只做位运算就退出
-                if (Push.needsStoppedPatch(pushAction, target, flags)) sink++
-                if (Push.needsStoppedPatch(otherAction, target, flags)) sink++
+                if (Push.needsFlag(pushAction, flags)) sink++
+                if (Push.needsFlag(otherAction, flags)) sink++
                 // 子串判据本体
                 if (Push.isPush(pushAction)) sink++
                 if (Push.isPush(otherAction)) sink++
@@ -53,14 +51,14 @@ class HotPathTest {
                 if (Push.anyPushAction(proxyArgs)) sink++
                 if (Push.anyPushAction(nonPushArgs)) sink++
             }
-            // 每轮命中三处：推送判据、子串判据、代理判据各一次；顺带让 JIT 不能把整批当死代码删掉
+            // 每轮命中三处：标志层判据、子串判据、代理判据各一次；顺带让 JIT 不能把整批当死代码删掉
             assertEquals(times * 3, sink)
         }
 
         batch(20_000) // 预热：解释执行与本机编译后各来一轮
 
         val before = allocatedBytes()
-        batch(40_000) // 20 万次函数调用（每次批 5 个函数 × 40000）
+        batch(40_000) // 24 万次函数调用（每次批 6 个函数 × 40000）
         val used = allocatedBytes() - before
 
         // 阳性对照：同一个计量器、同一台机器，故意分配 2 万个对象，必须被量出来。
