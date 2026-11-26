@@ -268,6 +268,9 @@ internal fun shouldDropGoogleFirewallReject(
         uid >= 0 &&
         uid % ANDROID_PER_USER_RANGE in googleAppIds
 
+/** 空 WorkSource 复用一份：`unfreezeIfNeed` 只读它，既不持有也不改。 */
+private val EMPTY_WORK_SOURCE = WorkSource()
+
 /**
  * 解冻目标应用（ColorOS）：调用之前捕获的 `OplusProxyWakeLock.unfreezeIfNeed`。
  * 由 [wakeStoppedApps] 在放行推送广播时调用；失败不影响广播放行。
@@ -284,7 +287,10 @@ private fun unfreeze(target: String) {
             trace("unfreeze 跳过：没有 4 参 unfreezeIfNeed 签名")
             return
         }
-    if (runCatching { method.invoke(lock, uid, WorkSource(), WAKELOCK_TAG, WAKELOCK_OWNER) }.isFailure) {
+    // 每条放行的推送都会进来，所以两件事都不做：不新建 WorkSource（复用一份空的），
+    // 也不在失败时逐条打日志——失败会持续失败，那是每推送一行 logcat。
+    val failed = runCatching { method.invoke(lock, uid, EMPTY_WORK_SOURCE, WAKELOCK_TAG, WAKELOCK_OWNER) }.isFailure
+    if (failed && knownUnfreeze == null) {
         trace("unfreeze 跳过：4 参签名调用失败")
         return
     }
@@ -304,9 +310,13 @@ private val systemContext: Context? by lazy {
     }.getOrNull()
 }
 
-private fun uidOf(pkg: String): Int? = systemContext
+/** 包名 → uid，带缓存：`getPackageUid` 是 Binder 调用，而这里每条放行的推送都进来。 */
+private val uidCache = java.util.concurrent.ConcurrentHashMap<String, Int>()
+
+private fun uidOf(pkg: String): Int? = uidCache[pkg] ?: (systemContext
     ?.let { ctx -> runCatching { ctx.packageManager.getPackageUid(pkg, 0) }.getOrNull() }
-    ?.takeIf { it >= 0 }
+    ?.takeIf { it >= 0 && uidCache.size < 64 }
+    ?.also { uidCache[pkg] = it })
 
 private val wakelock = AtomicReference<Any?>()
 
