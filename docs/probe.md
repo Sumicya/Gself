@@ -72,6 +72,22 @@ su -c "dumpsys deviceidle | grep -E 'mState|mLightState|mLastIdleEntryTime'"
 **对比口径**：同一台机、同一段时长（比如都放 6 小时）、同一块电量区间（比如都从 100% 到 80%），
 换版本前后各跑一次 ①，看 `system_server` 那一行的变化。绝对值没有意义，只看同条件前后的差。
 
+### 实测记录与判读（2026-11-26，117）
+
+主人跑回来三条，读数如下，逐条说它们能证明什么、不能证明什么：
+
+| 命令 | 实测输出 | 能证明什么 |
+| --- | --- | --- |
+| `grep 推送达标 /data/adb/lspd/log/*.log` | **空** | **什么都不能证明**。117 会写框架日志，但真机日志轮转快，启动行已滚出窗口；更要紧的是空输出不能推出「模块没加载」 |
+| `dumpsys batterystats --charged \| grep 'Estimated power'` | 只有表头 `Estimated power use (mAh):`，**无数据行** | 电量统计还没积累够，或者已充满电、没有放电区间。这条命令在刚充满时永远是空的 |
+| `dumpsys power \| grep 'Wake Locks'` | `size=1`，只有 `AudioMix` | **模块没有持锁**。这是好消息：没有泄漏的唤醒锁。`FCMXX` 不在表里说明解冻后确实释放了 |
+| 同上的 `Proxy uid infos` | 三个 uid 都在，`ProxyButDropTypes:[26,10,32,6]`，`ProxyEnable: true` | ColorOS 的代理唤醒锁**在工作**。这是 ROM 侧的行为，本模块只 hook 了构造器抓引用、不改行为，所以这行读数是 ROM 原样 |
+| `dumpsys deviceidle` | `mState=ACTIVE mLightState=ACTIVE` | **没进待机**。这时量耗电是在噪音里量，mAh 数字不可比 |
+
+**结论**：这五条读数合起来说的是「没有唤醒锁泄漏、代理在正常干活、电量统计没数据、设备没待机」，
+而不是「耗电多少」。要能回答耗电，前提是设备先真正进过 `IDLE`（屏幕灭、放着不动几小时），
+且 `batterystats` 有放电区间。
+
 ## 4. 一次跑完
 
 ```bash
