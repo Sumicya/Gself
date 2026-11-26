@@ -1,3 +1,19 @@
+## 删掉语义层：只挂 AMS 标志层（2026-11-26，规范 `e5671d86`）
+
+- **原话**：「用第一性原理继续重构」。
+- **第一性原理怎么拆的**：不问「代码怎么简化」，先问「一次推送投递里，哪一处代价是必须付的」。拆到 AOSP 源码三条事实：
+  1. `Intent.isExcludingStopped()` 的实现只有一行：`(mFlags & (0x10|0x20)) == 0x10`（`Intent.java:10023`）。**0x20 在位时必然返回 false**，`Intent.java:7200` 原文「If both of these flags are set, this one wins (it allows overriding of exclude for places where the framework may automatically set the exclude flag, such as broadcasts)」。
+  2. 全系统给广播补 `0x10` 的地方只有一处：`BroadcastController.java:922`，注释「By default broadcasts do not go to stopped apps」，而且是 `addFlags`（按位或），**不会清掉已有的 0x20**。
+  3. 语义层挂的 `isExcludingStopped` 在 `IntentResolver#buildResolveList`（`IntentResolver.java:729`）里被问，广播/活动/服务/provider 四个域共用这个基类，是每条 intent 解析都走的路径；而且它是 `@UnsupportedAppUsage` 的内部高频 API。
+- **因此**：标志层先补 0x20、再让 `broadcastIntentLocked` 去补 0x10，两者并存而 0x20 胜出——**标志层在任何情况下都足以让推送穿过停止态**。语义层不改变这个结果，只多一次 Xposed 桥。
+- **删了什么**（连带，全部因为失去调用方）：`stoppedFilterDecision()` 整个函数、`decisionHits`、`patchedPushes`、`Push.excludesStopped`、`Push.isTargetedPush`、`Push.EXCLUDE` 常量。
+- **没改测试来让检查过**（§11）：`@Test` 数量 `13 → 13`，没减。删掉的三个测试测的是被删的函数本身（`matchesAospExclusionTruthTable` / `semanticLayerNeedsBothTargetAndPushAction` / `excludesStopped` 那几条），它们的前提就是「语义层存在」。作为替代，新增 `includeFlagAloneDefeatExclude` 把上面那条 AOSP 规则本身钉住：`0x10|0x20` 必须判 false。谁以后想把语义层加回来，先看这条断言。
+- **第二处：判据顺序**。`waken` 原先第一句就调 `Push.targetOf(intent)`，也就是全系统**每一条**广播都要问一次 component / package，而绝大多数不是推送。改成代价顺序：位运算 → 两次 `contains` → 最后才取包名。判据函数随之从 `needsStoppedPatch(action, target, flags)` 改为 `needsFlag(action, flags)`，「有没有目标包名」由调用方在通过之后再判。
+- **读数**：源码 `706 → 645` 行（−61），测试 `294 → 291` 行（−3，`@Test` 数不变）。量法 `cat app/src/main/kotlin/sumicya/gself/*.kt | wc -l`。
+- **CI**：run `45797007017` 绿，产物 `Gself-26.11.26.1.118` 312,080 B（上一版 312,990 B，−910 B）。
+- **未验证（不编）**：真机耗电有没有降，我没有真机读数。这条改动我唯一能证明的是「少了一条全系统解析路径上的 Xposed 桥」这个事实本身，省多少电不知道。另外「语义层在真机上从未单独兜住过推送」这句我也证明不了——我没有真机 logcat。上面那条论证不依赖它：标志层在 AOSP 层面必然足够，所以语义层无论有没有兜住过，都不需要。
+- **九份读证（按读证提交号取，采样 2026-11-26 18:01 `+08:00`）**：`DietrichGebert/ponytail` `96608e078b` 3,496 B；`elder-plinius/CL4R1T4S` `93a5847654` 957,315 B；`nagi-studio/skills` `b7bb3ee09f` 5,727 B；`morluto/rea` `7d502ddb0d` 33,036 B；`storytold/craft-anything` `090188d705` 27,859 B；`Balanov/uncut` `481379bea0` 12,339 B；`Dodaios/ste80-humanizer` `0d6f7994a5` 14,837 B；`openai/codex-security` `c6432d1131` 162,145 B；`agentes-chat/agentes-chat` `8c1065e79d` 11,111 B。九份字节与上几轮逐个相同。
+
 ## 耗电重构：`OplusProxyBroadcast` 只挡推送，不再全关（2026-11-24，规范 `262d4b4`）
 
 - **原话**：「耗电疑似过多 重构」。
